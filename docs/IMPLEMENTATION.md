@@ -226,6 +226,7 @@ MVP先做最小：正确/错误次数即可。后续可扩展：
 页面：
 - `/` 仪表盘
 - `/words` 单词库（新增/删除/搜索）
+- `/library` 词书库（一键导入开源词书）
 - `/decks` 词书列表（创建/删除）
 - `/decks/{id}` 词书详情
 - `/review` 复习（FSRS：Again/Hard/Good/Easy，支持按词书过滤）
@@ -237,6 +238,7 @@ MVP先做最小：正确/错误次数即可。后续可扩展：
 接口（表单POST）：
 - `POST /words` 新增单词
 - `POST /words/import` 批量导入（支持词书/章节/重复策略）
+- `POST /library/import` 一键导入词书（下载开源词表 → 导入 → 关联词书）
 - `POST /words/{id}/delete` 删除单词
 - `POST /decks` 创建词书
 - `POST /decks/{id}/delete` 删除词书（只删关联，不删单词）
