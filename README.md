@@ -25,6 +25,11 @@
      - `.\\.venv\\Scripts\\python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
 4) 打开：`http://127.0.0.1:8000`
 
+## 清空本地数据
+会清空本地 SQLite 数据库里的所有数据（单词/词书/复习记录/错词/实战短文）。
+
+- 一键脚本：`reset-data.cmd`
+
 ## 导入词书（Deck）
 1) 打开 `http://127.0.0.1:8000/words`
 2) 在“批量导入”里填写“导入到词书（可选）”，也可以在文件头里写 `#deck:`

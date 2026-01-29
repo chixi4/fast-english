@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>错词篮</h1>
+  <h1>错词强化</h1>
   <p class="muted">
-    选一组错词，喂给AI生成短文+出题。没有AI Key也可以用 <span class="mono">AI_MOCK=1</span> 跑通流程。
+    选一组“不会”的词，生成一篇短文并出题，训练你在语境中做题。没有AI Key也可以用 <span class="mono">AI_MOCK=1</span> 跑通流程。
   </p>
 
   <form class="stack" method="post" action="/simulations/generate" onsubmit="return collectWordIds()">
@@ -52,4 +52,3 @@
     }
   </script>
 {% endblock %}
-

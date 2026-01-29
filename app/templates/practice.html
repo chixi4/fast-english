@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>练习</h1>
+  <p class="muted">把高级玩法收纳在这里：错词强化 + 实战短文（阅读做题）。</p>
+
+  {% if word_count == 0 %}
+    <div class="card">
+      <div class="muted">还没有单词，先去导入一个词书吧。</div>
+      <div class="actions">
+        <a class="btn primary" href="/library">导入词书</a>
+        <a class="btn" href="/words">手动导入（高级）</a>
+      </div>
+    </div>
+  {% else %}
+    <div class="cards">
+      <div class="card">
+        <div class="card-k">错词强化</div>
+        <div class="card-v">{{ mistake_count }}</div>
+        <div class="muted">从“不会”的词出发，选一组生成短文 + 出题，练语境做题能力。</div>
+        <div class="actions">
+          <a class="btn primary" href="/mistakes">去错词强化</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-k">实战短文</div>
+        <div class="card-v">{{ sim_count }}</div>
+        <div class="muted">查看最近生成的短文练习记录。</div>
+        <div class="actions">
+          <a class="btn" href="/simulations">打开实战短文</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-k">词库管理（高级）</div>
+        <div class="card-v">{{ word_count }}</div>
+        <div class="muted">手动添加、批量导入、清理数据。</div>
+        <div class="actions">
+          <a class="btn" href="/words">打开单词库</a>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}

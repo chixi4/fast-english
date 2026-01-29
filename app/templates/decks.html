@@ -2,7 +2,16 @@
 {% block content %}
   <h1>词书</h1>
 
-  <h2>新建词书</h2>
+  <div class="card">
+    <div class="big">快速开始</div>
+    <p class="muted">推荐从词书库一键导入：中考/高考/CET4/CET6/考研/雅思/托福/GRE。</p>
+    <div class="actions">
+      <a class="btn primary" href="/library">去词书库导入</a>
+      <a class="btn" href="/review">开始今日学习</a>
+    </div>
+  </div>
+
+  <h2>新建空词书（可选）</h2>
   <form class="stack" method="post" action="/decks">
     <label>名称<input name="name" required placeholder="例如：CET4-核心词" /></label>
     <label>描述（可选）<textarea name="description" rows="2"></textarea></label>
@@ -29,7 +38,7 @@
           <td class="mono">{{ item.new_count }}</td>
           <td>
             <div class="actions">
-              <a class="btn" href="/review?deck_id={{ item.deck.id }}">复习此词书</a>
+              <a class="btn" href="/review?deck_id={{ item.deck.id }}">开始学习</a>
               <form method="post" action="/decks/{{ item.deck.id }}/delete" onsubmit="return confirm('删除词书 {{ item.deck.name }} ?（不会删除单词，只删除关联）')">
                 <button class="btn danger" type="submit">删除</button>
               </form>
@@ -40,4 +49,3 @@
     </tbody>
   </table>
 {% endblock %}
-

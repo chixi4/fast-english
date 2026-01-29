@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>复习</h1>
+  <h1>今日学习</h1>
 
   <form class="row" method="get" action="/review">
     <select name="deck_id" onchange="this.form.submit()">
@@ -16,9 +16,9 @@
   </form>
 
   {% if total == 0 %}
-    <p class="muted">还没有单词，先去 <a href="/words">单词库</a> 添加/导入一些吧。</p>
+    <p class="muted">还没有单词，先去 <a href="/library">词书库</a> 一键导入一个词书吧。</p>
   {% elif not word %}
-    <p class="muted">当前没有到期的卡片。可以稍后再来，或去 <a href="/mistakes">错词篮</a> 做实战短文。</p>
+    <p class="muted">当前没有到期的卡片。可以稍后再来，或去 <a href="/mistakes">错词强化</a> 做实战短文。</p>
   {% else %}
     <div class="card">
       <div class="big mono">{{ word.term }}</div>
@@ -40,10 +40,10 @@
         {% if deck_id %}
           <input type="hidden" name="deck_id" value="{{ deck_id }}" />
         {% endif %}
-        <button class="btn danger" type="submit" name="rating" value="again">Again（没记住）</button>
-        <button class="btn" type="submit" name="rating" value="hard">Hard（有点吃力）</button>
-        <button class="btn primary" type="submit" name="rating" value="good">Good（刚好记住）</button>
-        <button class="btn" type="submit" name="rating" value="easy">Easy（太简单）</button>
+        <button class="btn danger" type="submit" name="rating" value="again">不会</button>
+        <button class="btn" type="submit" name="rating" value="hard">模糊</button>
+        <button class="btn primary" type="submit" name="rating" value="good">会</button>
+        <button class="btn" type="submit" name="rating" value="easy">很熟</button>
       </form>
     </div>
   {% endif %}
