@@ -16,7 +16,8 @@
     </div>
   {% elif total == 0 %}
     <div class="card">
-      <div class="big">加入学习计划</div>
+      <div class="big">开始学习</div>
+      <p class="muted">先从词书加入一些单词到学习计划。</p>
 
       <form class="stack" method="post" action="/plan/add">
         <label>从词书加入
@@ -31,7 +32,12 @@
           </select>
         </label>
         <label>加入数量
-          <input type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" />
+          <select name="count">
+            <option value="10">10</option>
+            <option value="20" selected>20</option>
+            <option value="30">30</option>
+            <option value="50">50</option>
+          </select>
         </label>
         <input type="hidden" name="return_to" value="today" />
         <button class="btn primary" type="submit">开始学习</button>
@@ -53,66 +59,16 @@
       <div class="muted">预计用时：<span class="mono">{{ est_minutes }}</span> 分钟</div>
     </form>
 
-    <div class="cards">
-      <div class="card">
-        <div class="card-k">到期复习</div>
-        <div class="card-v">{{ due_count }}</div>
-      </div>
-      <div class="card">
-        <div class="card-k">新词</div>
-        <div class="card-v">{{ new_count }}</div>
-      </div>
-      <div class="card">
-        <div class="card-k">总量</div>
-        <div class="card-v">{{ total }}</div>
-      </div>
-    </div>
-
-    <div class="actions">
-      {% if deck_id %}
-        <a class="btn primary" href="/review?deck_id={{ deck_id }}">开始今日学习</a>
-      {% else %}
-        <a class="btn primary" href="/review">开始今日学习</a>
-      {% endif %}
-      <a class="btn" href="/decks">管理词书</a>
-      <a class="btn" href="/practice">练习</a>
-    </div>
-
-    {% if unplanned_word_count > 0 %}
-      <div class="card" style="margin-top: 12px;">
-        <div class="big">继续加入新词</div>
-        <form class="row" method="post" action="/plan/add">
-          <select name="deck_id">
-            {% for it in deck_items %}
-              {% if it.remaining_count > 0 %}
-                <option value="{{ it.deck.id }}" {% if suggested_deck_id == it.deck.id %}selected{% endif %}>
-                  {{ it.deck.name }}（剩余 {{ it.remaining_count }}）
-                </option>
-              {% endif %}
-            {% endfor %}
-          </select>
-          <input type="number" name="count" value="{{ quick_add_count }}" min="1" max="200" style="max-width: 120px;" />
-          <input type="hidden" name="return_to" value="today" />
-          <button class="btn" type="submit">加入</button>
-        </form>
-      </div>
-    {% endif %}
-
-    <div class="cards" style="margin-top: 12px;">
-      <div class="card">
-        <div class="card-k">错词</div>
-        <div class="card-v">{{ mistake_count }}</div>
-        <div class="actions"><a class="btn" href="/mistakes">错词强化</a></div>
-      </div>
-      <div class="card">
-        <div class="card-k">实战短文</div>
-        <div class="card-v">{{ sim_count }}</div>
-        <div class="actions"><a class="btn" href="/simulations">查看</a></div>
-      </div>
-      <div class="card">
-        <div class="card-k">数据</div>
-        <div class="card-v">{{ deck_count }}/{{ word_count }}</div>
-        <div class="actions"><a class="btn" href="/settings">我的</a></div>
+    <div class="card" style="margin-top: 12px;">
+      <div class="card-k">今天待学</div>
+      <div class="card-v">{{ due_count }}</div>
+      <div class="muted">计划内总卡片：<span class="mono">{{ total }}</span></div>
+      <div class="actions" style="margin-top: 12px;">
+        {% if deck_id %}
+          <a class="btn primary" href="/review?deck_id={{ deck_id }}">开始学习</a>
+        {% else %}
+          <a class="btn primary" href="/review">开始学习</a>
+        {% endif %}
       </div>
     </div>
   {% endif %}

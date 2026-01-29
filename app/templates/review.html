@@ -6,17 +6,13 @@
     <div class="card">{{ toast }}</div>
   {% endif %}
 
-  <form class="row" method="get" action="/review">
+  <form class="review-deck-form" method="get" action="/review">
     <select name="deck_id" onchange="this.form.submit()">
       <option value="0">全部词书</option>
       {% for d in decks %}
         <option value="{{ d.id }}" {% if deck_id == d.id %}selected{% endif %}>{{ d.name }}</option>
       {% endfor %}
     </select>
-    <div class="muted">到期：<span class="mono">{{ due_count }}</span> / 总数：<span class="mono">{{ total }}</span></div>
-    {% if next_due_at %}
-      <div class="muted">下次：<span class="mono">{{ next_due_at }}</span></div>
-    {% endif %}
   </form>
 
   {% if word_count == 0 %}
@@ -31,7 +27,8 @@
     <div class="card">
       <div class="big">加入学习计划</div>
       {% if deck_id %}
-        <form class="row" method="post" action="/decks/{{ deck_id }}/plan_add">
+        <form class="row" method="post" action="/plan/add">
+          <input type="hidden" name="deck_id" value="{{ deck_id }}" />
           <input type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" style="max-width: 120px;" />
           <input type="hidden" name="return_to" value="review" />
           <button class="btn primary" type="submit">加入并开始</button>
@@ -63,16 +60,18 @@
       </div>
     </div>
   {% else %}
-    <div class="card review-card">
-      <div class="big mono" style="font-size: 42px; margin-bottom: 20px;">{{ word.term }}</div>
-      <button class="btn primary" type="button" id="revealBtn" style="padding: 14px 32px; font-size: 16px;">显示答案</button>
+    <div class="review-card" id="reviewCard" data-revealed="0">
+      <div class="review-term big mono">{{ word.term }}</div>
 
-      <div id="answer" style="display:none; width: 100%;">
+      <div id="answer" class="review-answer" style="width: 100%;">
         {% if chapter %}
           <div class="muted" style="margin-bottom: 8px;">章节：<span class="mono">{{ chapter }}</span></div>
         {% endif %}
-        {% if word.definition %}
-          <div style="font-size: 18px; margin-bottom: 12px;">{{ word.definition }}</div>
+        {% if word_phonetic %}
+          <div class="review-phonetic">{{ word_phonetic }}</div>
+        {% endif %}
+        {% if word_definition_text %}
+          <div class="review-def">{{ word_definition_text }}</div>
         {% endif %}
         {% if word.example %}
           <div class="example" style="font-size: 15px; margin-bottom: 16px;">{{ word.example }}</div>
@@ -80,35 +79,74 @@
         <div class="muted" style="margin-bottom: 16px;">
           <span class="mono">{{ state_map.get(card.state, card.state) }}</span> | 正确/错误：{{ word.correct_count }}/{{ word.wrong_count }}
         </div>
+      </div>
+    </div>
 
-        <div class="rating-buttons">
-          <form method="post" action="/review/{{ word.id }}" style="display: contents;">
-            {% if deck_id %}
-              <input type="hidden" name="deck_id" value="{{ deck_id }}" />
-            {% endif %}
-            <input type="hidden" name="duration_ms" id="duration_ms" value="" />
-            <button class="btn danger" type="submit" name="rating" value="again">不认识</button>
-            <button class="btn" type="submit" name="rating" value="hard">不确定</button>
-            <button class="btn primary" type="submit" name="rating" value="good">认识</button>
-            <button class="btn" type="submit" name="rating" value="easy">很熟</button>
-          </form>
+    <div class="review-reveal-overlay" id="revealOverlay" role="button" tabindex="0" aria-label="点击显示答案">
+      <div class="review-prompt-area" aria-hidden="true">
+        <div class="review-prompt muted" id="reviewPrompt">
+          <div class="review-prompt-title">请回忆单词释义</div>
+          <div class="review-prompt-sub">点击屏幕显示答案</div>
         </div>
       </div>
     </div>
 
+    <div class="review-bottombar hidden" id="reviewBottomBar" aria-hidden="true">
+      <div class="review-bottombar-inner">
+        <form class="review-rating-grid" method="post" action="/review/{{ word.id }}">
+          {% if deck_id %}
+            <input type="hidden" name="deck_id" value="{{ deck_id }}" />
+          {% endif %}
+          <input type="hidden" name="duration_ms" id="duration_ms" value="" />
+          <button class="btn danger" type="submit" name="rating" value="again">不认识</button>
+          <button class="btn warn" type="submit" name="rating" value="hard">不确定</button>
+          <button class="btn primary" type="submit" name="rating" value="good">认识</button>
+          <button class="btn easy" type="submit" name="rating" value="easy">很熟</button>
+        </form>
+        <div class="review-meta muted">
+          <span>还剩：<span class="mono">{{ due_count }}</span> / <span class="mono">{{ total }}</span></span>
+          {% if next_due_at_display %}
+            <span> · 下次：<span class="mono">{{ next_due_at_display }}</span></span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="review-bottom-spacer hidden" id="reviewBottomSpacer" aria-hidden="true"></div>
+
     <script>
       (() => {
         const startedAt = Date.now();
-        const revealBtn = document.getElementById('revealBtn');
+        const revealOverlay = document.getElementById('revealOverlay');
+        const reviewCard = document.getElementById('reviewCard');
+        const prompt = document.getElementById('reviewPrompt');
         const answer = document.getElementById('answer');
         const durationMs = document.getElementById('duration_ms');
+        const bottomBar = document.getElementById('reviewBottomBar');
+        const bottomSpacer = document.getElementById('reviewBottomSpacer');
 
-        if (revealBtn && answer) {
-          revealBtn.addEventListener('click', () => {
-            answer.style.display = 'block';
-            revealBtn.style.display = 'none';
-            const first = answer.querySelector('button[type="submit"]');
-            if (first) first.focus();
+        const reveal = () => {
+          if (!reviewCard || !answer) return;
+          if (reviewCard.dataset.revealed === "1") return;
+          reviewCard.dataset.revealed = "1";
+          reviewCard.classList.add("revealed");
+          if (prompt) prompt.style.display = "none";
+          if (revealOverlay) revealOverlay.style.display = "none";
+          if (bottomBar) {
+            bottomBar.classList.remove("hidden");
+            bottomBar.setAttribute("aria-hidden", "false");
+          }
+          if (bottomSpacer) bottomSpacer.classList.remove("hidden");
+          const first = (bottomBar || document).querySelector('button[type="submit"]');
+          if (first) first.focus();
+        };
+
+        if (revealOverlay) {
+          revealOverlay.addEventListener('click', reveal);
+          revealOverlay.addEventListener('keydown', (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              reveal();
+            }
           });
         }
 

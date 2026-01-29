@@ -6,58 +6,51 @@
     <div class="card">{{ toast }}</div>
   {% endif %}
 
-  <div class="card">
-    <div class="big">快速开始</div>
-    <div class="actions">
-      <a class="btn primary" href="/library">导入词书</a>
-      <a class="btn" href="/review">开始学习</a>
-    </div>
+  <div class="actions">
+    <a class="btn primary" href="/library">导入词书</a>
   </div>
 
-  <h2>新建词书</h2>
-  <form class="stack" method="post" action="/decks">
-    <label>名称<input name="name" required placeholder="例如：CET4-核心词" /></label>
-    <label>描述<textarea name="description" rows="2"></textarea></label>
-    <button class="btn primary" type="submit">创建</button>
-  </form>
-
   <h2>已有词书</h2>
-  <table class="table">
-    <thead>
-      <tr>
-        <th>名称</th>
-        <th>计划/总词数</th>
-        <th>剩余</th>
-        <th>到期</th>
-        <th>新词</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in items %}
+  <div class="only-desktop">
+    <table class="table">
+      <thead>
         <tr>
-          <td><a href="/decks/{{ item.deck.id }}">{{ item.deck.name }}</a></td>
-          <td class="mono">{{ item.planned_count }}/{{ item.word_count }}</td>
-          <td class="mono">{{ item.remaining_count }}</td>
-          <td class="mono">{{ item.due_count }}</td>
-          <td class="mono">{{ item.new_count }}</td>
-          <td>
-            <div class="actions">
-              <a class="btn" href="/review?deck_id={{ item.deck.id }}">学习</a>
-              {% if item.remaining_count > 0 %}
-                <form method="post" action="/decks/{{ item.deck.id }}/plan_add">
-                  <input type="hidden" name="count" value="{{ daily_new_limit }}" />
-                  <input type="hidden" name="return_to" value="today" />
-                  <button class="btn primary" type="submit">+{{ daily_new_limit }}</button>
-                </form>
-              {% endif %}
-              <form method="post" action="/decks/{{ item.deck.id }}/delete" onsubmit="return confirm('删除词书 {{ item.deck.name }} ?')">
-                <button class="btn danger" type="submit">删除</button>
-              </form>
-            </div>
-          </td>
+          <th>名称</th>
+          <th></th>
         </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {% for item in items %}
+          <tr>
+            <td><a href="/decks/{{ item.deck.id }}">{{ item.deck.name }}</a></td>
+            <td>
+              <div class="actions">
+                <a class="btn primary" href="/review?deck_id={{ item.deck.id }}">开始学习</a>
+                <a class="btn" href="/decks/{{ item.deck.id }}">详情</a>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="only-mobile deck-mobile">
+    {% for item in items %}
+      <div class="card">
+        <div class="deck-title">
+          <a href="/decks/{{ item.deck.id }}"><strong>{{ item.deck.name }}</strong></a>
+        </div>
+        <div class="deck-actions">
+          <a class="btn primary" href="/review?deck_id={{ item.deck.id }}">开始学习</a>
+          <details class="deck-more">
+            <summary class="btn">更多</summary>
+            <div class="deck-more-panel">
+              <a class="btn" href="/decks/{{ item.deck.id }}">查看详情</a>
+            </div>
+          </details>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
 {% endblock %}

@@ -68,7 +68,11 @@
   </form>
 
   <div id="loadingOverlay" class="overlay hidden" aria-live="polite" aria-busy="true">
-    <div class="card overlay-card">
+    <div class="ai-river" aria-hidden="true">
+      <pre id="aiRiver" class="ai-river-text"></pre>
+    </div>
+
+    <div class="card overlay-card overlay-foreground">
       <div class="row" style="margin: 0;">
         <div class="spinner" aria-hidden="true"></div>
         <div>
@@ -91,6 +95,7 @@
       const form = document.getElementById("generateForm");
       const overlay = document.getElementById("loadingOverlay");
       const note = document.getElementById("loadingNote");
+      const riverEl = document.getElementById("aiRiver");
       const btn = document.getElementById("generateBtn");
       const levelSelect = document.getElementById("levelSelect");
       const targetCount = document.getElementById("targetCount");
@@ -109,6 +114,68 @@
         });
       }
 
+      async function postStream() {
+        const fd = new FormData(form);
+        const resp = await fetch("/simulations/generate_stream", {
+          method: "POST",
+          headers: { "Accept": "text/event-stream" },
+          body: fd,
+        });
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => "");
+          throw new Error(text || `HTTP ${resp.status}`);
+        }
+        if (!resp.body) throw new Error("Streaming not supported by this browser.");
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let riverText = "";
+
+        const appendRiver = (chunk) => {
+          if (!riverEl) return;
+          riverText += chunk;
+          if (riverText.length > 24000) riverText = riverText.slice(-24000);
+          riverEl.textContent = riverText;
+        };
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          buf = buf.replace(/\r\n/g, "\n");
+
+          let idx;
+          while ((idx = buf.indexOf("\n\n")) >= 0) {
+            const raw = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            const lines = raw.split("\n");
+            for (const line of lines) {
+              if (!line.startsWith("data:")) continue;
+              const data = line.slice(5).trim();
+              if (!data) continue;
+              let msg;
+              try {
+                msg = JSON.parse(data);
+              } catch {
+                continue;
+              }
+              if (msg.t === "delta" && typeof msg.c === "string") {
+                appendRiver(msg.c);
+              } else if (msg.t === "note" && typeof msg.msg === "string") {
+                if (note) note.textContent = msg.msg;
+              } else if (msg.t === "done" && typeof msg.sim_id === "number") {
+                window.location.href = `/simulations/${msg.sim_id}`;
+                return;
+              } else if (msg.t === "error" && typeof msg.msg === "string") {
+                throw new Error(msg.msg);
+              }
+            }
+          }
+        }
+        throw new Error("连接已结束，但未收到完成信号。");
+      }
+
       form.addEventListener("submit", (e) => {
         e.preventDefault();
         collectWordIds();
@@ -120,8 +187,19 @@
 
         overlay.classList.remove("hidden");
         if (btn) btn.disabled = true;
+        if (riverEl) riverEl.textContent = "";
 
-        setTimeout(() => form.submit(), 60);
+        const supportsStreaming = !!(window.fetch && window.ReadableStream && window.TextDecoder);
+        if (!supportsStreaming) {
+          setTimeout(() => form.submit(), 60);
+          return;
+        }
+
+        postStream().catch((err) => {
+          if (note) note.textContent = `生成失败：${err?.message || String(err)}`;
+          overlay.classList.add("hidden");
+          if (btn) btn.disabled = false;
+        });
       });
     })();
   </script>
