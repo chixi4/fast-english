@@ -59,8 +59,10 @@
       <div class="muted">预计用时：<span class="mono">{{ est_minutes }}</span> 分钟</div>
     </form>
 
+    <div class="fullbleed divider-bar"></div>
+
     <div class="card" style="margin-top: 12px;">
-      <div class="card-k">今天待学</div>
+      <div class="card-k today-k">今天待学</div>
       <div class="card-v">{{ due_count }}</div>
       <div class="muted">计划内总卡片：<span class="mono">{{ total }}</span></div>
       <div class="actions" style="margin-top: 12px;">
@@ -71,5 +73,7 @@
         {% endif %}
       </div>
     </div>
+
+    <div class="fullbleed divider-tail"></div>
   {% endif %}
 {% endblock %}

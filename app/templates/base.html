@@ -10,9 +10,6 @@
     <header class="topbar">
       <div class="container topbar-inner">
         <div class="brand">
-          {% if request and request.url.path != "/" %}
-            <a class="back-link" href="javascript:history.back()">← 返回</a>
-          {% endif %}
           <a href="/">Vocabulary Study</a>
         </div>
         <nav class="nav">
@@ -23,11 +20,13 @@
         </nav>
       </div>
     </header>
+
     <main class="container">
       {% block content %}{% endblock %}
     </main>
     <footer class="container footer">
       <div class="muted"></div>
     </footer>
+
   </body>
 </html>

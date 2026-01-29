@@ -41,9 +41,6 @@ def list_sources() -> list[WordbookSource]:
     hf_home = "https://github.com/arstgit/high-frequency-vocabulary"
     hf_license = "MIT (arstgit/high-frequency-vocabulary)"
 
-    cet_home = "https://github.com/JavaProgrammerLB/cet-word-list"
-    cet_license = "MIT (JavaProgrammerLB/cet-word-list)"
-
     return [
         # ECDICT tag-based packs
         WordbookSource(
@@ -72,25 +69,25 @@ def list_sources() -> list[WordbookSource]:
         ),
         WordbookSource(
             id="ecdict_cet4",
-            name="CET-4（ECDICT）",
+            name="四级词汇（ECDICT）",
             description="从 ECDICT 的 tag=cet4 生成",
             homepage=ecdict_home,
             license=ecdict_license,
             url=ecdict_csv,
             kind="ecdict_tag",
-            default_deck="CET-4（ECDICT）",
+            default_deck="四级词汇（ECDICT）",
             default_tags="cet4, ECDICT",
             config={"tag": "cet4"},
         ),
         WordbookSource(
             id="ecdict_cet6",
-            name="CET-6（ECDICT）",
+            name="六级词汇（ECDICT）",
             description="从 ECDICT 的 tag=cet6 生成",
             homepage=ecdict_home,
             license=ecdict_license,
             url=ecdict_csv,
             kind="ecdict_tag",
-            default_deck="CET-6（ECDICT）",
+            default_deck="六级词汇（ECDICT）",
             default_tags="cet6, ECDICT",
             config={"tag": "cet6"},
         ),
@@ -166,18 +163,6 @@ def list_sources() -> list[WordbookSource]:
             default_deck="高频 30k（arstgit）",
             default_tags="frequency, 30k",
             config={"split_slash": False},
-        ),
-        WordbookSource(
-            id="cet_union_5641",
-            name="四/六级词表（5641，JavaProgrammerLB）",
-            description="CET4+6 合集（word-only）",
-            homepage=cet_home,
-            license=cet_license,
-            url="https://raw.githubusercontent.com/JavaProgrammerLB/cet-word-list/master/word-list.txt",
-            kind="plain_words",
-            default_deck="四/六级词表（5641）",
-            default_tags="cet4, cet6",
-            config={"split_slash": True},
         ),
     ]
 
