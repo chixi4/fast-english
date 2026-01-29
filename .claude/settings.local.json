@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-Process:*)",
+      "Bash(Select-Object:*)",
+      "Bash(tasklist)",
+      "Bash(curl:*)",
+      "Bash(.venv/Scripts/python.exe:*)"
+    ]
+  }
+}

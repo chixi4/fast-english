@@ -12,12 +12,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fsrs import Rating
 from sqlalchemy import func
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.ai import AiClient, LEVEL_GUIDE
 from app.config import get_settings
 from app.db import get_session, init_db
 from app.models import Deck, DeckWord, Mistake, Simulation, SrsCard, SrsReviewLog, Word
 from app.srs import apply_fsrs_to_db, db_card_to_fsrs, get_scheduler, parse_rating
+from app.wordbooks import get_source, list_sources, load_rows
 
 
 load_dotenv()
@@ -103,6 +105,19 @@ def _wants_html(request: Request) -> bool:
 
 @app.exception_handler(HTTPException)
 def http_exception_handler(request: Request, exc: HTTPException):
+    if _wants_html(request):
+        return templates.TemplateResponse(
+            request,
+            "error.html",
+            {"status_code": exc.status_code, "detail": exc.detail},
+            status_code=exc.status_code,
+        )
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(StarletteHTTPException)
+def starlette_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    # Handle framework-level 404s (route not found), etc.
     if _wants_html(request):
         return templates.TemplateResponse(
             request,
@@ -228,6 +243,166 @@ def deck_detail(request: Request, deck_id: int):
         request,
         "deck_detail.html",
         {"deck": deck, "items": items, "due_count": int(due_count or 0), "state_map": {1: "Learning", 2: "Review", 3: "Relearning"}},
+    )
+
+
+@app.get("/library", response_class=HTMLResponse)
+def wordbook_library(request: Request):
+    sources = list_sources()
+    return templates.TemplateResponse(request, "library.html", {"sources": sources})
+
+
+def _dedupe_import_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    # Keep first occurrence (case-insensitive by term)
+    deduped: dict[str, dict[str, str]] = {}
+    for r in rows:
+        term = (r.get("term") or "").strip()
+        if not term:
+            continue
+        key = term.lower()
+        if key not in deduped:
+            deduped[key] = r
+    return list(deduped.values())
+
+
+def _apply_rows_to_db(
+    rows: list[dict[str, str]],
+    *,
+    on_conflict: str,
+    errors: list[str],
+) -> tuple[int, int, int, int, list[str]]:
+    inserted = 0
+    updated = 0
+    linked = 0
+    skipped = 0
+
+    on_conflict = (on_conflict or "skip").strip().lower()
+    if on_conflict not in {"skip", "update"}:
+        raise HTTPException(status_code=400, detail="on_conflict must be skip|update")
+
+    with get_session() as session:
+        terms = [(r.get("term") or "").strip() for r in rows if (r.get("term") or "").strip()]
+        terms_lower = [t.lower() for t in terms]
+        existing_terms = [t for (t,) in session.query(Word.term).filter(func.lower(Word.term).in_(terms_lower)).all()]
+        existing_lower = {t.lower(): t for t in existing_terms}
+
+        deck_cache: dict[str, Deck] = {}
+
+        for idx, r in enumerate(rows, start=1):
+            term = (r.get("term") or "").strip()
+            if not term:
+                errors.append(f"Row {idx}: empty term")
+                continue
+
+            existing_term = existing_lower.get(term.lower())
+            word: Word | None = None
+            if existing_term is not None:
+                word = session.query(Word).filter(Word.term == existing_term).first()
+                if word is None:
+                    word = session.query(Word).filter(func.lower(Word.term) == term.lower()).first()
+
+            if word is not None and on_conflict == "skip":
+                skipped += 1
+            else:
+                try:
+                    if word is None:
+                        word = Word(
+                            term=term,
+                            definition=(r.get("definition") or "").strip(),
+                            example=(r.get("example") or "").strip(),
+                            tags=(r.get("tags") or "").strip(),
+                        )
+                        session.add(word)
+                        session.flush()
+                        _ensure_srs_card(session, word.id)
+                        inserted += 1
+                    else:
+                        new_def = (r.get("definition") or "").strip()
+                        new_ex = (r.get("example") or "").strip()
+                        new_tags = (r.get("tags") or "").strip()
+                        if new_def:
+                            word.definition = new_def
+                        if new_ex:
+                            word.example = new_ex
+                        if new_tags:
+                            word.tags = _merge_tags(word.tags, new_tags)
+                        _ensure_srs_card(session, word.id)
+                        updated += 1
+                except Exception as e:
+                    errors.append(f"Row {idx}: failed to import '{term}': {e}")
+                    continue
+
+            deck_n = (r.get("deck") or "").strip()
+            if deck_n and word is not None:
+                try:
+                    deck = deck_cache.get(deck_n)
+                    if deck is None:
+                        deck = _ensure_deck(session, deck_n)
+                        deck_cache[deck_n] = deck
+                    link = (
+                        session.query(DeckWord)
+                        .filter(DeckWord.deck_id == deck.id, DeckWord.word_id == word.id)
+                        .first()
+                    )
+                    if not link:
+                        link = DeckWord(deck_id=deck.id, word_id=word.id)
+                        session.add(link)
+                    chap = (r.get("chapter") or "").strip()
+                    if chap:
+                        link.chapter = chap
+                    pos = (r.get("position") or "").strip()
+                    if pos.isdigit():
+                        link.position = int(pos)
+                    linked += 1
+                except Exception as e:
+                    errors.append(f"Row {idx}: failed to link deck '{deck_n}' for '{term}': {e}")
+
+    return inserted, updated, linked, skipped, errors
+
+
+@app.post("/library/import", response_class=HTMLResponse)
+async def import_wordbook(
+    request: Request,
+    source_id: str = Form(...),
+    deck_name: str = Form(""),
+    default_tags: str = Form(""),
+    on_conflict: str = Form("skip"),
+    force_download: int = Form(0),
+):
+    try:
+        source = get_source(source_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown wordbook source")
+
+    rows, warnings = await load_rows(source, force_download=bool(force_download))
+    if not rows:
+        raise HTTPException(status_code=400, detail="Wordbook source returned no rows")
+
+    deck = (deck_name or "").strip() or source.default_deck
+    merged_tags = _merge_tags(source.default_tags, default_tags)
+
+    for r in rows:
+        r["deck"] = (r.get("deck") or "").strip() or deck
+        r["tags"] = _merge_tags(r.get("tags", ""), merged_tags)
+
+    rows = _dedupe_import_rows(rows)
+
+    errors: list[str] = []
+    errors.extend([f"WARNING: {w}" for w in warnings])
+
+    inserted, updated, linked, skipped, errors = _apply_rows_to_db(rows, on_conflict=on_conflict, errors=errors)
+
+    return templates.TemplateResponse(
+        request,
+        "import_result.html",
+        {
+            "inserted": inserted,
+            "updated": updated,
+            "linked": linked,
+            "skipped": skipped,
+            "total": len(rows),
+            "errors": errors[:50],
+        },
     )
 
 

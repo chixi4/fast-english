@@ -17,6 +17,8 @@
    - 配置：填 `AI_API_KEY`，按需改 `AI_BASE_URL`/`AI_MODEL`
 3) 启动：
    - 推荐（在 PowerShell 里直接执行）：`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\run.ps1`
+   - 如果你不想处理 PowerShell 执行策略：直接运行 `run.cmd`
+   - 直接启动并自动打开词书库：`run-library.cmd`
    - 如果系统禁止运行 `.ps1`：依次执行
      - `python -m venv .venv`（仅第一次）
      - `.\\.venv\\Scripts\\python -m pip install -r requirements.txt`
@@ -37,6 +39,14 @@
 - `#tags: 高频, v1`
 - `#separator: tab|comma|semicolon|pipe`
 - `#columns: term,definition,example,tags,chapter,position`
+
+## 词书库（一键导入）
+打开 `http://127.0.0.1:8000/library`，选择词书并点击“一键导入”（下载后会缓存到 `data/wordbooks-cache`）。
+
+当前内置来源（均有明确开源许可）：
+- **ECDICT（MIT）**：中考/高考/CET4/CET6/考研/IELTS/TOEFL/GRE（按 tag 生成词书）
+- **high-frequency-vocabulary（MIT）**：高频 10k / 30k（word-only）
+- **cet-word-list（MIT）**：四/六级词表合集（word-only）
 
 ## 文档
 - `docs/IMPLEMENTATION.md`：完整实现文档（PRD/架构/数据模型/Prompt/迭代路线）

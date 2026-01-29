@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>词书库（开源/可下载）</h1>
+  <div class="muted">
+    这里的词书会从开源仓库下载并导入到本地数据库（会缓存到 <span class="mono">data/wordbooks-cache</span>）。
+    请遵守各词书来源的许可协议。
+  </div>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>词书</th>
+        <th>来源 / 许可</th>
+        <th>一键导入</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sources %}
+        <tr>
+          <td>
+            <div><strong>{{ s.name }}</strong></div>
+            <div class="muted">{{ s.description }}</div>
+          </td>
+          <td class="muted">
+            <div>{{ s.license }}</div>
+            <div><a href="{{ s.homepage }}" target="_blank" rel="noreferrer">仓库</a></div>
+          </td>
+          <td>
+            <form class="stack" method="post" action="/library/import">
+              <input type="hidden" name="source_id" value="{{ s.id }}" />
+              <label>导入到词书
+                <input name="deck_name" value="{{ s.default_deck }}" />
+              </label>
+              <label>默认标签（可选）
+                <input name="default_tags" value="{{ s.default_tags }}" />
+              </label>
+              <label>重复处理
+                <select name="on_conflict">
+                  <option value="skip" selected>跳过已存在</option>
+                  <option value="update">更新已存在（有值才覆盖）</option>
+                </select>
+              </label>
+              <label>
+                <span class="muted">重新下载</span>
+                <select name="force_download">
+                  <option value="0" selected>否（使用缓存）</option>
+                  <option value="1">是（强制下载）</option>
+                </select>
+              </label>
+              <button class="btn primary" type="submit">一键导入</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="actions">
+    <a class="btn" href="/words">手动导入/编辑</a>
+    <a class="btn" href="/decks">查看词书</a>
+    <a class="btn primary" href="/review">开始复习</a>
+  </div>
+{% endblock %}
+
