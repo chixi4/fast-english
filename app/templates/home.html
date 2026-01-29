@@ -8,23 +8,18 @@
 
   {% if word_count == 0 %}
     <div class="card">
-      <div class="big">1 分钟开始背词</div>
-      <p class="muted">先导入一个词书，然后把单词加入学习计划，我们会自动安排每日复习节奏。</p>
+      <div class="big">开始背词</div>
       <div class="actions">
         <a class="btn primary" href="/library">导入词书</a>
-        <a class="btn" href="/words">手动导入（高级）</a>
+        <a class="btn" href="/words">手动导入</a>
       </div>
     </div>
   {% elif total == 0 %}
     <div class="card">
-      <div class="big">还差一步：加入学习计划</div>
-      <p class="muted">
-        你已导入 <span class="mono">{{ word_count }}</span> 个词（<span class="mono">{{ deck_count }}</span> 本词书），
-        但还没有把它们加入“今日学习”。先从一个词书开始，每天加一点点就够了。
-      </p>
+      <div class="big">加入学习计划</div>
 
       <form class="stack" method="post" action="/plan/add">
-        <label>从词书加入新词
+        <label>从词书加入
           <select name="deck_id">
             {% for it in deck_items %}
               {% if it.word_count > 0 %}
@@ -35,17 +30,16 @@
             {% endfor %}
           </select>
         </label>
-        <label>加入数量（建议 10~30）
+        <label>加入数量
           <input type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" />
         </label>
         <input type="hidden" name="return_to" value="today" />
-        <button class="btn primary" type="submit">加入并开始今日学习</button>
+        <button class="btn primary" type="submit">开始学习</button>
       </form>
 
       <div class="actions">
-        <a class="btn" href="/library">导入更多词书</a>
-        <a class="btn" href="/decks">去词书管理</a>
-        <a class="btn" href="/words">手动导入/整理（高级）</a>
+        <a class="btn" href="/library">导入词书</a>
+        <a class="btn" href="/decks">管理词书</a>
       </div>
     </div>
   {% else %}
@@ -80,15 +74,13 @@
       {% else %}
         <a class="btn primary" href="/review">开始今日学习</a>
       {% endif %}
-      <a class="btn" href="/decks">切换/管理词书</a>
-      <a class="btn" href="/library">导入更多词书</a>
-      <a class="btn" href="/practice">去练习</a>
+      <a class="btn" href="/decks">管理词书</a>
+      <a class="btn" href="/practice">练习</a>
     </div>
 
     {% if unplanned_word_count > 0 %}
       <div class="card" style="margin-top: 12px;">
         <div class="big">继续加入新词</div>
-        <p class="muted">还有 <span class="mono">{{ unplanned_word_count }}</span> 个词未加入学习计划。</p>
         <form class="row" method="post" action="/plan/add">
           <select name="deck_id">
             {% for it in deck_items %}
@@ -103,7 +95,6 @@
           <input type="hidden" name="return_to" value="today" />
           <button class="btn" type="submit">加入</button>
         </form>
-        <div class="muted">提示：新词加得越多，未来复习量越大；建议先保证“复习清零”。</div>
       </div>
     {% endif %}
 
@@ -111,20 +102,17 @@
       <div class="card">
         <div class="card-k">错词</div>
         <div class="card-v">{{ mistake_count }}</div>
-        <div class="muted">把“不会”的词收集起来，用它们生成一篇短文做题巩固。</div>
         <div class="actions"><a class="btn" href="/mistakes">错词强化</a></div>
       </div>
       <div class="card">
         <div class="card-k">实战短文</div>
         <div class="card-v">{{ sim_count }}</div>
-        <div class="muted">最近生成的短文练习记录。</div>
-        <div class="actions"><a class="btn" href="/simulations">查看实战短文</a></div>
+        <div class="actions"><a class="btn" href="/simulations">查看</a></div>
       </div>
       <div class="card">
-        <div class="card-k">高级</div>
+        <div class="card-k">数据</div>
         <div class="card-v">{{ deck_count }}/{{ word_count }}</div>
-        <div class="muted">词书/单词管理、导入导出、AI 配置。</div>
-        <div class="actions"><a class="btn" href="/settings">打开我的</a></div>
+        <div class="actions"><a class="btn" href="/settings">我的</a></div>
       </div>
     </div>
   {% endif %}

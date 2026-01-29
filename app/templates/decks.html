@@ -8,17 +8,16 @@
 
   <div class="card">
     <div class="big">快速开始</div>
-    <p class="muted">推荐从词书库一键导入：中考/高考/CET4/CET6/考研/雅思/托福/GRE。</p>
     <div class="actions">
-      <a class="btn primary" href="/library">去词书库导入</a>
-      <a class="btn" href="/review">开始今日学习</a>
+      <a class="btn primary" href="/library">导入词书</a>
+      <a class="btn" href="/review">开始学习</a>
     </div>
   </div>
 
-  <h2>新建空词书（可选）</h2>
+  <h2>新建词书</h2>
   <form class="stack" method="post" action="/decks">
     <label>名称<input name="name" required placeholder="例如：CET4-核心词" /></label>
-    <label>描述（可选）<textarea name="description" rows="2"></textarea></label>
+    <label>描述<textarea name="description" rows="2"></textarea></label>
     <button class="btn primary" type="submit">创建</button>
   </form>
 
@@ -27,8 +26,8 @@
     <thead>
       <tr>
         <th>名称</th>
-        <th>计划内/总词数</th>
-        <th>剩余未加入</th>
+        <th>计划/总词数</th>
+        <th>剩余</th>
         <th>到期</th>
         <th>新词</th>
         <th></th>
@@ -44,17 +43,15 @@
           <td class="mono">{{ item.new_count }}</td>
           <td>
             <div class="actions">
-              <a class="btn" href="/review?deck_id={{ item.deck.id }}">开始学习</a>
+              <a class="btn" href="/review?deck_id={{ item.deck.id }}">学习</a>
               {% if item.remaining_count > 0 %}
                 <form method="post" action="/decks/{{ item.deck.id }}/plan_add">
                   <input type="hidden" name="count" value="{{ daily_new_limit }}" />
                   <input type="hidden" name="return_to" value="today" />
-                  <button class="btn primary" type="submit">加入{{ daily_new_limit }}个</button>
+                  <button class="btn primary" type="submit">+{{ daily_new_limit }}</button>
                 </form>
-              {% else %}
-                <span class="muted">已全部加入</span>
               {% endif %}
-              <form method="post" action="/decks/{{ item.deck.id }}/delete" onsubmit="return confirm('删除词书 {{ item.deck.name }} ?（不会删除单词，只删除关联）')">
+              <form method="post" action="/decks/{{ item.deck.id }}/delete" onsubmit="return confirm('删除词书 {{ item.deck.name }} ?')">
                 <button class="btn danger" type="submit">删除</button>
               </form>
             </div>

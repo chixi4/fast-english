@@ -1,11 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
   <h1>错词强化</h1>
-  <p class="muted">
-    生成一篇“阅读短文 + 出题”的实战练习，训练你在语境中做题。
-    不想手动挑词？可以不勾选任何词，系统会自动从最近错词里挑选。
-    没有AI Key也可以用 <span class="mono">AI_MOCK=1</span> 跑通流程。
-  </p>
+  <p class="muted">生成短文+题目，在语境中巩固</p>
 
   {% if error %}
     <div class="card">
@@ -13,19 +9,15 @@
         <span class="badge bad">生成失败</span>
         <span class="muted">{{ error }}</span>
       </div>
-      <div class="muted" style="margin-top: 8px;">
-        提示：可以减少目标词数量、切换难度，或去“我的”检查 AI 配置。
-      </div>
     </div>
   {% endif %}
 
   {% if items|length == 0 %}
     <div class="card">
       <div class="big">还没有错词</div>
-      <p class="muted">先去“今日学习”背一会儿，点几次“不认识/Again”，这里就会自动收集。</p>
+      <p class="muted">先去"今日学习"背词，标记"不认识"后会自动收集</p>
       <div class="actions">
-        <a class="btn primary" href="/review">去今日学习</a>
-        <a class="btn" href="/decks">去词书</a>
+        <a class="btn primary" href="/review">去学习</a>
       </div>
     </div>
   {% else %}
@@ -33,12 +25,12 @@
     <label>难度
       <select name="level" id="levelSelect">
         {% for lv in levels %}
-          <option value="{{ lv }}" {% if selected_level == lv %}selected{% endif %}>{{ lv }} - {{ level_guide[lv] }}</option>
+          <option value="{{ lv }}" {% if selected_level == lv %}selected{% endif %}>{{ lv }}</option>
         {% endfor %}
       </select>
     </label>
 
-    <label>本次目标词数量（建议 8~12）
+    <label>目标词数量
       <input type="number" name="target_count" id="targetCount" value="{{ target_count }}" min="6" max="14" />
     </label>
 
@@ -50,18 +42,16 @@
     </label>
 
     <input type="hidden" name="word_ids" id="word_ids" value="" />
-    <button class="btn primary" id="generateBtn" type="submit">生成实战短文</button>
-    <div class="muted">不勾选任何词：自动选词；勾选后：按勾选生成。</div>
+    <button class="btn primary" id="generateBtn" type="submit">生成短文</button>
 
     <details id="manualPicker">
-      <summary class="muted">手动挑词（可选，展开后勾选）</summary>
+      <summary class="muted">手动挑词（可选）</summary>
       <table class="table">
         <thead>
           <tr>
             <th></th>
-            <th>term</th>
-            <th>释义/备注</th>
-            <th>时间</th>
+            <th>单词</th>
+            <th>释义</th>
           </tr>
         </thead>
         <tbody>
@@ -70,7 +60,6 @@
               <td><input type="checkbox" class="word-check" data-word-id="{{ item.word.id }}" /></td>
               <td class="mono">{{ item.word.term }}</td>
               <td>{{ item.word.definition }}</td>
-              <td class="mono">{{ item.mistake.created_at }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -83,12 +72,9 @@
       <div class="row" style="margin: 0;">
         <div class="spinner" aria-hidden="true"></div>
         <div>
-          <div class="big" style="font-size: 26px;">正在生成…</div>
-          <div id="loadingNote" class="muted">这通常需要 10~30 秒，请不要刷新页面。</div>
+          <div class="big" style="font-size: 26px;">生成中...</div>
+          <div id="loadingNote" class="muted">请稍候</div>
         </div>
-      </div>
-      <div class="muted" style="margin-top: 10px;">
-        如果一直卡住：可能是 AI 配置/网络问题。可去“我的”检查，或开启 <span class="mono">AI_MOCK=1</span> 先跑通流程。
       </div>
     </div>
   </div>
@@ -129,13 +115,12 @@
 
         const ids = (document.getElementById("word_ids").value || "").trim();
         if (note) {
-          note.textContent = ids ? "按勾选词生成中…" : "自动选词并生成中…";
+          note.textContent = ids ? "按勾选词生成..." : "自动选词生成...";
         }
 
         overlay.classList.remove("hidden");
         if (btn) btn.disabled = true;
 
-        // Let the browser paint the overlay before submitting.
         setTimeout(() => form.submit(), 60);
       });
     })();
