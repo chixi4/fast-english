@@ -5,8 +5,37 @@
     <p class="muted">{{ deck.description }}</p>
   {% endif %}
 
+  {% if toast %}
+    <div class="card">{{ toast }}</div>
+  {% endif %}
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-k">计划内/总词数</div>
+      <div class="card-v">{{ planned_count }}/{{ total_words }}</div>
+    </div>
+    <div class="card">
+      <div class="card-k">剩余未加入</div>
+      <div class="card-v">{{ remaining_count }}</div>
+    </div>
+    <div class="card">
+      <div class="card-k">到期复习 / 新词</div>
+      <div class="card-v">{{ due_count }} / {{ new_count }}</div>
+      <div class="muted">已学过：<span class="mono">{{ learned_count }}</span></div>
+    </div>
+  </div>
+
   <div class="actions">
-    <a class="btn primary" href="/review?deck_id={{ deck.id }}">开始复习（到期：{{ due_count }}）</a>
+    <a class="btn primary" href="/review?deck_id={{ deck.id }}">开始今日学习</a>
+    {% if remaining_count > 0 %}
+      <form class="row" method="post" action="/decks/{{ deck.id }}/plan_add">
+        <input type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" style="max-width: 120px;" />
+        <input type="hidden" name="return_to" value="deck" />
+        <button class="btn primary" type="submit">加入学习计划</button>
+      </form>
+    {% else %}
+      <span class="muted">已全部加入学习计划</span>
+    {% endif %}
     <a class="btn" href="/library">导入更多词书</a>
     <a class="btn" href="/words">手动导入/添加（高级）</a>
   </div>
@@ -17,6 +46,7 @@
       <tr>
         <th>term</th>
         <th>章节</th>
+        <th>计划</th>
         <th>到期时间</th>
         <th>状态</th>
         <th>正确/错误</th>
@@ -27,8 +57,15 @@
         <tr>
           <td class="mono">{{ item.word.term }}</td>
           <td class="mono">{{ item.link.chapter }}</td>
-          <td class="mono">{{ item.card.due_at }}</td>
-          <td class="mono">{{ state_map.get(item.card.state, item.card.state) }}</td>
+          <td>
+            {% if item.card %}
+              <span class="badge ok">已加入</span>
+            {% else %}
+              <span class="badge">未加入</span>
+            {% endif %}
+          </td>
+          <td class="mono">{% if item.card %}{{ item.card.due_at }}{% else %}-{% endif %}</td>
+          <td class="mono">{% if item.card %}{{ state_map.get(item.card.state, item.card.state) }}{% else %}-{% endif %}</td>
           <td class="mono">{{ item.word.correct_count }}/{{ item.word.wrong_count }}</td>
         </tr>
       {% endfor %}

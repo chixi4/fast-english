@@ -30,6 +30,11 @@
     <label>默认标签（可选）
       <input name="default_tags" placeholder="例如：CET4, 高频" />
     </label>
+    <label class="row">
+      <input type="checkbox" name="add_to_plan" value="1" />
+      <span>导入后加入学习计划（会出现在“今日学习”里）</span>
+    </label>
+    <div class="muted">不勾选：只入库/入词书，不会立刻增加今日复习量；可在“今日/词书”里再分批加入。</div>
     <label>重复处理
       <select name="on_conflict">
         <option value="skip" selected>跳过已存在</option>

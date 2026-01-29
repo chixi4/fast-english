@@ -2,6 +2,10 @@
 {% block content %}
   <h1>今日学习</h1>
 
+  {% if toast %}
+    <div class="card">{{ toast }}</div>
+  {% endif %}
+
   <form class="row" method="get" action="/review">
     <select name="deck_id" onchange="this.form.submit()">
       <option value="0">全部词书</option>
@@ -15,36 +19,113 @@
     {% endif %}
   </form>
 
-  {% if total == 0 %}
-    <p class="muted">还没有单词，先去 <a href="/library">词书库</a> 一键导入一个词书吧。</p>
+  {% if word_count == 0 %}
+    <div class="card">
+      <div class="big">还没有单词</div>
+      <p class="muted">先去 <a href="/library">词书库</a> 一键导入一个词书。</p>
+      <div class="actions">
+        <a class="btn primary" href="/library">去导入词书</a>
+        <a class="btn" href="/words">手动导入（高级）</a>
+      </div>
+    </div>
+  {% elif total == 0 %}
+    <div class="card">
+      <div class="big">还差一步：加入学习计划</div>
+      <p class="muted">
+        {% if deck_id %}
+          词书「{{ deck_name }}」共有 <span class="mono">{{ deck_word_count }}</span> 个词，但还没加入“今日学习”。
+        {% else %}
+          你已导入单词，但还没把它们加入“今日学习”。
+        {% endif %}
+        先从一个词书开始，每天加入 10~30 个就够了。
+      </p>
+
+      {% if deck_id %}
+        <form class="row" method="post" action="/decks/{{ deck_id }}/plan_add">
+          <input type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" style="max-width: 120px;" />
+          <input type="hidden" name="return_to" value="review" />
+          <button class="btn primary" type="submit">加入并开始</button>
+          <a class="btn" href="/decks/{{ deck_id }}">去词书详情</a>
+        </form>
+      {% else %}
+        <form class="stack" method="post" action="/plan/add">
+          <label>从词书加入新词
+            <select name="deck_id">
+              {% for d in decks %}
+                <option value="{{ d.id }}">{{ d.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>加入数量（建议 10~30）
+            <input type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" />
+          </label>
+          <input type="hidden" name="return_to" value="review" />
+          <button class="btn primary" type="submit">加入并开始</button>
+        </form>
+        <div class="actions" style="margin-top: 10px;">
+          <a class="btn" href="/">去今日</a>
+          <a class="btn" href="/decks">去词书管理</a>
+        </div>
+      {% endif %}
+    </div>
   {% elif not word %}
     <p class="muted">当前没有到期的卡片。可以稍后再来，或去 <a href="/mistakes">错词强化</a> 做实战短文。</p>
   {% else %}
     <div class="card">
       <div class="big mono">{{ word.term }}</div>
-      {% if chapter %}
-        <div class="muted">章节：<span class="mono">{{ chapter }}</span></div>
-      {% endif %}
-      {% if word.definition %}
-        <div class="muted">{{ word.definition }}</div>
-      {% endif %}
-      {% if word.example %}
-        <div class="example">{{ word.example }}</div>
-      {% endif %}
-      <div class="muted">状态：<span class="mono">{{ state_map.get(card.state, card.state) }}</span> | 到期：<span class="mono">{{ card.due_at }}</span></div>
-      <div class="muted">正确/错误：{{ word.correct_count }}/{{ word.wrong_count }}</div>
+      <button class="btn primary" type="button" id="revealBtn">显示答案</button>
+
+      <div id="answer" style="display:none; margin-top: 12px;">
+        {% if chapter %}
+          <div class="muted">章节：<span class="mono">{{ chapter }}</span></div>
+        {% endif %}
+        {% if word.definition %}
+          <div class="muted">{{ word.definition }}</div>
+        {% endif %}
+        {% if word.example %}
+          <div class="example">{{ word.example }}</div>
+        {% endif %}
+        <div class="muted">状态：<span class="mono">{{ state_map.get(card.state, card.state) }}</span> | 到期：<span class="mono">{{ card.due_at }}</span></div>
+        <div class="muted">正确/错误：{{ word.correct_count }}/{{ word.wrong_count }}</div>
+
+        <div class="actions" style="margin-top: 10px;">
+          <form method="post" action="/review/{{ word.id }}">
+            {% if deck_id %}
+              <input type="hidden" name="deck_id" value="{{ deck_id }}" />
+            {% endif %}
+            <input type="hidden" name="duration_ms" id="duration_ms" value="" />
+            <button class="btn danger" type="submit" name="rating" value="again">不认识</button>
+            <button class="btn" type="submit" name="rating" value="hard">不确定</button>
+            <button class="btn primary" type="submit" name="rating" value="good">认识</button>
+            <button class="btn" type="submit" name="rating" value="easy">很熟</button>
+          </form>
+        </div>
+      </div>
     </div>
 
-    <div class="actions">
-      <form method="post" action="/review/{{ word.id }}">
-        {% if deck_id %}
-          <input type="hidden" name="deck_id" value="{{ deck_id }}" />
-        {% endif %}
-        <button class="btn danger" type="submit" name="rating" value="again">不会</button>
-        <button class="btn" type="submit" name="rating" value="hard">模糊</button>
-        <button class="btn primary" type="submit" name="rating" value="good">会</button>
-        <button class="btn" type="submit" name="rating" value="easy">很熟</button>
-      </form>
-    </div>
+    <script>
+      (() => {
+        const startedAt = Date.now();
+        const revealBtn = document.getElementById('revealBtn');
+        const answer = document.getElementById('answer');
+        const durationMs = document.getElementById('duration_ms');
+
+        if (revealBtn && answer) {
+          revealBtn.addEventListener('click', () => {
+            answer.style.display = 'block';
+            revealBtn.style.display = 'none';
+            const first = answer.querySelector('button[type=\"submit\"]');
+            if (first) first.focus();
+          });
+        }
+
+        const buttons = document.querySelectorAll('form[action^=\"/review/\"] button[type=\"submit\"]');
+        buttons.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            if (durationMs) durationMs.value = String(Date.now() - startedAt);
+          });
+        });
+      })();
+    </script>
   {% endif %}
 {% endblock %}

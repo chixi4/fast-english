@@ -6,6 +6,7 @@
 - 单词库：添加/删除/搜索
 - 词书（Deck）：创建/查看/按词书复习
 - 批量导入：支持 `deck/chapter/position`、文件头元信息（`#deck/#tags/#separator/#columns`）、重复策略（跳过/更新）
+- 学习计划：导入词书只入库；按词书分批“加入学习计划”后才会出现在“今日学习”
 - 复习：FSRS 间隔重复（Again/Hard/Good/Easy 评分 → 自动排程），Again 会进入错词篮
 - 错词篮：选择错词 + 难度，一键生成“短文 + 题目”，并支持判分
 - 支持 OpenAI-Compatible（`/chat/completions`）以及 `AI_MOCK=1` 的离线演示
@@ -33,7 +34,7 @@
 ## 导入词书（Deck）
 1) 打开 `http://127.0.0.1:8000/words`
 2) 在“批量导入”里填写“导入到词书（可选）”，也可以在文件头里写 `#deck:`
-3) 上传文件或粘贴文本后导入；导入完成后去 `http://127.0.0.1:8000/decks` 查看并开始复习
+3) 上传文件或粘贴文本后导入；导入完成后去 `http://127.0.0.1:8000/` 或 `http://127.0.0.1:8000/decks` 把单词分批加入学习计划，再开始复习
 
 支持字段：
 - `term,definition,example,tags,deck,chapter,position`（CSV/TSV，可带表头）
@@ -47,6 +48,7 @@
 
 ## 词书库（一键导入）
 打开 `http://127.0.0.1:8000/library`，选择词书并点击“一键导入”（下载后会缓存到 `data/wordbooks-cache`）。
+导入完成后回到“今日”，把单词加入学习计划（建议每天 10~30 个），再开始学习。
 
 当前内置来源（均有明确开源许可）：
 - **ECDICT（MIT）**：中考/高考/CET4/CET6/考研/IELTS/TOEFL/GRE（按 tag 生成词书）

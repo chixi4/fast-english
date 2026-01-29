@@ -2,6 +2,10 @@
 {% block content %}
   <h1>词书</h1>
 
+  {% if toast %}
+    <div class="card">{{ toast }}</div>
+  {% endif %}
+
   <div class="card">
     <div class="big">快速开始</div>
     <p class="muted">推荐从词书库一键导入：中考/高考/CET4/CET6/考研/雅思/托福/GRE。</p>
@@ -23,7 +27,8 @@
     <thead>
       <tr>
         <th>名称</th>
-        <th>总词数</th>
+        <th>计划内/总词数</th>
+        <th>剩余未加入</th>
         <th>到期</th>
         <th>新词</th>
         <th></th>
@@ -33,12 +38,22 @@
       {% for item in items %}
         <tr>
           <td><a href="/decks/{{ item.deck.id }}">{{ item.deck.name }}</a></td>
-          <td class="mono">{{ item.word_count }}</td>
+          <td class="mono">{{ item.planned_count }}/{{ item.word_count }}</td>
+          <td class="mono">{{ item.remaining_count }}</td>
           <td class="mono">{{ item.due_count }}</td>
           <td class="mono">{{ item.new_count }}</td>
           <td>
             <div class="actions">
               <a class="btn" href="/review?deck_id={{ item.deck.id }}">开始学习</a>
+              {% if item.remaining_count > 0 %}
+                <form method="post" action="/decks/{{ item.deck.id }}/plan_add">
+                  <input type="hidden" name="count" value="{{ daily_new_limit }}" />
+                  <input type="hidden" name="return_to" value="today" />
+                  <button class="btn primary" type="submit">加入{{ daily_new_limit }}个</button>
+                </form>
+              {% else %}
+                <span class="muted">已全部加入</span>
+              {% endif %}
               <form method="post" action="/decks/{{ item.deck.id }}/delete" onsubmit="return confirm('删除词书 {{ item.deck.name }} ?（不会删除单词，只删除关联）')">
                 <button class="btn danger" type="submit">删除</button>
               </form>
