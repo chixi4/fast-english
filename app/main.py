@@ -4,6 +4,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -141,18 +142,80 @@ def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request):
+def home(request: Request, deck_id: int | None = None, toast: str | None = None):
+    if deck_id == 0:
+        deck_id = None
+    now = _utcnow()
     with get_session() as session:
-        word_count = session.query(Word).count()
-        mistake_count = session.query(Mistake).count()
-        sim_count = session.query(Simulation).count()
+        decks = session.query(Deck).order_by(Deck.name.asc()).all()
+        word_count = int(session.query(Word).count())
+        deck_count = int(session.query(Deck).count())
+
+        base_q = session.query(SrsCard)
+        if deck_id is not None:
+            base_q = (
+                base_q.join(DeckWord, DeckWord.word_id == SrsCard.word_id)
+                .filter(DeckWord.deck_id == deck_id)
+            )
+
+        total = int(base_q.count())
+        due_count = int(base_q.filter(SrsCard.due_at <= now).count())
+        new_count = int(base_q.filter(SrsCard.last_reviewed_at.is_(None)).count())
+
+        mistake_count = int(session.query(Mistake).count())
+        sim_count = int(session.query(Simulation).count())
+
+    est_minutes = max(1, int(round((due_count + min(new_count, 20)) * 0.25))) if total > 0 else 0
+
     return templates.TemplateResponse(
         request,
         "home.html",
         {
+            "decks": decks,
+            "deck_id": deck_id,
+            "deck_count": deck_count,
             "word_count": word_count,
+            "total": total,
+            "due_count": due_count,
+            "new_count": new_count,
+            "est_minutes": est_minutes,
             "mistake_count": mistake_count,
             "sim_count": sim_count,
+            "toast": (toast or "").strip(),
+        },
+    )
+
+
+@app.get("/practice", response_class=HTMLResponse)
+def practice(request: Request):
+    with get_session() as session:
+        mistake_count = int(session.query(Mistake).count())
+        sim_count = int(session.query(Simulation).count())
+        word_count = int(session.query(Word).count())
+    return templates.TemplateResponse(
+        request,
+        "practice.html",
+        {"mistake_count": mistake_count, "sim_count": sim_count, "word_count": word_count},
+    )
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request):
+    s = get_settings()
+    ai_status = "Mock（离线演示）" if s.ai_mock else ("已配置" if s.ai_api_key else "未配置")
+    with get_session() as session:
+        word_count = int(session.query(Word).count())
+        deck_count = int(session.query(Deck).count())
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        {
+            "ai_status": ai_status,
+            "ai_base_url": s.ai_base_url,
+            "ai_model": s.ai_model,
+            "db_path": str(s.db_path),
+            "word_count": word_count,
+            "deck_count": deck_count,
         },
     )
 
@@ -368,6 +431,7 @@ async def import_wordbook(
     default_tags: str = Form(""),
     on_conflict: str = Form("skip"),
     force_download: int = Form(0),
+    after: str = Form("today"),
 ):
     try:
         source = get_source(source_id)
@@ -391,6 +455,18 @@ async def import_wordbook(
     errors.extend([f"WARNING: {w}" for w in warnings])
 
     inserted, updated, linked, skipped, errors = _apply_rows_to_db(rows, on_conflict=on_conflict, errors=errors)
+
+    after = (after or "").strip().lower()
+    if after == "today":
+        deck_id: int | None = None
+        with get_session() as session:
+            d = session.query(Deck).filter(Deck.name == deck).first()
+            deck_id = d.id if d else None
+        toast_msg = f"已导入：{deck}（新增{inserted}，更新{updated}，跳过{skipped}）"
+        qs = {"toast": toast_msg}
+        if deck_id is not None:
+            qs["deck_id"] = str(deck_id)
+        return _redirect("/?" + urlencode(qs))
 
     return templates.TemplateResponse(
         request,

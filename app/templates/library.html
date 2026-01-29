@@ -2,8 +2,8 @@
 {% block content %}
   <h1>词书库（开源/可下载）</h1>
   <div class="muted">
-    这里的词书会从开源仓库下载并导入到本地数据库（会缓存到 <span class="mono">data/wordbooks-cache</span>）。
-    请遵守各词书来源的许可协议。
+    一键导入常见考试词书（会下载并缓存到 <span class="mono">data/wordbooks-cache</span>）。
+    需要更精细的格式/字段，请到 <a href="/words">单词库</a> 使用“批量导入（高级）”。
   </div>
 
   <table class="table">
@@ -28,26 +28,39 @@
           <td>
             <form class="stack" method="post" action="/library/import">
               <input type="hidden" name="source_id" value="{{ s.id }}" />
-              <label>导入到词书
-                <input name="deck_name" value="{{ s.default_deck }}" />
-              </label>
-              <label>默认标签（可选）
-                <input name="default_tags" value="{{ s.default_tags }}" />
-              </label>
-              <label>重复处理
-                <select name="on_conflict">
-                  <option value="skip" selected>跳过已存在</option>
-                  <option value="update">更新已存在（有值才覆盖）</option>
-                </select>
-              </label>
-              <label>
-                <span class="muted">重新下载</span>
-                <select name="force_download">
-                  <option value="0" selected>否（使用缓存）</option>
-                  <option value="1">是（强制下载）</option>
-                </select>
-              </label>
-              <button class="btn primary" type="submit">一键导入</button>
+              <button class="btn primary" type="submit">导入并开始</button>
+
+              <details>
+                <summary class="muted">高级选项</summary>
+                <div class="stack" style="margin-top: 10px;">
+                  <label>导入到词书
+                    <input name="deck_name" value="{{ s.default_deck }}" />
+                  </label>
+                  <label>默认标签（可选）
+                    <input name="default_tags" value="{{ s.default_tags }}" />
+                  </label>
+                  <label>重复处理
+                    <select name="on_conflict">
+                      <option value="skip" selected>跳过已存在</option>
+                      <option value="update">更新已存在（有值才覆盖）</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span class="muted">重新下载</span>
+                    <select name="force_download">
+                      <option value="0" selected>否（使用缓存）</option>
+                      <option value="1">是（强制下载）</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span class="muted">导入后</span>
+                    <select name="after">
+                      <option value="today" selected>回到今日</option>
+                      <option value="result">显示导入结果</option>
+                    </select>
+                  </label>
+                </div>
+              </details>
             </form>
           </td>
         </tr>
@@ -61,4 +74,3 @@
     <a class="btn primary" href="/review">开始复习</a>
   </div>
 {% endblock %}
-

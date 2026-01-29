@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>单词库</h1>
+  <h1>单词库（高级）</h1>
+  <p class="muted">新手推荐先去 <a href="/library">词书库</a> 一键导入；这里只保留手动管理与自定义导入。</p>
 
   <form class="row" method="get" action="/words">
     <input name="q" placeholder="搜索term..." value="{{ q }}" />
