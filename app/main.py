@@ -1164,7 +1164,36 @@ def submit_review(
 
 
 @app.get("/mistakes", response_class=HTMLResponse)
-def mistakes(request: Request):
+def mistakes(
+    request: Request,
+    level: str | None = None,
+    target_count: int | None = None,
+    length_mode: str = "standard",
+    error: str | None = None,
+):
+    def _default_k(lv: str) -> int:
+        mapping = {"junior": 8, "senior": 9, "cet4": 10, "cet6": 10, "kaoyan": 12}
+        return int(mapping.get(lv, 10))
+
+    def _norm_level(lv: str | None) -> str:
+        lv = (lv or "").strip().lower()
+        return lv if lv in LEVEL_GUIDE else "cet4"
+
+    def _norm_length_mode(mode: str | None) -> str:
+        mode = (mode or "standard").strip().lower()
+        return mode if mode in {"standard", "long"} else "standard"
+
+    selected_level = _norm_level(level)
+    selected_length_mode = _norm_length_mode(length_mode)
+    if target_count is None:
+        selected_target_count = _default_k(selected_level)
+    else:
+        try:
+            selected_target_count = int(target_count)
+        except Exception:
+            selected_target_count = _default_k(selected_level)
+        selected_target_count = max(6, min(14, selected_target_count))
+
     with get_session() as session:
         # Get recent mistakes with word info (simple approach for MVP)
         rows = (
@@ -1178,7 +1207,15 @@ def mistakes(request: Request):
     return templates.TemplateResponse(
         request,
         "mistakes.html",
-        {"items": items, "levels": list(LEVEL_GUIDE.keys()), "level_guide": LEVEL_GUIDE},
+        {
+            "items": items,
+            "levels": list(LEVEL_GUIDE.keys()),
+            "level_guide": LEVEL_GUIDE,
+            "selected_level": selected_level,
+            "target_count": selected_target_count,
+            "length_mode": selected_length_mode,
+            "error": (error or "").strip(),
+        },
     )
 
 
@@ -1187,27 +1224,126 @@ async def generate_simulation(
     request: Request,
     level: str = Form(...),
     word_ids: str = Form(""),
+    target_count: int = Form(0),
+    length_mode: str = Form("standard"),
 ):
-    ids = [int(x) for x in word_ids.split(",") if x.strip().isdigit()]
+    def _default_k(lv: str) -> int:
+        mapping = {"junior": 8, "senior": 9, "cet4": 10, "cet6": 10, "kaoyan": 12}
+        return int(mapping.get(lv, 10))
+
+    def _norm_level(lv: str | None) -> str:
+        lv = (lv or "").strip().lower()
+        return lv if lv in LEVEL_GUIDE else "cet4"
+
+    def _norm_length_mode(mode: str | None) -> str:
+        mode = (mode or "standard").strip().lower()
+        return mode if mode in {"standard", "long"} else "standard"
+
+    def _min_words(lv: str, mode: str) -> int:
+        standard = {"junior": 220, "senior": 300, "cet4": 360, "cet6": 480, "kaoyan": 600}
+        long = {"junior": 320, "senior": 420, "cet4": 520, "cet6": 680, "kaoyan": 820}
+        return int((long if mode == "long" else standard).get(lv, 360))
+
+    def _paragraph_range(target_words: int) -> tuple[int, int]:
+        if target_words <= 280:
+            return (3, 4)
+        if target_words <= 520:
+            return (4, 6)
+        return (5, 8)
+
+    selected_level = _norm_level(level)
+    selected_length_mode = _norm_length_mode(length_mode)
+    try:
+        k = int(target_count) if int(target_count) > 0 else _default_k(selected_level)
+    except Exception:
+        k = _default_k(selected_level)
+    k = max(6, min(14, k))
+
+    ids = [int(x) for x in (word_ids or "").split(",") if x.strip().isdigit()]
     ids = list(dict.fromkeys(ids))  # dedupe keep order
-    if not ids:
-        raise HTTPException(status_code=400, detail="请选择至少1个错词")
+
+    # Manual selection is allowed, but keep an upper bound for quality.
+    max_manual = 14
+    if len(ids) > max_manual:
+        ids = ids[:max_manual]
 
     with get_session() as session:
-        words = session.query(Word).filter(Word.id.in_(ids)).all()
+        words: list[Word] = []
+        if ids:
+            fetched = session.query(Word).filter(Word.id.in_(ids)).all()
+            by_id = {w.id: w for w in fetched}
+            words = [by_id[i] for i in ids if i in by_id]
+            if not words:
+                return mistakes(
+                    request,
+                    level=selected_level,
+                    target_count=k,
+                    length_mode=selected_length_mode,
+                    error="你勾选的单词已不存在（可能被删除）。请刷新后重试，或直接不勾选让系统自动选词。",
+                )
+        else:
+            # Auto-pick from recent mistakes (dedupe by word_id, then prefer higher wrong_count)
+            rows = (
+                session.query(Mistake, Word)
+                .join(Word, Mistake.word_id == Word.id)
+                .order_by(Mistake.id.desc())
+                .limit(600)
+                .all()
+            )
+            latest: dict[int, tuple[Word, datetime]] = {}
+            for m, w in rows:
+                if w.id not in latest:
+                    latest[w.id] = (w, m.created_at)
+
+            candidates = list(latest.values())
+            candidates.sort(key=lambda t: (t[0].wrong_count, t[1]), reverse=True)
+            words = [w for (w, _ts) in candidates[:k]]
+
     if not words:
-        raise HTTPException(status_code=404, detail="words not found")
+        return mistakes(
+            request,
+            level=selected_level,
+            target_count=k,
+            length_mode=selected_length_mode,
+            error="还没有错词可生成。先去“今日学习”里点几次“不认识/Again”。",
+        )
 
     terms = [w.term for w in words]
     term_notes = {w.term: (w.definition or w.example or "").strip() for w in words}
 
+    min_words = _min_words(selected_level, selected_length_mode)
+    target_words = max(min_words, len(terms) * 30)
+    lo = int(round(target_words * 0.9))
+    hi = int(round(target_words * 1.15))
+    p_lo, p_hi = _paragraph_range(target_words)
+    question_count = max(6, min(10, int(round(target_words / 60))))
+
     settings = get_settings()
     client = AiClient(settings=settings)
-    sim = await client.generate_simulation(level=level, terms=terms, term_notes=term_notes, question_count=6)
+    try:
+        sim = await client.generate_simulation(
+            level=selected_level,
+            terms=terms,
+            term_notes=term_notes,
+            passage_word_range=(lo, hi),
+            paragraph_range=(p_lo, p_hi),
+            question_count=question_count,
+        )
+    except Exception as e:
+        msg = str(e) or "AI generation failed"
+        if "Missing AI_API_KEY" in msg:
+            msg = "AI 未配置：请在 .env 配置 AI_API_KEY，或开启 AI_MOCK=1。"
+        return mistakes(
+            request,
+            level=selected_level,
+            target_count=k,
+            length_mode=selected_length_mode,
+            error=msg,
+        )
 
     with get_session() as session:
         row = Simulation(
-            level=level,
+            level=selected_level,
             target_terms_json=json.dumps(terms, ensure_ascii=False),
             passage=sim.passage,
             questions_json=sim.model_dump_json(ensure_ascii=False),

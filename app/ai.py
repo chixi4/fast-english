@@ -13,11 +13,11 @@ from app.config import Settings
 
 
 LEVEL_GUIDE: dict[str, str] = {
-    "junior": "初中：120-180词，句式简单，尽量少从句。",
-    "senior": "高中：180-260词，允许适量从句与转折。",
-    "cet4": "四级：220-320词，中等难度阅读风格，包含1-2个长句。",
-    "cet6": "六级：280-420词，更学术/新闻风格，包含多个长难句。",
-    "kaoyan": "考研：350-520词，更密集信息与抽象表达，长难句占比更高。",
+    "junior": "初中：220-320词，3-4段；句式简单，尽量少从句。",
+    "senior": "高中：300-420词，4-5段；允许适量从句与转折。",
+    "cet4": "四级：360-520词，4-6段；中等难度阅读风格，包含少量长句。",
+    "cet6": "六级：480-680词，5-7段；更学术/新闻风格，包含更多长难句。",
+    "kaoyan": "考研：600-820词，6-8段；信息密度更高，长难句占比更高。",
 }
 
 
@@ -73,10 +73,18 @@ class AiClient:
         level: str,
         terms: list[str],
         term_notes: dict[str, str],
+        passage_word_range: tuple[int, int] | None = None,
+        paragraph_range: tuple[int, int] | None = None,
         question_count: int = 6,
     ) -> GeneratedSimulation:
         if self.settings.ai_mock:
-            return _mock_simulation(level=level, terms=terms, question_count=question_count)
+            return _mock_simulation(
+                level=level,
+                terms=terms,
+                question_count=question_count,
+                passage_word_range=passage_word_range,
+                paragraph_range=paragraph_range,
+            )
         if not self.settings.ai_api_key:
             raise RuntimeError("Missing AI_API_KEY (or set AI_MOCK=1).")
 
@@ -109,11 +117,21 @@ class AiClient:
             "你是英语考试出题老师。你只输出严格的JSON对象，不要输出Markdown，不要输出多余文本。"
             "确保JSON可被json.loads解析。"
         )
+
+        length_hint = ""
+        if passage_word_range is not None:
+            lo, hi = passage_word_range
+            if paragraph_range is None:
+                paragraph_range = (4, 6)
+            p_lo, p_hi = paragraph_range
+            length_hint = f"短文长度（不含题目与选项）：约 {lo}-{hi} 词，分成 {p_lo}-{p_hi} 段。"
+
         user = f"""
 请用下面这组目标词写一篇短文，并基于短文出题（阅读理解 + 词汇题混合）。
 
 难度：{guide}
 硬性要求：
+0) {length_hint if length_hint else "短文长度要符合该难度常见阅读材料长度，段落分明。"}
 1) 短文必须自然包含每个目标词（大小写不敏感），不要生硬堆砌。
 2) 词汇题必须让学生在语境中判断含义/用法（不是死记硬背释义）。
 3) 题目总数 = {question_count}，每题4个选项（choices长度=4），answer_index为0-3。
@@ -202,13 +220,34 @@ class AiClient:
         raise RuntimeError(f"AI generation failed after retries: {last_err}") from last_err
 
 
-def _mock_simulation(*, level: str, terms: list[str], question_count: int) -> GeneratedSimulation:
+def _mock_simulation(
+    *,
+    level: str,
+    terms: list[str],
+    question_count: int,
+    passage_word_range: tuple[int, int] | None = None,
+    paragraph_range: tuple[int, int] | None = None,
+) -> GeneratedSimulation:
     passage_terms = ", ".join(terms)
-    passage = (
+    base = (
         f"This is a MOCK passage for level={level}. "
         f"It includes the target words: {passage_terms}. "
-        "Read carefully and answer the questions."
+        "Read carefully and answer the questions. "
     )
+    target_len = 260
+    if question_count >= 9:
+        target_len = 520
+    if question_count >= 10:
+        target_len = 680
+
+    if passage_word_range is not None:
+        lo, hi = passage_word_range
+        target_len = max(target_len, int((lo + hi) / 2))
+
+    words = base.split()
+    while len(words) < target_len:
+        words.extend(base.split())
+    passage = " ".join(words[:target_len])
     questions = []
     for i in range(question_count):
         t = terms[i % len(terms)] if terms else None
