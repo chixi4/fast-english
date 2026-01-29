@@ -1,59 +1,48 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>单词库（高级）</h1>
-  <p class="muted">新手推荐先去 <a href="/library">词书库</a> 一键导入；这里只保留手动管理与自定义导入。</p>
+  <h1>单词库</h1>
 
   <form class="row" method="get" action="/words">
-    <input name="q" placeholder="搜索term..." value="{{ q }}" />
+    <input name="q" placeholder="搜索..." value="{{ q }}" />
     <button class="btn" type="submit">搜索</button>
   </form>
 
   <h2>添加单词</h2>
   <form class="stack" method="post" action="/words">
-    <label>term（英文）<input name="term" required /></label>
-    <label>释义/备注（中文可）<textarea name="definition" rows="2"></textarea></label>
-    <label>例句（可选）<textarea name="example" rows="2"></textarea></label>
-    <label>标签（逗号分隔）<input name="tags" /></label>
-    <label>词书（可选）<input name="deck_name" list="deck_names" placeholder="例如：CET4-核心词" /></label>
-    <label>章节/单元（可选）<input name="chapter" placeholder="例如：Unit 1" /></label>
+    <label>单词<input name="term" required /></label>
+    <label>释义<textarea name="definition" rows="2"></textarea></label>
+    <label>例句<textarea name="example" rows="2"></textarea></label>
+    <label>标签<input name="tags" /></label>
+    <label>词书<input name="deck_name" list="deck_names" /></label>
+    <label>章节<input name="chapter" /></label>
     <button class="btn primary" type="submit">保存</button>
   </form>
 
   <h2>批量导入</h2>
-  <div class="actions">
-    <a class="btn" href="/library">去词书库一键导入</a>
-  </div>
   <form class="stack" method="post" action="/words/import" enctype="multipart/form-data">
-    <label>导入到词书（可选）
-      <input name="deck_name" list="deck_names" placeholder="例如：考研词汇-核心" />
+    <label>导入到词书
+      <input name="deck_name" list="deck_names" />
     </label>
-    <label>默认标签（可选）
-      <input name="default_tags" placeholder="例如：CET4, 高频" />
+    <label>默认标签
+      <input name="default_tags" />
     </label>
     <label class="row">
       <input type="checkbox" name="add_to_plan" value="1" />
-      <span>导入后加入学习计划（会出现在“今日学习”里）</span>
+      <span>导入后加入学习计划</span>
     </label>
-    <div class="muted">不勾选：只入库/入词书，不会立刻增加今日复习量；可在“今日/词书”里再分批加入。</div>
     <label>重复处理
       <select name="on_conflict">
         <option value="skip" selected>跳过已存在</option>
-        <option value="update">更新已存在（有值才覆盖）</option>
+        <option value="update">更新已存在</option>
       </select>
     </label>
-    <label>方式1：上传CSV/TSV/TXT（UTF-8优先）
+    <label>上传文件
       <input type="file" name="file" />
     </label>
-    <div class="muted">
-      支持格式：
-      <span class="mono">term,definition,example,tags,deck,chapter,position</span>（可带表头）或每行一个词；
-      推荐用 <span class="mono">TAB</span> 分隔避免释义里逗号冲突。也支持文件头元信息：
-      <span class="mono">#deck:</span> / <span class="mono">#tags:</span> / <span class="mono">#separator:</span> / <span class="mono">#columns:</span>
-    </div>
-    <label>方式2：直接粘贴（每行一个词，或用逗号/Tab分列）
-      <textarea name="text" rows="6" placeholder="#deck: CET4\n#tags: 高频\n#separator: tab\n#columns: term,definition,example,tags,chapter\nabandon\t放弃\tHe abandoned the plan.\t\tUnit 1\nvocabulary\t词汇\t\t\tUnit 1\nPneumoconiosis\t尘肺病\t\tmedical\tUnit 2"></textarea>
+    <label>或粘贴文本
+      <textarea name="text" rows="6" placeholder="term,definition,example..."></textarea>
     </label>
-    <button class="btn primary" type="submit">开始导入</button>
+    <button class="btn primary" type="submit">导入</button>
   </form>
 
   <datalist id="deck_names">
@@ -66,8 +55,8 @@
   <table class="table">
     <thead>
       <tr>
-        <th>term</th>
-        <th>释义/备注</th>
+        <th>单词</th>
+        <th>释义</th>
         <th>正确/错误</th>
         <th></th>
       </tr>

@@ -10,22 +10,19 @@
     <div class="card">
       <div class="card-k">AI 状态</div>
       <div class="card-v">{{ ai_status }}</div>
-      <div class="muted">Model：<span class="mono">{{ ai_model }}</span></div>
-      <div class="muted">Base URL：<span class="mono">{{ ai_base_url }}</span></div>
-      <div class="muted">在 <span class="mono">.env</span> 里配置 <span class="mono">AI_API_KEY</span> 或开启 <span class="mono">AI_MOCK=1</span>。</div>
+      <div class="muted">{{ ai_model }}</div>
     </div>
     <div class="card">
       <div class="card-k">学习计划</div>
-      <div class="card-v">New/Day：{{ plan_daily_new_limit }}</div>
-      <div class="muted">建议：10~30 新词/天；先复习再学新词。</div>
+      <div class="card-v">{{ plan_daily_new_limit }}/天</div>
       <form class="stack" method="post" action="/settings/plan" style="margin-top: 10px;">
         <label>每日新词上限
           <input type="number" name="daily_new_limit" min="1" max="200" value="{{ plan_daily_new_limit }}" />
         </label>
-        <label>每日复习上限（0=不限制）
+        <label>每日复习上限
           <input type="number" name="daily_review_limit" min="0" max="5000" value="{{ plan_daily_review_limit }}" />
         </label>
-        <label>到期超过阈值时暂停发新词（0=不暂停）
+        <label>到期超过阈值暂停新词
           <input type="number" name="suspend_new_when_due_over" min="0" max="5000" value="{{ plan_suspend_new_when_due_over }}" />
         </label>
         <button class="btn primary" type="submit">保存</button>
@@ -34,16 +31,14 @@
     <div class="card">
       <div class="card-k">数据</div>
       <div class="card-v">{{ deck_count }}/{{ word_count }}</div>
-      <div class="muted">DB：<span class="mono">{{ db_path }}</span></div>
       <div class="actions">
-        <a class="btn" href="/decks">管理词书</a>
-        <a class="btn" href="/library">词书库导入</a>
+        <a class="btn" href="/decks">词书</a>
+        <a class="btn" href="/library">导入</a>
       </div>
     </div>
     <div class="card">
-      <div class="card-k">高级入口</div>
+      <div class="card-k">高级</div>
       <div class="card-v">Tools</div>
-      <div class="muted">手动添加/批量导入、以及调试页面。</div>
       <div class="actions">
         <a class="btn" href="/words">单词库</a>
         <a class="btn" href="/simulations">实战短文</a>

@@ -15,17 +15,17 @@
       <div class="card-v">{{ updated }}</div>
     </div>
     <div class="card">
-      <div class="card-k">跳过（已存在）</div>
+      <div class="card-k">跳过</div>
       <div class="card-v">{{ skipped }}</div>
     </div>
     <div class="card">
-      <div class="card-k">已关联词书</div>
+      <div class="card-k">已关联</div>
       <div class="card-v">{{ linked }}</div>
     </div>
   </div>
 
   {% if errors and errors|length > 0 %}
-    <h2>提示/错误（最多显示50条）</h2>
+    <h2>提示</h2>
     <div class="card">
       <ul>
         {% for e in errors %}
@@ -36,10 +36,8 @@
   {% endif %}
 
   <div class="actions">
-    <a class="btn primary" href="/words">返回单词库</a>
+    <a class="btn primary" href="/">回到今日</a>
     <a class="btn" href="/decks">查看词书</a>
-    <a class="btn" href="/library">继续导入词书</a>
-    <a class="btn" href="/review">开始复习</a>
-    <a class="btn" href="/">回到今日</a>
+    <a class="btn" href="/library">继续导入</a>
   </div>
 {% endblock %}
