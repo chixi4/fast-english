@@ -2,6 +2,10 @@
 {% block content %}
   <h1>我的</h1>
 
+  {% if toast %}
+    <div class="card">{{ toast }}</div>
+  {% endif %}
+
   <div class="cards">
     <div class="card">
       <div class="card-k">AI 状态</div>
@@ -9,6 +13,23 @@
       <div class="muted">Model：<span class="mono">{{ ai_model }}</span></div>
       <div class="muted">Base URL：<span class="mono">{{ ai_base_url }}</span></div>
       <div class="muted">在 <span class="mono">.env</span> 里配置 <span class="mono">AI_API_KEY</span> 或开启 <span class="mono">AI_MOCK=1</span>。</div>
+    </div>
+    <div class="card">
+      <div class="card-k">学习计划</div>
+      <div class="card-v">New/Day：{{ plan_daily_new_limit }}</div>
+      <div class="muted">建议：10~30 新词/天；先复习再学新词。</div>
+      <form class="stack" method="post" action="/settings/plan" style="margin-top: 10px;">
+        <label>每日新词上限
+          <input type="number" name="daily_new_limit" min="1" max="200" value="{{ plan_daily_new_limit }}" />
+        </label>
+        <label>每日复习上限（0=不限制）
+          <input type="number" name="daily_review_limit" min="0" max="5000" value="{{ plan_daily_review_limit }}" />
+        </label>
+        <label>到期超过阈值时暂停发新词（0=不暂停）
+          <input type="number" name="suspend_new_when_due_over" min="0" max="5000" value="{{ plan_suspend_new_when_due_over }}" />
+        </label>
+        <button class="btn primary" type="submit">保存</button>
+      </form>
     </div>
     <div class="card">
       <div class="card-k">数据</div>

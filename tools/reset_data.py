@@ -51,9 +51,14 @@ def wipe_sqlite(db_path: Path) -> None:
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA busy_timeout=8000;")
 
+    existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()}
+
     tables = [
         "srs_review_logs",
         "srs_cards",
+        "plan_words",
+        "plan_decks",
+        "plans",
         "deck_words",
         "mistakes",
         "simulations",
@@ -66,6 +71,8 @@ def wipe_sqlite(db_path: Path) -> None:
         try:
             cur = conn.cursor()
             for t in tables:
+                if t not in existing_tables:
+                    continue
                 cur.execute(f"DELETE FROM {t};")
             conn.commit()
             last_err = None
@@ -104,4 +111,3 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))
-

@@ -9,10 +9,43 @@
   {% if word_count == 0 %}
     <div class="card">
       <div class="big">1 分钟开始背词</div>
-      <p class="muted">先导入一个词书，我们会自动安排每日复习与新词。</p>
+      <p class="muted">先导入一个词书，然后把单词加入学习计划，我们会自动安排每日复习节奏。</p>
       <div class="actions">
         <a class="btn primary" href="/library">导入词书</a>
         <a class="btn" href="/words">手动导入（高级）</a>
+      </div>
+    </div>
+  {% elif total == 0 %}
+    <div class="card">
+      <div class="big">还差一步：加入学习计划</div>
+      <p class="muted">
+        你已导入 <span class="mono">{{ word_count }}</span> 个词（<span class="mono">{{ deck_count }}</span> 本词书），
+        但还没有把它们加入“今日学习”。先从一个词书开始，每天加一点点就够了。
+      </p>
+
+      <form class="stack" method="post" action="/plan/add">
+        <label>从词书加入新词
+          <select name="deck_id">
+            {% for it in deck_items %}
+              {% if it.word_count > 0 %}
+                <option value="{{ it.deck.id }}" {% if suggested_deck_id == it.deck.id %}selected{% endif %}>
+                  {{ it.deck.name }}（剩余 {{ it.remaining_count }}）
+                </option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </label>
+        <label>加入数量（建议 10~30）
+          <input type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" />
+        </label>
+        <input type="hidden" name="return_to" value="today" />
+        <button class="btn primary" type="submit">加入并开始今日学习</button>
+      </form>
+
+      <div class="actions">
+        <a class="btn" href="/library">导入更多词书</a>
+        <a class="btn" href="/decks">去词书管理</a>
+        <a class="btn" href="/words">手动导入/整理（高级）</a>
       </div>
     </div>
   {% else %}
@@ -51,6 +84,28 @@
       <a class="btn" href="/library">导入更多词书</a>
       <a class="btn" href="/practice">去练习</a>
     </div>
+
+    {% if unplanned_word_count > 0 %}
+      <div class="card" style="margin-top: 12px;">
+        <div class="big">继续加入新词</div>
+        <p class="muted">还有 <span class="mono">{{ unplanned_word_count }}</span> 个词未加入学习计划。</p>
+        <form class="row" method="post" action="/plan/add">
+          <select name="deck_id">
+            {% for it in deck_items %}
+              {% if it.remaining_count > 0 %}
+                <option value="{{ it.deck.id }}" {% if suggested_deck_id == it.deck.id %}selected{% endif %}>
+                  {{ it.deck.name }}（剩余 {{ it.remaining_count }}）
+                </option>
+              {% endif %}
+            {% endfor %}
+          </select>
+          <input type="number" name="count" value="{{ quick_add_count }}" min="1" max="200" style="max-width: 120px;" />
+          <input type="hidden" name="return_to" value="today" />
+          <button class="btn" type="submit">加入</button>
+        </form>
+        <div class="muted">提示：新词加得越多，未来复习量越大；建议先保证“复习清零”。</div>
+      </div>
+    {% endif %}
 
     <div class="cards" style="margin-top: 12px;">
       <div class="card">

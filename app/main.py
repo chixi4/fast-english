@@ -18,7 +18,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.ai import AiClient, LEVEL_GUIDE
 from app.config import get_settings
 from app.db import get_session, init_db
-from app.models import Deck, DeckWord, Mistake, Simulation, SrsCard, SrsReviewLog, Word
+from app.models import Deck, DeckWord, Mistake, Plan, PlanDeck, PlanWord, Simulation, SrsCard, SrsReviewLog, Word
 from app.srs import apply_fsrs_to_db, db_card_to_fsrs, get_scheduler, parse_rating
 from app.wordbooks import get_source, list_sources, load_rows
 
@@ -83,20 +83,82 @@ def _ensure_srs_card(session, word_id: int) -> SrsCard:
     return card
 
 
-def _bootstrap_srs_cards() -> None:
-    # Create SRS cards for existing words from older DBs.
+def _ensure_default_plan(session) -> Plan:
+    plan = session.query(Plan).order_by(Plan.id.asc()).first()
+    if plan:
+        return plan
+    plan = Plan(name="默认计划", daily_new_limit=20, daily_review_limit=200, suspend_new_when_due_over=200)
+    session.add(plan)
+    session.flush()
+    return plan
+
+
+def _ensure_plan_deck(session, plan: Plan, deck_id: int) -> PlanDeck:
+    link = session.query(PlanDeck).filter(PlanDeck.plan_id == plan.id, PlanDeck.deck_id == deck_id).first()
+    if link:
+        return link
+    max_pri = session.query(func.max(PlanDeck.priority)).filter(PlanDeck.plan_id == plan.id).scalar()
+    pri = int(max_pri or 0)
+    link = PlanDeck(plan_id=plan.id, deck_id=deck_id, priority=pri + 1)
+    session.add(link)
+    session.flush()
+    return link
+
+
+def _ensure_plan_word(session, plan: Plan, word_id: int, source_deck_id: int | None) -> PlanWord:
+    pw = session.query(PlanWord).filter(PlanWord.plan_id == plan.id, PlanWord.word_id == word_id).first()
+    if pw:
+        if pw.source_deck_id is None and source_deck_id is not None:
+            pw.source_deck_id = source_deck_id
+        return pw
+    pw = PlanWord(plan_id=plan.id, word_id=word_id, source_deck_id=source_deck_id, status="active")
+    session.add(pw)
+    session.flush()
+    return pw
+
+
+def _bootstrap_plan_state() -> None:
+    """
+    Keep plan<>card consistency:
+    - For existing DBs: SrsCard exists => ensure PlanWord exists
+    - For plan words: ensure SrsCard exists
+    """
     with get_session() as session:
-        missing_ids = (
-            session.query(Word.id)
-            .outerjoin(SrsCard, SrsCard.word_id == Word.id)
-            .filter(SrsCard.word_id.is_(None))
+        plan = _ensure_default_plan(session)
+
+        # SrsCard -> PlanWord
+        missing_plan_words = (
+            session.query(SrsCard.word_id)
+            .outerjoin(
+                PlanWord,
+                (PlanWord.word_id == SrsCard.word_id) & (PlanWord.plan_id == plan.id),
+            )
+            .filter(PlanWord.word_id.is_(None))
             .all()
         )
-        for (wid,) in missing_ids:
+        for (wid,) in missing_plan_words:
+            src_deck_id = (
+                session.query(DeckWord.deck_id)
+                .filter(DeckWord.word_id == wid)
+                .order_by(DeckWord.id.asc())
+                .scalar()
+            )
+            if src_deck_id is not None:
+                _ensure_plan_deck(session, plan, int(src_deck_id))
+            session.add(PlanWord(plan_id=plan.id, word_id=wid, source_deck_id=src_deck_id, status="active"))
+
+        # PlanWord -> SrsCard
+        missing_cards = (
+            session.query(PlanWord.word_id)
+            .outerjoin(SrsCard, SrsCard.word_id == PlanWord.word_id)
+            .filter(PlanWord.plan_id == plan.id, SrsCard.word_id.is_(None))
+            .all()
+        )
+        for (wid,) in missing_cards:
             session.add(SrsCard(word_id=wid, due_at=_utcnow()))
 
 
-_bootstrap_srs_cards()
+_bootstrap_plan_state()
 
 
 def _wants_html(request: Request) -> bool:
@@ -147,9 +209,52 @@ def home(request: Request, deck_id: int | None = None, toast: str | None = None)
         deck_id = None
     now = _utcnow()
     with get_session() as session:
+        plan = _ensure_default_plan(session)
+        daily_new_limit = int(plan.daily_new_limit or 20)
+        quick_add_count = max(1, min(10, daily_new_limit))
+
         decks = session.query(Deck).order_by(Deck.name.asc()).all()
         word_count = int(session.query(Word).count())
         deck_count = int(session.query(Deck).count())
+
+        deck_word_counts = dict(
+            session.query(DeckWord.deck_id, func.count(DeckWord.word_id)).group_by(DeckWord.deck_id).all()
+        )
+        deck_planned_counts = dict(
+            session.query(DeckWord.deck_id, func.count(SrsCard.word_id))
+            .join(SrsCard, SrsCard.word_id == DeckWord.word_id)
+            .group_by(DeckWord.deck_id)
+            .all()
+        )
+        deck_items = []
+        for d in decks:
+            total_w = int(deck_word_counts.get(d.id, 0))
+            planned_w = int(deck_planned_counts.get(d.id, 0))
+            deck_items.append(
+                {
+                    "deck": d,
+                    "word_count": total_w,
+                    "planned_count": planned_w,
+                    "remaining_count": max(0, total_w - planned_w),
+                }
+            )
+
+        suggested_deck_id: int | None = deck_id
+        if suggested_deck_id is None:
+            for it in deck_items:
+                if it["remaining_count"] > 0:
+                    suggested_deck_id = it["deck"].id
+                    break
+        if suggested_deck_id is None and decks:
+            suggested_deck_id = decks[0].id
+
+        unplanned_word_count = int(
+            session.query(func.count(Word.id))
+            .outerjoin(SrsCard, SrsCard.word_id == Word.id)
+            .filter(SrsCard.word_id.is_(None))
+            .scalar()
+            or 0
+        )
 
         base_q = session.query(SrsCard)
         if deck_id is not None:
@@ -172,16 +277,21 @@ def home(request: Request, deck_id: int | None = None, toast: str | None = None)
         "home.html",
         {
             "decks": decks,
+            "deck_items": deck_items,
             "deck_id": deck_id,
+            "suggested_deck_id": suggested_deck_id,
             "deck_count": deck_count,
             "word_count": word_count,
             "total": total,
             "due_count": due_count,
             "new_count": new_count,
             "est_minutes": est_minutes,
+            "unplanned_word_count": unplanned_word_count,
             "mistake_count": mistake_count,
             "sim_count": sim_count,
             "toast": (toast or "").strip(),
+            "daily_new_limit": daily_new_limit,
+            "quick_add_count": quick_add_count,
         },
     )
 
@@ -200,10 +310,11 @@ def practice(request: Request):
 
 
 @app.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request):
+def settings_page(request: Request, toast: str | None = None):
     s = get_settings()
     ai_status = "Mock（离线演示）" if s.ai_mock else ("已配置" if s.ai_api_key else "未配置")
     with get_session() as session:
+        plan = _ensure_default_plan(session)
         word_count = int(session.query(Word).count())
         deck_count = int(session.query(Deck).count())
     return templates.TemplateResponse(
@@ -216,17 +327,56 @@ def settings_page(request: Request):
             "db_path": str(s.db_path),
             "word_count": word_count,
             "deck_count": deck_count,
+            "plan_daily_new_limit": int(plan.daily_new_limit),
+            "plan_daily_review_limit": int(plan.daily_review_limit),
+            "plan_suspend_new_when_due_over": int(plan.suspend_new_when_due_over),
+            "toast": (toast or "").strip(),
         },
     )
 
 
+@app.post("/settings/plan")
+def update_plan_settings(
+    daily_new_limit: int = Form(20),
+    daily_review_limit: int = Form(200),
+    suspend_new_when_due_over: int = Form(200),
+):
+    def _to_int(v: Any, *, name: str, lo: int, hi: int) -> int:
+        try:
+            n = int(v)
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"{name} must be an integer")
+        if n < lo or n > hi:
+            raise HTTPException(status_code=400, detail=f"{name} must be between {lo} and {hi}")
+        return n
+
+    new_limit = _to_int(daily_new_limit, name="daily_new_limit", lo=1, hi=200)
+    review_limit = _to_int(daily_review_limit, name="daily_review_limit", lo=0, hi=5000)
+    suspend_over = _to_int(suspend_new_when_due_over, name="suspend_new_when_due_over", lo=0, hi=5000)
+
+    with get_session() as session:
+        plan = _ensure_default_plan(session)
+        plan.daily_new_limit = new_limit
+        plan.daily_review_limit = review_limit
+        plan.suspend_new_when_due_over = suspend_over
+
+    return _redirect("/settings?" + urlencode({"toast": "已保存学习计划设置"}))
+
+
 @app.get("/decks", response_class=HTMLResponse)
-def list_decks(request: Request):
+def list_decks(request: Request, toast: str | None = None):
     now = _utcnow()
     with get_session() as session:
+        plan = _ensure_default_plan(session)
         decks = session.query(Deck).order_by(Deck.name.asc()).all()
         word_counts = dict(
             session.query(DeckWord.deck_id, func.count(DeckWord.word_id)).group_by(DeckWord.deck_id).all()
+        )
+        planned_counts = dict(
+            session.query(DeckWord.deck_id, func.count(SrsCard.word_id))
+            .join(SrsCard, SrsCard.word_id == DeckWord.word_id)
+            .group_by(DeckWord.deck_id)
+            .all()
         )
         due_counts = dict(
             session.query(DeckWord.deck_id, func.count(SrsCard.word_id))
@@ -245,15 +395,23 @@ def list_decks(request: Request):
 
     items = []
     for d in decks:
+        total_words = int(word_counts.get(d.id, 0))
+        planned_words = int(planned_counts.get(d.id, 0))
         items.append(
             {
                 "deck": d,
-                "word_count": int(word_counts.get(d.id, 0)),
+                "word_count": total_words,
+                "planned_count": planned_words,
+                "remaining_count": max(0, total_words - planned_words),
                 "due_count": int(due_counts.get(d.id, 0)),
                 "new_count": int(new_counts.get(d.id, 0)),
             }
         )
-    return templates.TemplateResponse(request, "decks.html", {"items": items})
+    return templates.TemplateResponse(
+        request,
+        "decks.html",
+        {"items": items, "toast": (toast or "").strip(), "daily_new_limit": int(plan.daily_new_limit or 20)},
+    )
 
 
 @app.post("/decks")
@@ -280,32 +438,71 @@ def delete_deck(deck_id: int):
 
 
 @app.get("/decks/{deck_id}", response_class=HTMLResponse)
-def deck_detail(request: Request, deck_id: int):
+def deck_detail(request: Request, deck_id: int, toast: str | None = None):
     now = _utcnow()
     with get_session() as session:
+        plan = _ensure_default_plan(session)
         deck = session.get(Deck, deck_id)
         if not deck:
             raise HTTPException(status_code=404, detail="not found")
-        rows = (
-            session.query(DeckWord, Word, SrsCard)
-            .join(Word, Word.id == DeckWord.word_id)
-            .join(SrsCard, SrsCard.word_id == Word.id)
+
+        total_words = int(session.query(func.count(DeckWord.word_id)).filter(DeckWord.deck_id == deck_id).scalar() or 0)
+        planned_count = int(
+            session.query(func.count(SrsCard.word_id))
+            .join(DeckWord, DeckWord.word_id == SrsCard.word_id)
             .filter(DeckWord.deck_id == deck_id)
-            .order_by(SrsCard.due_at.asc(), Word.term.asc())
-            .limit(300)
-            .all()
+            .scalar()
+            or 0
         )
-        due_count = (
+        learned_count = int(
+            session.query(func.count(SrsCard.word_id))
+            .join(DeckWord, DeckWord.word_id == SrsCard.word_id)
+            .filter(DeckWord.deck_id == deck_id, SrsCard.last_reviewed_at.is_not(None))
+            .scalar()
+            or 0
+        )
+        due_count = int(
             session.query(func.count(SrsCard.word_id))
             .join(DeckWord, DeckWord.word_id == SrsCard.word_id)
             .filter(DeckWord.deck_id == deck_id, SrsCard.due_at <= now)
             .scalar()
+            or 0
         )
+        new_count = int(
+            session.query(func.count(SrsCard.word_id))
+            .join(DeckWord, DeckWord.word_id == SrsCard.word_id)
+            .filter(DeckWord.deck_id == deck_id, SrsCard.last_reviewed_at.is_(None))
+            .scalar()
+            or 0
+        )
+
+        rows = (
+            session.query(DeckWord, Word, SrsCard)
+            .join(Word, Word.id == DeckWord.word_id)
+            .outerjoin(SrsCard, SrsCard.word_id == Word.id)
+            .filter(DeckWord.deck_id == deck_id)
+            .order_by(DeckWord.position.asc(), Word.term.asc())
+            .limit(300)
+            .all()
+        )
+
     items = [{"link": dw, "word": w, "card": c} for (dw, w, c) in rows]
     return templates.TemplateResponse(
         request,
         "deck_detail.html",
-        {"deck": deck, "items": items, "due_count": int(due_count or 0), "state_map": {1: "Learning", 2: "Review", 3: "Relearning"}},
+        {
+            "deck": deck,
+            "items": items,
+            "toast": (toast or "").strip(),
+            "total_words": total_words,
+            "planned_count": planned_count,
+            "remaining_count": max(0, total_words - planned_count),
+            "learned_count": learned_count,
+            "due_count": due_count,
+            "new_count": new_count,
+            "daily_new_limit": int(plan.daily_new_limit or 20),
+            "state_map": {1: "Learning", 2: "Review", 3: "Relearning"},
+        },
     )
 
 
@@ -313,6 +510,83 @@ def deck_detail(request: Request, deck_id: int):
 def wordbook_library(request: Request):
     sources = list_sources()
     return templates.TemplateResponse(request, "library.html", {"sources": sources})
+
+
+def _add_next_words_to_plan(session, *, deck_id: int, count: int) -> tuple[str, int, int]:
+    deck = session.get(Deck, deck_id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="deck not found")
+
+    plan = _ensure_default_plan(session)
+    _ensure_plan_deck(session, plan, deck_id)
+
+    planned_ids_subq = session.query(PlanWord.word_id).filter(PlanWord.plan_id == plan.id).subquery()
+    rows = (
+        session.query(DeckWord.word_id)
+        .join(Word, Word.id == DeckWord.word_id)
+        .filter(DeckWord.deck_id == deck_id, ~DeckWord.word_id.in_(planned_ids_subq))
+        .order_by(DeckWord.position.asc(), Word.term.asc())
+        .limit(count)
+        .all()
+    )
+    word_ids = [int(wid) for (wid,) in rows]
+
+    now = _utcnow()
+    for wid in word_ids:
+        _ensure_plan_word(session, plan, wid, deck_id)
+        if session.get(SrsCard, wid) is None:
+            session.add(SrsCard(word_id=wid, due_at=now))
+
+    total_words = int(session.query(func.count(DeckWord.word_id)).filter(DeckWord.deck_id == deck_id).scalar() or 0)
+    planned_count = int(
+        session.query(func.count(SrsCard.word_id))
+        .join(DeckWord, DeckWord.word_id == SrsCard.word_id)
+        .filter(DeckWord.deck_id == deck_id)
+        .scalar()
+        or 0
+    )
+    remaining = max(0, total_words - planned_count)
+    return deck.name, len(word_ids), remaining
+
+
+@app.post("/plan/add")
+def add_to_plan(
+    deck_id: int = Form(...),
+    count: int = Form(20),
+    return_to: str = Form("today"),
+):
+    try:
+        count = int(count)
+    except Exception:
+        raise HTTPException(status_code=400, detail="count must be an integer")
+    if count < 1 or count > 500:
+        raise HTTPException(status_code=400, detail="count must be between 1 and 500")
+
+    with get_session() as session:
+        deck_name, added, remaining = _add_next_words_to_plan(session, deck_id=int(deck_id), count=count)
+
+    if added > 0:
+        toast = f"已加入学习计划：{deck_name} +{added}（剩余 {remaining}）"
+    else:
+        toast = f"{deck_name} 没有可加入的新词（可能已全部加入计划）"
+
+    return_to = (return_to or "today").strip().lower()
+    if return_to == "deck":
+        return _redirect("/decks/" + str(deck_id) + "?" + urlencode({"toast": toast}))
+    if return_to == "decks":
+        return _redirect("/decks?" + urlencode({"toast": toast}))
+    if return_to == "review":
+        return _redirect("/review?" + urlencode({"deck_id": str(deck_id), "toast": toast}))
+    return _redirect("/?" + urlencode({"deck_id": str(deck_id), "toast": toast}))
+
+
+@app.post("/decks/{deck_id}/plan_add")
+def add_deck_to_plan(
+    deck_id: int,
+    count: int = Form(20),
+    return_to: str = Form("today"),
+):
+    return add_to_plan(deck_id=deck_id, count=count, return_to=return_to)
 
 
 def _dedupe_import_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -333,6 +607,7 @@ def _apply_rows_to_db(
     *,
     on_conflict: str,
     errors: list[str],
+    add_to_plan: bool = False,
 ) -> tuple[int, int, int, int, list[str]]:
     inserted = 0
     updated = 0
@@ -344,6 +619,7 @@ def _apply_rows_to_db(
         raise HTTPException(status_code=400, detail="on_conflict must be skip|update")
 
     with get_session() as session:
+        plan: Plan | None = _ensure_default_plan(session) if add_to_plan else None
         terms = [(r.get("term") or "").strip() for r in rows if (r.get("term") or "").strip()]
         terms_lower = [t.lower() for t in terms]
         existing_terms = [t for (t,) in session.query(Word.term).filter(func.lower(Word.term).in_(terms_lower)).all()]
@@ -377,7 +653,6 @@ def _apply_rows_to_db(
                         )
                         session.add(word)
                         session.flush()
-                        _ensure_srs_card(session, word.id)
                         inserted += 1
                     else:
                         new_def = (r.get("definition") or "").strip()
@@ -389,19 +664,20 @@ def _apply_rows_to_db(
                             word.example = new_ex
                         if new_tags:
                             word.tags = _merge_tags(word.tags, new_tags)
-                        _ensure_srs_card(session, word.id)
                         updated += 1
                 except Exception as e:
                     errors.append(f"Row {idx}: failed to import '{term}': {e}")
                     continue
 
             deck_n = (r.get("deck") or "").strip()
+            source_deck_id: int | None = None
             if deck_n and word is not None:
                 try:
                     deck = deck_cache.get(deck_n)
                     if deck is None:
                         deck = _ensure_deck(session, deck_n)
                         deck_cache[deck_n] = deck
+                    source_deck_id = int(deck.id)
                     link = (
                         session.query(DeckWord)
                         .filter(DeckWord.deck_id == deck.id, DeckWord.word_id == word.id)
@@ -419,6 +695,15 @@ def _apply_rows_to_db(
                     linked += 1
                 except Exception as e:
                     errors.append(f"Row {idx}: failed to link deck '{deck_n}' for '{term}': {e}")
+
+            if add_to_plan and word is not None and plan is not None:
+                try:
+                    if source_deck_id is not None:
+                        _ensure_plan_deck(session, plan, source_deck_id)
+                    _ensure_plan_word(session, plan, word.id, source_deck_id)
+                    _ensure_srs_card(session, word.id)
+                except Exception as e:
+                    errors.append(f"Row {idx}: failed to add '{term}' to plan: {e}")
 
     return inserted, updated, linked, skipped, errors
 
@@ -513,12 +798,18 @@ def add_word(
         word = Word(term=term, definition=definition.strip(), example=example.strip(), tags=tags.strip())
         session.add(word)
         session.flush()
-        _ensure_srs_card(session, word.id)
+        plan = _ensure_default_plan(session)
+        source_deck_id: int | None = None
         if deck_name.strip():
             deck = _ensure_deck(session, deck_name)
+            source_deck_id = int(deck.id)
             link = session.query(DeckWord).filter(DeckWord.deck_id == deck.id, DeckWord.word_id == word.id).first()
             if not link:
                 session.add(DeckWord(deck_id=deck.id, word_id=word.id, chapter=chapter.strip()))
+            _ensure_plan_deck(session, plan, source_deck_id)
+
+        _ensure_plan_word(session, plan, word.id, source_deck_id)
+        _ensure_srs_card(session, word.id)
     return _redirect("/words")
 
 
@@ -685,6 +976,7 @@ async def import_words(
     file: UploadFile | None = File(None),
     deck_name: str = Form(""),
     default_tags: str = Form(""),
+    add_to_plan: int = Form(0),
     on_conflict: str = Form("skip"),
 ):
     content = text or ""
@@ -729,105 +1021,15 @@ async def import_words(
             r["chapter"] = file_chapter
         r["tags"] = _merge_tags(r.get("tags", ""), merged_default_tags)
 
-    # Dedupe (keep first occurrence)
-    deduped: dict[str, dict[str, str]] = {}
-    for r in rows:
-        term = (r.get("term") or "").strip()
-        if not term:
-            continue
-        key = term.lower()
-        if key not in deduped:
-            deduped[key] = r
-    rows = list(deduped.values())
+    rows = _dedupe_import_rows(rows)
 
-    inserted = 0
-    updated = 0
-    linked = 0
-    skipped = 0
     errors: list[str] = list(parse_errors)
-
-    on_conflict = (on_conflict or "skip").strip().lower()
-    if on_conflict not in {"skip", "update"}:
-        raise HTTPException(status_code=400, detail="on_conflict must be skip|update")
-
-    with get_session() as session:
-        terms = [(r.get("term") or "").strip() for r in rows if (r.get("term") or "").strip()]
-        terms_lower = [t.lower() for t in terms]
-        existing_terms = [t for (t,) in session.query(Word.term).filter(func.lower(Word.term).in_(terms_lower)).all()]
-        existing_lower = {t.lower(): t for t in existing_terms}
-
-        deck_cache: dict[str, Deck] = {}
-
-        for idx, r in enumerate(rows, start=1):
-            term = (r.get("term") or "").strip()
-            if not term:
-                errors.append(f"第{idx}条：term为空")
-                continue
-
-            existing_term = existing_lower.get(term.lower())
-            word: Word | None = None
-            if existing_term is not None:
-                word = session.query(Word).filter(Word.term == existing_term).first()
-                if word is None:
-                    word = session.query(Word).filter(func.lower(Word.term) == term.lower()).first()
-
-            if word is not None and on_conflict == "skip":
-                skipped += 1
-            else:
-                try:
-                    if word is None:
-                        word = Word(
-                            term=term,
-                            definition=(r.get("definition") or "").strip(),
-                            example=(r.get("example") or "").strip(),
-                            tags=(r.get("tags") or "").strip(),
-                        )
-                        session.add(word)
-                        session.flush()
-                        _ensure_srs_card(session, word.id)
-                        inserted += 1
-                    else:
-                        new_def = (r.get("definition") or "").strip()
-                        new_ex = (r.get("example") or "").strip()
-                        new_tags = (r.get("tags") or "").strip()
-                        if new_def:
-                            word.definition = new_def
-                        if new_ex:
-                            word.example = new_ex
-                        if new_tags:
-                            word.tags = _merge_tags(word.tags, new_tags)
-                        _ensure_srs_card(session, word.id)
-                        updated += 1
-                except Exception as e:
-                    errors.append(f"第{idx}条：{term} 导入失败：{e}")
-                    continue
-
-            # Link to deck (optional)
-            deck_n = (r.get("deck") or "").strip()
-            if deck_n and word is not None:
-                try:
-                    deck = deck_cache.get(deck_n)
-                    if deck is None:
-                        deck = _ensure_deck(session, deck_n)
-                        deck_cache[deck_n] = deck
-                    link = (
-                        session.query(DeckWord)
-                        .filter(DeckWord.deck_id == deck.id, DeckWord.word_id == word.id)
-                        .first()
-                    )
-                    if not link:
-                        link = DeckWord(deck_id=deck.id, word_id=word.id)
-                        session.add(link)
-                    chap = (r.get("chapter") or "").strip()
-                    if chap:
-                        link.chapter = chap
-                    pos = (r.get("position") or "").strip()
-                    if pos.isdigit():
-                        link.position = int(pos)
-                    linked += 1
-                except Exception as e:
-                    errors.append(f"第{idx}条：{term} 关联词书失败：{e}")
-
+    inserted, updated, linked, skipped, errors = _apply_rows_to_db(
+        rows,
+        on_conflict=on_conflict,
+        errors=errors,
+        add_to_plan=bool(add_to_plan),
+    )
     return templates.TemplateResponse(
         request,
         "import_result.html",
@@ -853,12 +1055,24 @@ def delete_word(word_id: int):
 
 
 @app.get("/review", response_class=HTMLResponse)
-def review(request: Request, deck_id: int | None = None):
+def review(request: Request, deck_id: int | None = None, toast: str | None = None):
     if deck_id == 0:
         deck_id = None
     now = _utcnow()
     with get_session() as session:
         decks = session.query(Deck).order_by(Deck.name.asc()).all()
+        plan = _ensure_default_plan(session)
+
+        word_count = int(session.query(func.count(Word.id)).scalar() or 0)
+
+        deck_name = ""
+        deck_word_count = word_count
+        if deck_id is not None:
+            deck = session.get(Deck, deck_id)
+            deck_name = deck.name if deck else ""
+            deck_word_count = int(
+                session.query(func.count(DeckWord.word_id)).filter(DeckWord.deck_id == deck_id).scalar() or 0
+            )
 
         base_q = session.query(Word, SrsCard).join(SrsCard, SrsCard.word_id == Word.id)
         if deck_id is not None:
@@ -894,6 +1108,11 @@ def review(request: Request, deck_id: int | None = None):
             "due_count": due_count,
             "total": total,
             "next_due_at": next_due_at,
+            "word_count": word_count,
+            "deck_word_count": deck_word_count,
+            "deck_name": deck_name,
+            "toast": (toast or "").strip(),
+            "daily_new_limit": int(plan.daily_new_limit or 20),
             "state_map": {1: "Learning", 2: "Review", 3: "Relearning"},
         },
     )

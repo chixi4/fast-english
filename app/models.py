@@ -107,3 +107,52 @@ class SrsReviewLog(Base):
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     card: Mapped[SrsCard] = relationship(back_populates="review_logs")
+
+
+class Plan(Base):
+    __tablename__ = "plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+
+    daily_new_limit: Mapped[int] = mapped_column(Integer, default=20)
+    daily_review_limit: Mapped[int] = mapped_column(Integer, default=200)
+    suspend_new_when_due_over: Mapped[int] = mapped_column(Integer, default=200)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    deck_links: Mapped[list["PlanDeck"]] = relationship(back_populates="plan", cascade="all, delete-orphan")
+    word_links: Mapped[list["PlanWord"]] = relationship(back_populates="plan", cascade="all, delete-orphan")
+
+
+class PlanDeck(Base):
+    __tablename__ = "plan_decks"
+    __table_args__ = (UniqueConstraint("plan_id", "deck_id", name="uq_plan_deck"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"), index=True)
+    deck_id: Mapped[int] = mapped_column(ForeignKey("decks.id"), index=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    plan: Mapped[Plan] = relationship(back_populates="deck_links")
+    deck: Mapped[Deck] = relationship()
+
+
+class PlanWord(Base):
+    __tablename__ = "plan_words"
+    __table_args__ = (UniqueConstraint("plan_id", "word_id", name="uq_plan_word"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"), index=True)
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), index=True)
+    source_deck_id: Mapped[int | None] = mapped_column(ForeignKey("decks.id"), index=True, nullable=True)
+
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active|paused|done
+    added_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    plan: Mapped[Plan] = relationship(back_populates="word_links")
+    word: Mapped[Word] = relationship()
+    source_deck: Mapped[Deck | None] = relationship(foreign_keys=[source_deck_id])

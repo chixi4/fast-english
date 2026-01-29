@@ -9,7 +9,7 @@ if not exist "%PY%" (
 )
 
 echo This will wipe ALL local app data in the SQLite DB.
-echo (Words, decks, reviews, mistakes, simulations)
+echo (Words, decks, plan, reviews, mistakes, simulations)
 echo.
 
 set "DB=%APP_DB_PATH%"
@@ -26,4 +26,3 @@ if /I not "%CONFIRM%"=="YES" (
 
 echo.
 echo Done. You can restart the server and refresh the page.
-
