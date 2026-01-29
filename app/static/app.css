@@ -90,5 +90,26 @@ label { display: grid; gap: 6px; color: var(--muted); }
 .badge.ok { border-color: rgba(45, 212, 191, 0.5); color: var(--ok); }
 .badge.bad { border-color: rgba(255, 77, 109, 0.6); color: var(--danger); }
 
-.footer { padding-top: 0; padding-bottom: 24px; }
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 16, 32, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  backdrop-filter: blur(8px);
+}
+.overlay.hidden { display: none; }
+.overlay-card { width: min(620px, calc(100vw - 40px)); }
+.spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(232, 236, 255, 0.18);
+  border-top-color: rgba(124, 92, 255, 0.9);
+  border-radius: 999px;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
+.footer { padding-top: 0; padding-bottom: 24px; }

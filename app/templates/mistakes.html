@@ -2,53 +2,143 @@
 {% block content %}
   <h1>错词强化</h1>
   <p class="muted">
-    选一组“不会”的词，生成一篇短文并出题，训练你在语境中做题。没有AI Key也可以用 <span class="mono">AI_MOCK=1</span> 跑通流程。
+    生成一篇“阅读短文 + 出题”的实战练习，训练你在语境中做题。
+    不想手动挑词？可以不勾选任何词，系统会自动从最近错词里挑选。
+    没有AI Key也可以用 <span class="mono">AI_MOCK=1</span> 跑通流程。
   </p>
 
-  <form class="stack" method="post" action="/simulations/generate" onsubmit="return collectWordIds()">
+  {% if error %}
+    <div class="card">
+      <div class="row" style="margin: 0;">
+        <span class="badge bad">生成失败</span>
+        <span class="muted">{{ error }}</span>
+      </div>
+      <div class="muted" style="margin-top: 8px;">
+        提示：可以减少目标词数量、切换难度，或去“我的”检查 AI 配置。
+      </div>
+    </div>
+  {% endif %}
+
+  {% if items|length == 0 %}
+    <div class="card">
+      <div class="big">还没有错词</div>
+      <p class="muted">先去“今日学习”背一会儿，点几次“不认识/Again”，这里就会自动收集。</p>
+      <div class="actions">
+        <a class="btn primary" href="/review">去今日学习</a>
+        <a class="btn" href="/decks">去词书</a>
+      </div>
+    </div>
+  {% else %}
+  <form class="stack" id="generateForm" method="post" action="/simulations/generate">
     <label>难度
-      <select name="level">
+      <select name="level" id="levelSelect">
         {% for lv in levels %}
-          <option value="{{ lv }}">{{ lv }} - {{ level_guide[lv] }}</option>
+          <option value="{{ lv }}" {% if selected_level == lv %}selected{% endif %}>{{ lv }} - {{ level_guide[lv] }}</option>
         {% endfor %}
       </select>
     </label>
 
-    <input type="hidden" name="word_ids" id="word_ids" value="" />
-    <button class="btn primary" type="submit">生成实战短文</button>
+    <label>本次目标词数量（建议 8~12）
+      <input type="number" name="target_count" id="targetCount" value="{{ target_count }}" min="6" max="14" />
+    </label>
 
-    <table class="table">
-      <thead>
-        <tr>
-          <th></th>
-          <th>term</th>
-          <th>释义/备注</th>
-          <th>时间</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in items %}
+    <label>篇幅
+      <select name="length_mode">
+        <option value="standard" {% if length_mode == "standard" %}selected{% endif %}>标准</option>
+        <option value="long" {% if length_mode == "long" %}selected{% endif %}>更长</option>
+      </select>
+    </label>
+
+    <input type="hidden" name="word_ids" id="word_ids" value="" />
+    <button class="btn primary" id="generateBtn" type="submit">生成实战短文</button>
+    <div class="muted">不勾选任何词：自动选词；勾选后：按勾选生成。</div>
+
+    <details id="manualPicker">
+      <summary class="muted">手动挑词（可选，展开后勾选）</summary>
+      <table class="table">
+        <thead>
           <tr>
-            <td><input type="checkbox" class="word-check" data-word-id="{{ item.word.id }}" /></td>
-            <td class="mono">{{ item.word.term }}</td>
-            <td>{{ item.word.definition }}</td>
-            <td class="mono">{{ item.mistake.created_at }}</td>
+            <th></th>
+            <th>term</th>
+            <th>释义/备注</th>
+            <th>时间</th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for item in items %}
+            <tr>
+              <td><input type="checkbox" class="word-check" data-word-id="{{ item.word.id }}" /></td>
+              <td class="mono">{{ item.word.term }}</td>
+              <td>{{ item.word.definition }}</td>
+              <td class="mono">{{ item.mistake.created_at }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
   </form>
+
+  <div id="loadingOverlay" class="overlay hidden" aria-live="polite" aria-busy="true">
+    <div class="card overlay-card">
+      <div class="row" style="margin: 0;">
+        <div class="spinner" aria-hidden="true"></div>
+        <div>
+          <div class="big" style="font-size: 26px;">正在生成…</div>
+          <div id="loadingNote" class="muted">这通常需要 10~30 秒，请不要刷新页面。</div>
+        </div>
+      </div>
+      <div class="muted" style="margin-top: 10px;">
+        如果一直卡住：可能是 AI 配置/网络问题。可去“我的”检查，或开启 <span class="mono">AI_MOCK=1</span> 先跑通流程。
+      </div>
+    </div>
+  </div>
 
   <script>
     function collectWordIds() {
       const checks = document.querySelectorAll(".word-check:checked");
       const ids = Array.from(checks).map((c) => c.dataset.wordId);
-      if (ids.length === 0) {
-        alert("请至少选择1个错词");
-        return false;
-      }
       document.getElementById("word_ids").value = ids.join(",");
       return true;
     }
+
+    (() => {
+      const form = document.getElementById("generateForm");
+      const overlay = document.getElementById("loadingOverlay");
+      const note = document.getElementById("loadingNote");
+      const btn = document.getElementById("generateBtn");
+      const levelSelect = document.getElementById("levelSelect");
+      const targetCount = document.getElementById("targetCount");
+      if (!form || !overlay) return;
+
+      const defaults = { junior: 8, senior: 9, cet4: 10, cet6: 10, kaoyan: 12 };
+      let kTouched = false;
+      if (targetCount) {
+        targetCount.addEventListener("input", () => { kTouched = true; });
+      }
+      if (levelSelect && targetCount) {
+        levelSelect.addEventListener("change", () => {
+          if (kTouched) return;
+          const v = (levelSelect.value || "").toLowerCase();
+          targetCount.value = String(defaults[v] || 10);
+        });
+      }
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        collectWordIds();
+
+        const ids = (document.getElementById("word_ids").value || "").trim();
+        if (note) {
+          note.textContent = ids ? "按勾选词生成中…" : "自动选词并生成中…";
+        }
+
+        overlay.classList.remove("hidden");
+        if (btn) btn.disabled = true;
+
+        // Let the browser paint the overlay before submitting.
+        setTimeout(() => form.submit(), 60);
+      });
+    })();
   </script>
+  {% endif %}
 {% endblock %}
