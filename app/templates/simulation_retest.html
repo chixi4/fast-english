@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>重测词汇</h1>
+
+  <div class="actions">
+    <a class="btn" href="/simulations/{{ sim.id }}">返回短文</a>
+    <a class="btn" href="/mistakes">回到错词篮</a>
+  </div>
+
+  {% if not word %}
+    <div class="card">
+      <div class="big">已全部重测</div>
+      <div class="muted">这篇短文涉及的错词已清空</div>
+    </div>
+  {% else %}
+    <div class="review-card" id="reviewCard" data-revealed="0">
+      <div class="review-term big mono">{{ word.term }}</div>
+
+      <div id="answer" class="review-answer" style="width: 100%;">
+        {% if word.definition %}
+          <div class="review-def">{{ word.definition }}</div>
+        {% endif %}
+        {% if word.example %}
+          <div class="example" style="font-size: 15px; margin-bottom: 16px;">{{ word.example }}</div>
+        {% endif %}
+        <div class="muted" style="margin-bottom: 16px;">
+          <span>还剩：<span class="mono">{{ remaining }}</span> / <span class="mono">{{ total }}</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="review-reveal-overlay" id="revealOverlay" role="button" tabindex="0" aria-label="点击显示释义">
+      <div class="review-prompt-area" aria-hidden="true">
+        <div class="review-prompt muted" id="reviewPrompt">
+          <div class="review-prompt-title">请回忆单词释义</div>
+          <div class="review-prompt-sub">点击屏幕显示答案</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="review-bottombar hidden" id="reviewBottomBar" aria-hidden="true">
+      <div class="review-bottombar-inner">
+        <form class="review-rating-grid" method="post" action="/simulations/{{ sim.id }}/retest/{{ word.id }}">
+          <input type="hidden" name="i" value="{{ i }}" />
+          <button class="btn danger" type="submit" name="rating" value="again">不认识</button>
+          <button class="btn warn" type="submit" name="rating" value="hard">不确定</button>
+          <button class="btn primary" type="submit" name="rating" value="good">认识</button>
+          <button class="btn easy" type="submit" name="rating" value="easy">很熟</button>
+        </form>
+        <div class="review-meta muted">
+          <span>还剩：<span class="mono">{{ remaining }}</span> / <span class="mono">{{ total }}</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="review-bottom-spacer hidden" id="reviewBottomSpacer" aria-hidden="true"></div>
+
+    <script>
+      (() => {
+        const revealOverlay = document.getElementById('revealOverlay');
+        const reviewCard = document.getElementById('reviewCard');
+        const prompt = document.getElementById('reviewPrompt');
+        const bottomBar = document.getElementById('reviewBottomBar');
+        const bottomSpacer = document.getElementById('reviewBottomSpacer');
+
+        const reveal = () => {
+          if (!reviewCard) return;
+          if (reviewCard.dataset.revealed === "1") return;
+          reviewCard.dataset.revealed = "1";
+          reviewCard.classList.add("revealed");
+          if (prompt) prompt.style.display = "none";
+          if (revealOverlay) revealOverlay.style.display = "none";
+          if (bottomBar) {
+            bottomBar.classList.remove("hidden");
+            bottomBar.setAttribute("aria-hidden", "false");
+          }
+          if (bottomSpacer) bottomSpacer.classList.remove("hidden");
+        };
+
+        if (revealOverlay) {
+          revealOverlay.addEventListener('click', reveal);
+          revealOverlay.addEventListener('keydown', (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              reveal();
+            }
+          });
+        }
+      })();
+    </script>
+  {% endif %}
+{% endblock %}

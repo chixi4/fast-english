@@ -1504,7 +1504,7 @@ async def generate_simulation_stream(
 
     async def gen():
         try:
-            yield _sse({"t": "note", "msg": "开始生成..."})
+            yield _sse({"t": "note", "msg": f"已选词：{len(terms)} 个，准备生成..."})
 
             if settings.ai_mock:
                 sim = await client.generate_simulation(
@@ -1630,6 +1630,83 @@ def show_simulation(request: Request, sim_id: int):
             "level_guide": LEVEL_GUIDE,
         },
     )
+
+
+@app.get("/simulations/{sim_id}/retest", response_class=HTMLResponse)
+def simulation_retest(request: Request, sim_id: int, i: int = 0, toast: str | None = None):
+    try:
+        i = int(i)
+    except Exception:
+        i = 0
+    i = max(0, i)
+
+    with get_session() as session:
+        row = session.get(Simulation, sim_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="not found")
+        try:
+            terms: list[str] = json.loads(row.target_terms_json)
+        except Exception:
+            terms = []
+        terms = [str(t).strip() for t in terms if str(t).strip()]
+
+        # Only retest words that are currently in mistakes (错词篮)
+        fetched: list[Word] = []
+        if terms:
+            fetched = session.query(Word).filter(Word.term.in_(terms)).all()
+        by_term = {w.term: w for w in fetched}
+
+        mistake_ids = set(x for (x,) in session.query(Mistake.word_id).distinct().all())
+        retest_words = [by_term[t] for t in terms if t in by_term and by_term[t].id in mistake_ids]
+
+        total = len(retest_words)
+        if total == 0:
+            return templates.TemplateResponse(
+                request,
+                "simulation_retest.html",
+                {"sim": row, "word": None, "i": 0, "total": 0, "remaining": 0, "toast": (toast or "").strip()},
+            )
+
+        if i >= total:
+            i = total - 1
+
+        word = retest_words[i]
+        remaining = total - i
+
+    return templates.TemplateResponse(
+        request,
+        "simulation_retest.html",
+        {"sim": row, "word": word, "i": i, "total": total, "remaining": remaining, "toast": (toast or "").strip()},
+    )
+
+
+@app.post("/simulations/{sim_id}/retest/{word_id}")
+def simulation_retest_rate(sim_id: int, word_id: int, rating: str = Form(...), i: int = Form(0)):
+    try:
+        i = int(i)
+    except Exception:
+        i = 0
+    i = max(0, i)
+
+    moved_out = False
+    term = ""
+    with get_session() as session:
+        row = session.get(Simulation, sim_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="not found")
+        w = session.get(Word, int(word_id))
+        if not w:
+            raise HTTPException(status_code=404, detail="word not found")
+        term = w.term
+
+        r = (rating or "").strip().lower()
+        if r in {"good", "easy"}:
+            session.query(Mistake).filter(Mistake.word_id == w.id).delete(synchronize_session=False)
+            moved_out = True
+
+    # If removed from mistakes, the list shrinks; keep index.
+    next_i = i if moved_out else (i + 1)
+    return _redirect("/simulations/" + str(sim_id) + "/retest?" + urlencode({"i": str(next_i)}))
 
 
 @app.get("/simulations", response_class=HTMLResponse)

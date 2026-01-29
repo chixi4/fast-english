@@ -13,12 +13,13 @@
   {% else %}
     <div class="cards">
       <div class="card">
-        <div class="card-k">错词强化</div>
+        <div class="card-k">错词篮</div>
         <div class="card-v">{{ mistake_count }}</div>
         <div class="actions">
           <a class="btn primary" href="/mistakes">开始</a>
         </div>
       </div>
+
       <div class="card">
         <div class="card-k">实战短文</div>
         <div class="card-v">{{ sim_count }}</div>
@@ -26,6 +27,7 @@
           <a class="btn" href="/simulations">查看</a>
         </div>
       </div>
+
       <div class="card">
         <div class="card-k">单词库</div>
         <div class="card-v">{{ word_count }}</div>
@@ -34,5 +36,7 @@
         </div>
       </div>
     </div>
+    <div class="fullbleed divider-tail"></div>
   {% endif %}
 {% endblock %}
+

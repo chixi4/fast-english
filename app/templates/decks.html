@@ -7,8 +7,10 @@
   {% endif %}
 
   <div class="actions">
-    <a class="btn primary" href="/library">导入词书</a>
+    <a class="btn" href="/library">导入词书</a>
   </div>
+
+  <div class="fullbleed divider-bar"></div>
 
   <h2>已有词书</h2>
   <div class="only-desktop">
@@ -25,7 +27,6 @@
             <td><a href="/decks/{{ item.deck.id }}">{{ item.deck.name }}</a></td>
             <td>
               <div class="actions">
-                <a class="btn primary" href="/review?deck_id={{ item.deck.id }}">开始学习</a>
                 <a class="btn" href="/decks/{{ item.deck.id }}">详情</a>
               </div>
             </td>
@@ -42,15 +43,11 @@
           <a href="/decks/{{ item.deck.id }}"><strong>{{ item.deck.name }}</strong></a>
         </div>
         <div class="deck-actions">
-          <a class="btn primary" href="/review?deck_id={{ item.deck.id }}">开始学习</a>
-          <details class="deck-more">
-            <summary class="btn">更多</summary>
-            <div class="deck-more-panel">
-              <a class="btn" href="/decks/{{ item.deck.id }}">查看详情</a>
-            </div>
-          </details>
+          <a class="btn" href="/decks/{{ item.deck.id }}">查看详情</a>
         </div>
       </div>
     {% endfor %}
   </div>
+
+  <div class="fullbleed divider-tail"></div>
 {% endblock %}
