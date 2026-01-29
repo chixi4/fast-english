@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>词书：{{ deck.name }}</h1>
+  {% if deck.description %}
+    <p class="muted">{{ deck.description }}</p>
+  {% endif %}
+
+  <div class="actions">
+    <a class="btn primary" href="/review?deck_id={{ deck.id }}">开始复习（到期：{{ due_count }}）</a>
+    <a class="btn" href="/words">去导入/添加单词</a>
+  </div>
+
+  <h2>词表（最多300条）</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>term</th>
+        <th>章节</th>
+        <th>到期时间</th>
+        <th>状态</th>
+        <th>正确/错误</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+        <tr>
+          <td class="mono">{{ item.word.term }}</td>
+          <td class="mono">{{ item.link.chapter }}</td>
+          <td class="mono">{{ item.card.due_at }}</td>
+          <td class="mono">{{ state_map.get(item.card.state, item.card.state) }}</td>
+          <td class="mono">{{ item.word.correct_count }}/{{ item.word.wrong_count }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
+

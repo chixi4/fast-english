@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>判分结果</h1>
+  <p class="muted">得分：<span class="mono">{{ score }}</span></p>
+  <div class="actions">
+    <a class="btn" href="/simulations/{{ sim.id }}">返回题目</a>
+    <a class="btn primary" href="/mistakes">再来一篇（用错词篮）</a>
+  </div>
+
+  <h2>解析</h2>
+  {% for q in graded %}
+    <div class="card">
+      <div class="q-stem">
+        <span class="mono">{{ q.id }}</span>
+        <span class="badge">{{ q.type }}</span>
+        {% if q.is_correct %}
+          <span class="badge ok">正确</span>
+        {% else %}
+          <span class="badge bad">错误</span>
+        {% endif %}
+        {{ q.stem }}
+      </div>
+      <div class="muted">你的选择：{{ q.user_answer_index }}</div>
+      <div class="muted">正确答案：{{ q.answer_index }}</div>
+      <div class="example">{{ q.explanation }}</div>
+    </div>
+  {% endfor %}
+{% endblock %}
+

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>实战短文 #{{ sim.id }}</h1>
+  <p class="muted">难度：{{ sim.level }} - {{ level_guide.get(sim.level, "") }}</p>
+
+  <div class="card">
+    <div class="passage">{{ sim.passage }}</div>
+  </div>
+
+  <h2>题目</h2>
+  <form class="stack" method="post" action="/simulations/{{ sim.id }}/grade_async">
+    {% for q in questions %}
+      <div class="q">
+        <div class="q-stem">
+          <span class="mono">{{ q.id }}</span>
+          <span class="badge">{{ q.type }}</span>
+          {{ q.stem }}
+          {% if q.target_term %}
+            <span class="badge muted">target: {{ q.target_term }}</span>
+          {% endif %}
+        </div>
+        <div class="q-choices">
+          {% for c in q.choices %}
+            <label class="choice">
+              <input type="radio" name="{{ q.id }}" value="{{ loop.index0 }}" />
+              <span>{{ c }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+    <button class="btn primary" type="submit">提交并判分</button>
+  </form>
+{% endblock %}
+

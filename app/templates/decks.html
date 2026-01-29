@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>词书</h1>
+
+  <h2>新建词书</h2>
+  <form class="stack" method="post" action="/decks">
+    <label>名称<input name="name" required placeholder="例如：CET4-核心词" /></label>
+    <label>描述（可选）<textarea name="description" rows="2"></textarea></label>
+    <button class="btn primary" type="submit">创建</button>
+  </form>
+
+  <h2>已有词书</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>名称</th>
+        <th>总词数</th>
+        <th>到期</th>
+        <th>新词</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+        <tr>
+          <td><a href="/decks/{{ item.deck.id }}">{{ item.deck.name }}</a></td>
+          <td class="mono">{{ item.word_count }}</td>
+          <td class="mono">{{ item.due_count }}</td>
+          <td class="mono">{{ item.new_count }}</td>
+          <td>
+            <div class="actions">
+              <a class="btn" href="/review?deck_id={{ item.deck.id }}">复习此词书</a>
+              <form method="post" action="/decks/{{ item.deck.id }}/delete" onsubmit="return confirm('删除词书 {{ item.deck.name }} ?（不会删除单词，只删除关联）')">
+                <button class="btn danger" type="submit">删除</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
+

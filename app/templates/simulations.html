@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>短文库</h1>
+  <p class="muted">最近生成的短文（最多50条）</p>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>难度</th>
+        <th>错词</th>
+        <th>时间</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+        <tr>
+          <td class="mono"><a href="/simulations/{{ item.sim.id }}">#{{ item.sim.id }}</a></td>
+          <td class="mono">{{ item.sim.level }}</td>
+          <td class="mono">{{ ", ".join(item.terms) }}</td>
+          <td class="mono">{{ item.sim.created_at }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
+

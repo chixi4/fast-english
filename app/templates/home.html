@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>仪表盘</h1>
+  <div class="cards">
+    <div class="card">
+      <div class="card-k">单词数</div>
+      <div class="card-v">{{ word_count }}</div>
+    </div>
+    <div class="card">
+      <div class="card-k">错题记录</div>
+      <div class="card-v">{{ mistake_count }}</div>
+    </div>
+    <div class="card">
+      <div class="card-k">生成短文</div>
+      <div class="card-v">{{ sim_count }}</div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <a class="btn" href="/words">添加单词</a>
+    <a class="btn" href="/decks">管理词书</a>
+    <a class="btn" href="/review">开始复习</a>
+    <a class="btn primary" href="/mistakes">用错词生成实战短文</a>
+  </div>
+{% endblock %}

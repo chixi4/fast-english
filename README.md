@@ -1,0 +1,42 @@
+# Vocabulary Study (MVP)
+
+核心差异化：把“错词”重组为**阅读短文 + 实战出题**，训练你在语境中做题，而不是只背静态例句。
+
+## 功能（当前MVP）
+- 单词库：添加/删除/搜索
+- 词书（Deck）：创建/查看/按词书复习
+- 批量导入：支持 `deck/chapter/position`、文件头元信息（`#deck/#tags/#separator/#columns`）、重复策略（跳过/更新）
+- 复习：FSRS 间隔重复（Again/Hard/Good/Easy 评分 → 自动排程），Again 会进入错词篮
+- 错词篮：选择错词 + 难度，一键生成“短文 + 题目”，并支持判分
+- 支持 OpenAI-Compatible（`/chat/completions`）以及 `AI_MOCK=1` 的离线演示
+
+## 本地运行（Windows）
+1) 复制环境变量文件：把 `.env.example` 复制为 `.env`
+2) 配置AI（可选）
+   - 不配置：把 `AI_MOCK=1`
+   - 配置：填 `AI_API_KEY`，按需改 `AI_BASE_URL`/`AI_MODEL`
+3) 启动：
+   - 推荐（在 PowerShell 里直接执行）：`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\run.ps1`
+   - 如果系统禁止运行 `.ps1`：依次执行
+     - `python -m venv .venv`（仅第一次）
+     - `.\\.venv\\Scripts\\python -m pip install -r requirements.txt`
+     - `.\\.venv\\Scripts\\python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
+4) 打开：`http://127.0.0.1:8000`
+
+## 导入词书（Deck）
+1) 打开 `http://127.0.0.1:8000/words`
+2) 在“批量导入”里填写“导入到词书（可选）”，也可以在文件头里写 `#deck:`
+3) 上传文件或粘贴文本后导入；导入完成后去 `http://127.0.0.1:8000/decks` 查看并开始复习
+
+支持字段：
+- `term,definition,example,tags,deck,chapter,position`（CSV/TSV，可带表头）
+- 或每行一个词（仅 term）
+
+支持文件头元信息（可选，类似 Anki 习惯）：
+- `#deck: CET4`
+- `#tags: 高频, v1`
+- `#separator: tab|comma|semicolon|pipe`
+- `#columns: term,definition,example,tags,chapter,position`
+
+## 文档
+- `docs/IMPLEMENTATION.md`：完整实现文档（PRD/架构/数据模型/Prompt/迭代路线）

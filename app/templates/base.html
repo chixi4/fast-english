@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title or "Vocabulary Study MVP" }}</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="container topbar-inner">
+        <div class="brand"><a href="/">Vocabulary Study</a></div>
+        <nav class="nav">
+          <a href="/words">单词库</a>
+          <a href="/decks">词书</a>
+          <a href="/review">复习</a>
+          <a href="/mistakes">错词篮</a>
+          <a href="/simulations">短文库</a>
+        </nav>
+      </div>
+    </header>
+    <main class="container">
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="container footer">
+      <div class="muted">MVP：错词重组 + 实战模拟</div>
+    </footer>
+  </body>
+</html>

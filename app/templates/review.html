@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>复习</h1>
+
+  <form class="row" method="get" action="/review">
+    <select name="deck_id" onchange="this.form.submit()">
+      <option value="0">全部词书</option>
+      {% for d in decks %}
+        <option value="{{ d.id }}" {% if deck_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+      {% endfor %}
+    </select>
+    <div class="muted">到期：<span class="mono">{{ due_count }}</span> / 总数：<span class="mono">{{ total }}</span></div>
+    {% if next_due_at %}
+      <div class="muted">下一次到期：<span class="mono">{{ next_due_at }}</span></div>
+    {% endif %}
+  </form>
+
+  {% if total == 0 %}
+    <p class="muted">还没有单词，先去 <a href="/words">单词库</a> 添加/导入一些吧。</p>
+  {% elif not word %}
+    <p class="muted">当前没有到期的卡片。可以稍后再来，或去 <a href="/mistakes">错词篮</a> 做实战短文。</p>
+  {% else %}
+    <div class="card">
+      <div class="big mono">{{ word.term }}</div>
+      {% if chapter %}
+        <div class="muted">章节：<span class="mono">{{ chapter }}</span></div>
+      {% endif %}
+      {% if word.definition %}
+        <div class="muted">{{ word.definition }}</div>
+      {% endif %}
+      {% if word.example %}
+        <div class="example">{{ word.example }}</div>
+      {% endif %}
+      <div class="muted">状态：<span class="mono">{{ state_map.get(card.state, card.state) }}</span> | 到期：<span class="mono">{{ card.due_at }}</span></div>
+      <div class="muted">正确/错误：{{ word.correct_count }}/{{ word.wrong_count }}</div>
+    </div>
+
+    <div class="actions">
+      <form method="post" action="/review/{{ word.id }}">
+        {% if deck_id %}
+          <input type="hidden" name="deck_id" value="{{ deck_id }}" />
+        {% endif %}
+        <button class="btn danger" type="submit" name="rating" value="again">Again（没记住）</button>
+        <button class="btn" type="submit" name="rating" value="hard">Hard（有点吃力）</button>
+        <button class="btn primary" type="submit" name="rating" value="good">Good（刚好记住）</button>
+        <button class="btn" type="submit" name="rating" value="easy">Easy（太简单）</button>
+      </form>
+    </div>
+  {% endif %}
+{% endblock %}
