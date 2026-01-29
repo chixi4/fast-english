@@ -6,7 +6,8 @@
       "Bash(tasklist)",
       "Bash(curl:*)",
       "Bash(.venv/Scripts/python.exe:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(cloudflared:*)"
     ]
   }
 }

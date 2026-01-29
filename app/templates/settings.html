@@ -22,19 +22,8 @@
         <label>每日复习上限
           <input type="number" name="daily_review_limit" min="0" max="5000" value="{{ plan_daily_review_limit }}" />
         </label>
-        <label>到期超过阈值暂停新词
-          <input type="number" name="suspend_new_when_due_over" min="0" max="5000" value="{{ plan_suspend_new_when_due_over }}" />
-        </label>
         <button class="btn primary" type="submit">保存</button>
       </form>
-    </div>
-    <div class="card">
-      <div class="card-k">数据</div>
-      <div class="card-v">{{ deck_count }}/{{ word_count }}</div>
-      <div class="actions">
-        <a class="btn" href="/decks">词书</a>
-        <a class="btn" href="/library">导入</a>
-      </div>
     </div>
     <div class="card">
       <div class="card-k">高级</div>

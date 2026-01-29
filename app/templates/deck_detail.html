@@ -27,15 +27,6 @@
 
   <div class="actions">
     <a class="btn primary" href="/review?deck_id={{ deck.id }}">开始今日学习</a>
-    {% if remaining_count > 0 %}
-      <form class="row" method="post" action="/decks/{{ deck.id }}/plan_add">
-        <input type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" style="max-width: 120px;" />
-        <input type="hidden" name="return_to" value="deck" />
-        <button class="btn primary" type="submit">加入学习计划</button>
-      </form>
-    {% else %}
-      <span class="muted">已全部加入学习计划</span>
-    {% endif %}
     <a class="btn" href="/library">导入更多词书</a>
     <a class="btn" href="/words">手动导入/添加（高级）</a>
   </div>

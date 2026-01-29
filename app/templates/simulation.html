@@ -4,7 +4,7 @@
   <p class="muted">难度：{{ sim.level }} - {{ level_guide.get(sim.level, "") }}</p>
 
   <div class="card">
-    <div class="passage">{{ sim.passage }}</div>
+    <div class="passage">{{ passage_html | safe }}</div>
   </div>
 
   <h2>题目</h2>
@@ -22,7 +22,7 @@
         <div class="q-choices">
           {% for c in q.choices %}
             <label class="choice">
-              <input type="radio" name="{{ q.id }}" value="{{ loop.index0 }}" />
+              <input type="radio" name="{{ q.id }}" value="{{ loop.index0 }}" {% if loop.index0 == 0 %}required{% endif %} />
               <span>{{ c }}</span>
             </label>
           {% endfor %}
@@ -32,4 +32,3 @@
     <button class="btn primary" type="submit">提交并判分</button>
   </form>
 {% endblock %}
-

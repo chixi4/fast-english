@@ -1,21 +1,25 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
+import html
 import json
 from pathlib import Path
+import re
 from typing import Any
 from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fsrs import Rating
 from sqlalchemy import func
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.ai import AiClient, LEVEL_GUIDE
+from app.ai import AiClient, LEVEL_GUIDE, _safe_json_extract
+from app.ai_types import GeneratedSimulation
 from app.config import get_settings
 from app.db import get_session, init_db
 from app.models import Deck, DeckWord, Mistake, Plan, PlanDeck, PlanWord, Simulation, SrsCard, SrsReviewLog, Word
@@ -58,6 +62,44 @@ def _merge_tags(*values: str) -> str:
             seen.add(key)
             items.append(t)
     return ", ".join(items)
+
+
+def _mask_stream_text(text: str) -> str:
+    if not text:
+        return ""
+    out: list[str] = []
+    for ch in text:
+        out.append(ch if ch.isspace() else "•")
+    return "".join(out)
+
+
+def _format_next_due_at(next_due_at: datetime | None, *, now: datetime) -> str:
+    if next_due_at is None:
+        return ""
+    try:
+        delta = next_due_at - now
+    except Exception:
+        return next_due_at.strftime("%Y-%m-%d %H:%M")
+    seconds = int(delta.total_seconds())
+    if seconds <= 0:
+        return "现在"
+    mins = seconds // 60
+    if mins < 60:
+        return f"约 {mins} 分钟后"
+    hours = mins // 60
+    if hours < 48:
+        return f"约 {hours} 小时后"
+    return next_due_at.strftime("%Y-%m-%d %H:%M")
+
+
+_PASSAGE_MARK_RE = re.compile(r"\[\[(.+?)\]\]")
+
+
+def _passage_to_html(passage: str) -> str:
+    escaped = html.escape(passage or "")
+    escaped = escaped.replace("\r\n", "\n").replace("\r", "\n")
+    escaped = escaped.replace("\n", "<br>")
+    return _PASSAGE_MARK_RE.sub(r'<mark class="kw">\1</mark>', escaped)
 
 
 def _ensure_deck(session, name: str) -> Deck:
@@ -211,6 +253,8 @@ def home(request: Request, deck_id: int | None = None, toast: str | None = None)
     with get_session() as session:
         plan = _ensure_default_plan(session)
         daily_new_limit = int(plan.daily_new_limit or 20)
+        daily_review_limit = int(plan.daily_review_limit or 200)
+        suspend_new_when_due_over = int(plan.suspend_new_when_due_over or 200)
         quick_add_count = max(1, min(10, daily_new_limit))
 
         decks = session.query(Deck).order_by(Deck.name.asc()).all()
@@ -291,6 +335,8 @@ def home(request: Request, deck_id: int | None = None, toast: str | None = None)
             "sim_count": sim_count,
             "toast": (toast or "").strip(),
             "daily_new_limit": daily_new_limit,
+            "daily_review_limit": daily_review_limit,
+            "suspend_new_when_due_over": suspend_new_when_due_over,
             "quick_add_count": quick_add_count,
         },
     )
@@ -340,6 +386,7 @@ def update_plan_settings(
     daily_new_limit: int = Form(20),
     daily_review_limit: int = Form(200),
     suspend_new_when_due_over: int = Form(200),
+    return_to: str | None = Form(None),
 ):
     def _to_int(v: Any, *, name: str, lo: int, hi: int) -> int:
         try:
@@ -360,7 +407,10 @@ def update_plan_settings(
         plan.daily_review_limit = review_limit
         plan.suspend_new_when_due_over = suspend_over
 
-    return _redirect("/settings?" + urlencode({"toast": "已保存学习计划设置"}))
+    msg = {"toast": "已保存学习计划设置"}
+    if (return_to or "").strip().lower() in {"home", "today", "/"}:
+        return _redirect("/?" + urlencode(msg))
+    return _redirect("/settings?" + urlencode(msg))
 
 
 @app.get("/decks", response_class=HTMLResponse)
@@ -416,15 +466,7 @@ def list_decks(request: Request, toast: str | None = None):
 
 @app.post("/decks")
 def create_deck(name: str = Form(...), description: str = Form("")):
-    name = name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="name required")
-    with get_session() as session:
-        exists = session.query(Deck).filter(Deck.name == name).first()
-        if exists:
-            raise HTTPException(status_code=400, detail="这个词书已存在")
-        session.add(Deck(name=name, description=description.strip()))
-    return _redirect("/decks")
+    raise HTTPException(status_code=404, detail="disabled")
 
 
 @app.post("/decks/{deck_id}/delete")
@@ -566,7 +608,7 @@ def add_to_plan(
         deck_name, added, remaining = _add_next_words_to_plan(session, deck_id=int(deck_id), count=count)
 
     if added > 0:
-        toast = f"已加入学习计划：{deck_name} +{added}（剩余 {remaining}）"
+        toast = f"已加入学习计划：{deck_name} {added} 个（剩余 {remaining}）"
     else:
         toast = f"{deck_name} 没有可加入的新词（可能已全部加入计划）"
 
@@ -586,7 +628,7 @@ def add_deck_to_plan(
     count: int = Form(20),
     return_to: str = Form("today"),
 ):
-    return add_to_plan(deck_id=deck_id, count=count, return_to=return_to)
+    raise HTTPException(status_code=404, detail="disabled")
 
 
 def _dedupe_import_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -1088,6 +1130,7 @@ def review(request: Request, deck_id: int | None = None, toast: str | None = Non
 
         next_pair = base_q.filter(SrsCard.due_at > now).order_by(SrsCard.due_at.asc()).first()
         next_due_at = next_pair[1].due_at if next_pair else None
+        next_due_at_display = _format_next_due_at(next_due_at, now=now) if next_due_at else ""
 
         word = due_pair[0] if due_pair else None
         card = due_pair[1] if due_pair else None
@@ -1096,6 +1139,19 @@ def review(request: Request, deck_id: int | None = None, toast: str | None = Non
             link = session.query(DeckWord).filter(DeckWord.deck_id == deck_id, DeckWord.word_id == word.id).first()
             chapter = link.chapter if link else ""
 
+    word_phonetic = ""
+    word_definition_text = ""
+    if word is not None and word.definition:
+        raw = str(word.definition)
+        text = raw.replace("\r\n", "\n").replace("\\r\\n", "\n").replace("\\n", "\n")
+        t = text.strip()
+        if t.startswith("/") and t.find("/", 1) > 1:
+            j = t.find("/", 1)
+            word_phonetic = t[: j + 1].strip()
+            word_definition_text = t[j + 1 :].strip()
+        else:
+            word_definition_text = t
+
     return templates.TemplateResponse(
         request,
         "review.html",
@@ -1103,11 +1159,14 @@ def review(request: Request, deck_id: int | None = None, toast: str | None = Non
             "word": word,
             "card": card,
             "chapter": chapter,
+            "word_phonetic": word_phonetic,
+            "word_definition_text": word_definition_text,
             "decks": decks,
             "deck_id": deck_id,
             "due_count": due_count,
             "total": total,
             "next_due_at": next_due_at,
+            "next_due_at_display": next_due_at_display,
             "word_count": word_count,
             "deck_word_count": deck_word_count,
             "deck_name": deck_name,
@@ -1354,6 +1413,204 @@ async def generate_simulation(
     return _redirect(f"/simulations/{sim_id}")
 
 
+@app.post("/simulations/generate_stream")
+async def generate_simulation_stream(
+    request: Request,
+    level: str = Form(...),
+    word_ids: str = Form(""),
+    target_count: int = Form(0),
+    length_mode: str = Form("standard"),
+):
+    def _default_k(lv: str) -> int:
+        mapping = {"junior": 8, "senior": 9, "cet4": 10, "cet6": 10, "kaoyan": 12}
+        return int(mapping.get(lv, 10))
+
+    def _norm_level(lv: str | None) -> str:
+        lv = (lv or "").strip().lower()
+        return lv if lv in LEVEL_GUIDE else "cet4"
+
+    def _norm_length_mode(mode: str | None) -> str:
+        mode = (mode or "standard").strip().lower()
+        return mode if mode in {"standard", "long"} else "standard"
+
+    def _min_words(lv: str, mode: str) -> int:
+        standard = {"junior": 220, "senior": 300, "cet4": 360, "cet6": 480, "kaoyan": 600}
+        long = {"junior": 320, "senior": 420, "cet4": 520, "cet6": 680, "kaoyan": 820}
+        return int((long if mode == "long" else standard).get(lv, 360))
+
+    def _paragraph_range(target_words: int) -> tuple[int, int]:
+        if target_words <= 280:
+            return (3, 4)
+        if target_words <= 520:
+            return (4, 6)
+        return (5, 8)
+
+    def _sse(obj: dict[str, Any]) -> str:
+        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+    selected_level = _norm_level(level)
+    selected_length_mode = _norm_length_mode(length_mode)
+    try:
+        k = int(target_count) if int(target_count) > 0 else _default_k(selected_level)
+    except Exception:
+        k = _default_k(selected_level)
+    k = max(6, min(14, k))
+
+    ids = [int(x) for x in (word_ids or "").split(",") if x.strip().isdigit()]
+    ids = list(dict.fromkeys(ids))  # dedupe keep order
+    if len(ids) > 14:
+        ids = ids[:14]
+
+    with get_session() as session:
+        words: list[Word] = []
+        if ids:
+            fetched = session.query(Word).filter(Word.id.in_(ids)).all()
+            by_id = {w.id: w for w in fetched}
+            words = [by_id[i] for i in ids if i in by_id]
+        else:
+            rows = (
+                session.query(Mistake, Word)
+                .join(Word, Mistake.word_id == Word.id)
+                .order_by(Mistake.id.desc())
+                .limit(600)
+                .all()
+            )
+            latest: dict[int, tuple[Word, datetime]] = {}
+            for m, w in rows:
+                if w.id not in latest:
+                    latest[w.id] = (w, m.created_at)
+            candidates = list(latest.values())
+            candidates.sort(key=lambda t: (t[0].wrong_count, t[1]), reverse=True)
+            words = [w for (w, _ts) in candidates[:k]]
+
+    if not words:
+        return StreamingResponse(
+            iter([_sse({"t": "error", "msg": "还没有错词可生成。先去“今日学习”里点几次“不认识/Again”。"})]),
+            media_type="text/event-stream",
+        )
+
+    terms = [w.term for w in words]
+    term_notes = {w.term: (w.definition or w.example or "").strip() for w in words}
+
+    min_words = _min_words(selected_level, selected_length_mode)
+    target_words = max(min_words, len(terms) * 30)
+    lo = int(round(target_words * 0.9))
+    hi = int(round(target_words * 1.15))
+    p_lo, p_hi = _paragraph_range(target_words)
+    question_count = max(6, min(10, int(round(target_words / 60))))
+
+    settings = get_settings()
+    client = AiClient(settings=settings)
+
+    async def gen():
+        try:
+            yield _sse({"t": "note", "msg": "开始生成..."})
+
+            if settings.ai_mock:
+                sim = await client.generate_simulation(
+                    level=selected_level,
+                    terms=terms,
+                    term_notes=term_notes,
+                    passage_word_range=(lo, hi),
+                    paragraph_range=(p_lo, p_hi),
+                    question_count=question_count,
+                )
+                mock_text = json.dumps(sim.model_dump(), ensure_ascii=False)
+                step = 140
+                for i in range(0, len(mock_text), step):
+                    chunk = mock_text[i : i + step]
+                    yield _sse({"t": "delta", "c": _mask_stream_text(chunk)})
+                    await asyncio.sleep(0.01)
+            else:
+                if not settings.ai_api_key:
+                    yield _sse({"t": "error", "msg": "AI 未配置：请在 .env 配置 AI_API_KEY，或开启 AI_MOCK=1。"})
+                    return
+
+                payload, system, user = client.build_simulation_payload(
+                    level=selected_level,
+                    terms=terms,
+                    term_notes=term_notes,
+                    passage_word_range=(lo, hi),
+                    paragraph_range=(p_lo, p_hi),
+                    question_count=question_count,
+                )
+
+                last_parsed: GeneratedSimulation | None = None
+                last_missing: list[str] | None = None
+                sim: GeneratedSimulation | None = None
+                for attempt in range(1, 4):
+                    parts: list[str] = []
+                    async for delta in client.chat_completions_content_stream(payload):
+                        parts.append(delta)
+                        masked = _mask_stream_text(delta)
+                        if masked:
+                            yield _sse({"t": "delta", "c": masked})
+
+                    text = "".join(parts)
+                    try:
+                        json_text = _safe_json_extract(text)
+                        parsed = GeneratedSimulation.model_validate(json.loads(json_text))
+                        sim = parsed
+                        break
+                    except Exception:
+                        payload = {
+                            **payload,
+                            "messages": [
+                                {"role": "system", "content": system},
+                                {
+                                    "role": "user",
+                                    "content": (
+                                        "上一次输出不符合要求（JSON不可解析或缺少目标词）。"
+                                        "请严格输出可解析的JSON，并确保短文自然包含所有目标词。"
+                                        "只输出JSON，不要多余文本。"
+                                    ),
+                                },
+                                {"role": "user", "content": user},
+                            ],
+                            "temperature": 0.4,
+                        }
+                        continue
+
+                if sim is None:
+                    if last_parsed is not None and last_missing:
+                        patched = last_parsed.model_copy(deep=True)
+                        patched.passage = patched.passage.rstrip() + "\n\nKey words (added): " + ", ".join(last_missing) + "."
+                        sim = patched
+                    else:
+                        yield _sse({"t": "error", "msg": "AI 生成失败：多次重试仍未得到可用结果。"})
+                        return
+
+            with get_session() as session:
+                row = Simulation(
+                    level=selected_level,
+                    target_terms_json=json.dumps(terms, ensure_ascii=False),
+                    passage=sim.passage,
+                    questions_json=sim.model_dump_json(ensure_ascii=False),
+                )
+                session.add(row)
+                session.flush()
+                sim_id = row.id
+
+            yield _sse({"t": "done", "sim_id": sim_id})
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            msg = str(e) or "AI generation failed"
+            if "Missing AI_API_KEY" in msg:
+                msg = "AI 未配置：请在 .env 配置 AI_API_KEY，或开启 AI_MOCK=1。"
+            yield _sse({"t": "error", "msg": msg})
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.get("/simulations/{sim_id}", response_class=HTMLResponse)
 def show_simulation(request: Request, sim_id: int):
     with get_session() as session:
@@ -1362,11 +1619,13 @@ def show_simulation(request: Request, sim_id: int):
         raise HTTPException(status_code=404, detail="not found")
     payload = json.loads(row.questions_json)
     questions = payload["questions"]
+    passage_html = _passage_to_html(row.passage or "")
     return templates.TemplateResponse(
         request,
         "simulation.html",
         {
             "sim": row,
+            "passage_html": passage_html,
             "questions": questions,
             "level_guide": LEVEL_GUIDE,
         },

@@ -3,53 +3,92 @@
   <h1>词书库</h1>
   <p class="muted">一键导入常见考试词书</p>
 
-  <table class="table">
-    <thead>
-      <tr>
-        <th>词书</th>
-        <th>来源</th>
-        <th>导入</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for s in sources %}
+  <div class="only-desktop">
+    <table class="table">
+      <thead>
         <tr>
-          <td>
-            <div><strong>{{ s.name }}</strong></div>
-            <div class="muted">{{ s.description }}</div>
-          </td>
-          <td class="muted">
-            <div>{{ s.license }}</div>
-            <div><a href="{{ s.homepage }}" target="_blank" rel="noreferrer">仓库</a></div>
-          </td>
-          <td>
-            <form class="stack" method="post" action="/library/import">
-              <input type="hidden" name="source_id" value="{{ s.id }}" />
-              <button class="btn primary" type="submit">导入</button>
-
-              <details>
-                <summary class="muted">选项</summary>
-                <div class="stack" style="margin-top: 10px;">
-                  <label>导入到词书
-                    <input name="deck_name" value="{{ s.default_deck }}" />
-                  </label>
-                  <label>默认标签
-                    <input name="default_tags" value="{{ s.default_tags }}" />
-                  </label>
-                  <label>重复处理
-                    <select name="on_conflict">
-                      <option value="skip" selected>跳过</option>
-                      <option value="update">更新</option>
-                    </select>
-                  </label>
-                </div>
-              </details>
-            </form>
-          </td>
+          <th>词书</th>
+          <th>来源</th>
+          <th>导入</th>
         </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {% for s in sources %}
+          <tr>
+            <td>
+              <div><strong>{{ s.name }}</strong></div>
+              <div class="muted">{{ s.description }}</div>
+            </td>
+            <td class="muted">
+              <div>{{ s.license }}</div>
+              <div><a href="{{ s.homepage }}" target="_blank" rel="noreferrer">仓库</a></div>
+            </td>
+            <td>
+              <form class="stack" method="post" action="/library/import">
+                <input type="hidden" name="source_id" value="{{ s.id }}" />
+                <button class="btn primary" type="submit">导入</button>
+
+                <details>
+                  <summary class="muted">选项</summary>
+                  <div class="stack" style="margin-top: 10px;">
+                    <label>导入到词书
+                      <input name="deck_name" value="{{ s.default_deck }}" />
+                    </label>
+                    <label>默认标签
+                      <input name="default_tags" value="{{ s.default_tags }}" />
+                    </label>
+                    <label>重复处理
+                      <select name="on_conflict">
+                        <option value="skip" selected>跳过</option>
+                        <option value="update">更新</option>
+                      </select>
+                    </label>
+                  </div>
+                </details>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="only-mobile library-mobile">
+    {% for s in sources %}
+      <div class="card">
+        <div><strong>{{ s.name }}</strong></div>
+        <div class="muted">{{ s.description }}</div>
+        <div class="muted" style="margin-top: 8px;">
+          <span>{{ s.license }}</span>
+          <span> · </span>
+          <a href="{{ s.homepage }}" target="_blank" rel="noreferrer">仓库</a>
+        </div>
+
+        <form class="stack" method="post" action="/library/import" style="margin-top: 10px;">
+          <input type="hidden" name="source_id" value="{{ s.id }}" />
+          <button class="btn primary" type="submit">导入</button>
+
+          <details>
+            <summary class="muted">选项</summary>
+            <div class="stack" style="margin-top: 10px;">
+              <label>导入到词书
+                <input name="deck_name" value="{{ s.default_deck }}" />
+              </label>
+              <label>默认标签
+                <input name="default_tags" value="{{ s.default_tags }}" />
+              </label>
+              <label>重复处理
+                <select name="on_conflict">
+                  <option value="skip" selected>跳过</option>
+                  <option value="update">更新</option>
+                </select>
+              </label>
+            </div>
+          </details>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
 
   <div class="actions">
     <a class="btn" href="/words">手动导入</a>

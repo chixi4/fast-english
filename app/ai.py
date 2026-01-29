@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import re
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 from pydantic import ValidationError
@@ -67,7 +67,40 @@ class AiClient:
             data = resp.json()
         return data["choices"][0]["message"]["content"]
 
-    async def generate_simulation(
+    async def chat_completions_content_stream(self, payload: dict[str, Any]) -> AsyncIterator[str]:
+        stream_payload = {**payload, "stream": True}
+        timeout = httpx.Timeout(300.0, connect=15.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream(
+                "POST",
+                f"{self.settings.ai_base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self.settings.ai_api_key}"},
+                json=stream_payload,
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    line = line.strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if not data or data == "[DONE]":
+                        break
+                    try:
+                        obj = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    choice0 = (obj.get("choices") or [{}])[0] or {}
+                    delta = choice0.get("delta") or {}
+                    content = delta.get("content")
+                    if content is None:
+                        msg = choice0.get("message") or {}
+                        content = msg.get("content")
+                    if content:
+                        yield content
+
+    def build_simulation_payload(
         self,
         *,
         level: str,
@@ -76,18 +109,7 @@ class AiClient:
         passage_word_range: tuple[int, int] | None = None,
         paragraph_range: tuple[int, int] | None = None,
         question_count: int = 6,
-    ) -> GeneratedSimulation:
-        if self.settings.ai_mock:
-            return _mock_simulation(
-                level=level,
-                terms=terms,
-                question_count=question_count,
-                passage_word_range=passage_word_range,
-                paragraph_range=paragraph_range,
-            )
-        if not self.settings.ai_api_key:
-            raise RuntimeError("Missing AI_API_KEY (or set AI_MOCK=1).")
-
+    ) -> tuple[dict[str, Any], str, str]:
         guide = LEVEL_GUIDE.get(level, LEVEL_GUIDE["cet4"])
         vocab_lines = []
         for t in terms:
@@ -133,6 +155,8 @@ class AiClient:
 硬性要求：
 0) {length_hint if length_hint else "短文长度要符合该难度常见阅读材料长度，段落分明。"}
 1) 短文必须自然包含每个目标词（大小写不敏感），不要生硬堆砌。
+2) 目标词在短文中出现时，必须用特殊标记包起来：[[目标词]]。例如目标词是 above，则短文中写成 [[above]]。
+   注意：必须使用目标词的原形拼写（与目标词列表一致，只允许大小写不同），不要使用变形（如复数/过去式/ing）。
 2) 词汇题必须让学生在语境中判断含义/用法（不是死记硬背释义）。
 3) 题目总数 = {question_count}，每题4个选项（choices长度=4），answer_index为0-3。
 4) 每题给1-2句话的explanation。
@@ -153,43 +177,45 @@ class AiClient:
             "messages": messages,
             "temperature": 0.6,
         }
+        return payload, system, user
+
+    async def generate_simulation(
+        self,
+        *,
+        level: str,
+        terms: list[str],
+        term_notes: dict[str, str],
+        passage_word_range: tuple[int, int] | None = None,
+        paragraph_range: tuple[int, int] | None = None,
+        question_count: int = 6,
+    ) -> GeneratedSimulation:
+        if self.settings.ai_mock:
+            return _mock_simulation(
+                level=level,
+                terms=terms,
+                question_count=question_count,
+                passage_word_range=passage_word_range,
+                paragraph_range=paragraph_range,
+            )
+        if not self.settings.ai_api_key:
+            raise RuntimeError("Missing AI_API_KEY (or set AI_MOCK=1).")
+
+        payload, system, user = self.build_simulation_payload(
+            level=level,
+            terms=terms,
+            term_notes=term_notes,
+            passage_word_range=passage_word_range,
+            paragraph_range=paragraph_range,
+            question_count=question_count,
+        )
 
         last_err: Exception | None = None
-        last_parsed: GeneratedSimulation | None = None
-        last_missing: list[str] | None = None
         for attempt in range(1, 4):
             try:
                 text = await self._chat_completions(payload)
                 json_text = _safe_json_extract(text)
                 parsed = GeneratedSimulation.model_validate(json.loads(json_text))
-
-                ok, missing = _contains_all_terms(parsed.passage, terms)
-                if not ok:
-                    last_parsed = parsed
-                    last_missing = missing
-                    raise MissingTermsError(missing)
                 return parsed
-            except MissingTermsError as e:
-                last_err = e
-                missing_list = ", ".join(e.missing)
-                payload = {
-                    **payload,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {
-                            "role": "user",
-                            "content": (
-                                "You omitted some target terms in the passage. "
-                                "Regenerate and ensure these terms appear verbatim (exact spelling) "
-                                f"in the passage body: {missing_list}. "
-                                "Output only valid JSON."
-                            ),
-                        },
-                        {"role": "user", "content": user},
-                    ],
-                    "temperature": 0.2,
-                }
-                continue
             except (ValueError, json.JSONDecodeError, ValidationError, RuntimeError) as e:
                 last_err = e
                 payload = {
@@ -199,8 +225,8 @@ class AiClient:
                         {
                             "role": "user",
                             "content": (
-                                "上一次输出不符合要求（JSON不可解析或缺少目标词）。"
-                                "请严格输出可解析的JSON，并确保短文自然包含所有目标词。"
+                                "上一次输出不符合要求（JSON不可解析）。"
+                                "请严格输出可解析的JSON，并遵守所有硬性要求。"
                                 "只输出JSON，不要多余文本。"
                             ),
                         },
@@ -209,13 +235,6 @@ class AiClient:
                     "temperature": 0.4,
                 }
                 continue
-
-        # Fallback: if we successfully parsed but the model keeps omitting target terms,
-        # patch the passage to include the missing terms so the user can proceed.
-        if last_parsed is not None and last_missing:
-            patched = last_parsed.model_copy(deep=True)
-            patched.passage = patched.passage.rstrip() + "\n\nKey words (added): " + ", ".join(last_missing) + "."
-            return patched
 
         raise RuntimeError(f"AI generation failed after retries: {last_err}") from last_err
 

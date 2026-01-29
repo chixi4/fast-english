@@ -9,7 +9,12 @@
   <body>
     <header class="topbar">
       <div class="container topbar-inner">
-        <div class="brand"><a href="/">Vocabulary Study</a></div>
+        <div class="brand">
+          {% if request and request.url.path != "/" %}
+            <a class="back-link" href="javascript:history.back()">← 返回</a>
+          {% endif %}
+          <a href="/">Vocabulary Study</a>
+        </div>
         <nav class="nav">
           <a href="/">今日</a>
           <a href="/decks">词书</a>
