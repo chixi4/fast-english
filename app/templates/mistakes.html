@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>错词篮</h1>
+  <p class="muted">
+    选一组错词，喂给AI生成短文+出题。没有AI Key也可以用 <span class="mono">AI_MOCK=1</span> 跑通流程。
+  </p>
+
+  <form class="stack" method="post" action="/simulations/generate" onsubmit="return collectWordIds()">
+    <label>难度
+      <select name="level">
+        {% for lv in levels %}
+          <option value="{{ lv }}">{{ lv }} - {{ level_guide[lv] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <input type="hidden" name="word_ids" id="word_ids" value="" />
+    <button class="btn primary" type="submit">生成实战短文</button>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>term</th>
+          <th>释义/备注</th>
+          <th>时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+          <tr>
+            <td><input type="checkbox" class="word-check" data-word-id="{{ item.word.id }}" /></td>
+            <td class="mono">{{ item.word.term }}</td>
+            <td>{{ item.word.definition }}</td>
+            <td class="mono">{{ item.mistake.created_at }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </form>
+
+  <script>
+    function collectWordIds() {
+      const checks = document.querySelectorAll(".word-check:checked");
+      const ids = Array.from(checks).map((c) => c.dataset.wordId);
+      if (ids.length === 0) {
+        alert("请至少选择1个错词");
+        return false;
+      }
+      document.getElementById("word_ids").value = ids.join(",");
+      return true;
+    }
+  </script>
+{% endblock %}
+

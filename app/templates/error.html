@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>出错了</h1>
+  <div class="card">
+    <div class="muted">HTTP {{ status_code }}</div>
+    <div class="example">{{ detail }}</div>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/">返回首页</a>
+    <a class="btn" href="/mistakes">错词篮</a>
+    <a class="btn" href="/words">单词库</a>
+  </div>
+{% endblock %}
+

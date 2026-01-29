@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>单词库</h1>
+
+  <form class="row" method="get" action="/words">
+    <input name="q" placeholder="搜索term..." value="{{ q }}" />
+    <button class="btn" type="submit">搜索</button>
+  </form>
+
+  <h2>添加单词</h2>
+  <form class="stack" method="post" action="/words">
+    <label>term（英文）<input name="term" required /></label>
+    <label>释义/备注（中文可）<textarea name="definition" rows="2"></textarea></label>
+    <label>例句（可选）<textarea name="example" rows="2"></textarea></label>
+    <label>标签（逗号分隔）<input name="tags" /></label>
+    <label>词书（可选）<input name="deck_name" list="deck_names" placeholder="例如：CET4-核心词" /></label>
+    <label>章节/单元（可选）<input name="chapter" placeholder="例如：Unit 1" /></label>
+    <button class="btn primary" type="submit">保存</button>
+  </form>
+
+  <h2>批量导入</h2>
+  <form class="stack" method="post" action="/words/import" enctype="multipart/form-data">
+    <label>导入到词书（可选）
+      <input name="deck_name" list="deck_names" placeholder="例如：考研词汇-核心" />
+    </label>
+    <label>默认标签（可选）
+      <input name="default_tags" placeholder="例如：CET4, 高频" />
+    </label>
+    <label>重复处理
+      <select name="on_conflict">
+        <option value="skip" selected>跳过已存在</option>
+        <option value="update">更新已存在（有值才覆盖）</option>
+      </select>
+    </label>
+    <label>方式1：上传CSV/TSV/TXT（UTF-8优先）
+      <input type="file" name="file" />
+    </label>
+    <div class="muted">
+      支持格式：
+      <span class="mono">term,definition,example,tags,deck,chapter,position</span>（可带表头）或每行一个词；
+      推荐用 <span class="mono">TAB</span> 分隔避免释义里逗号冲突。也支持文件头元信息：
+      <span class="mono">#deck:</span> / <span class="mono">#tags:</span> / <span class="mono">#separator:</span> / <span class="mono">#columns:</span>
+    </div>
+    <label>方式2：直接粘贴（每行一个词，或用逗号/Tab分列）
+      <textarea name="text" rows="6" placeholder="#deck: CET4\n#tags: 高频\n#separator: tab\n#columns: term,definition,example,tags,chapter\nabandon\t放弃\tHe abandoned the plan.\t\tUnit 1\nvocabulary\t词汇\t\t\tUnit 1\nPneumoconiosis\t尘肺病\t\tmedical\tUnit 2"></textarea>
+    </label>
+    <button class="btn primary" type="submit">开始导入</button>
+  </form>
+
+  <datalist id="deck_names">
+    {% for d in decks %}
+      <option value="{{ d.name }}"></option>
+    {% endfor %}
+  </datalist>
+
+  <h2>最近添加</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>term</th>
+        <th>释义/备注</th>
+        <th>正确/错误</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for w in words %}
+        <tr>
+          <td class="mono">{{ w.term }}</td>
+          <td>{{ w.definition }}</td>
+          <td class="mono">{{ w.correct_count }}/{{ w.wrong_count }}</td>
+          <td>
+            <form method="post" action="/words/{{ w.id }}/delete" onsubmit="return confirm('删除 {{ w.term }} ?')">
+              <button class="btn danger" type="submit">删除</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
