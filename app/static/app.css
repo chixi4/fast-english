@@ -185,7 +185,7 @@ input, textarea, select {
   width: 100%;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 10px 12px;
   color: var(--text);
 }

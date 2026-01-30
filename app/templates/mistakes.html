@@ -68,6 +68,10 @@
           <div>
             <div class="big" style="font-size: 26px;">生成中...</div>
             <div id="loadingNote" class="muted">请稍候</div>
+            <div id="loadingActions" class="actions" style="display:none;margin-top:12px;">
+              <button class="btn" type="button" id="loadingCloseBtn">关闭</button>
+              <button class="btn primary" type="button" id="loadingRetryBtn">重试</button>
+            </div>
           </div>
         </div>
       </div>
@@ -79,10 +83,15 @@
         const overlay = document.getElementById("loadingOverlay");
         const note = document.getElementById("loadingNote");
         const riverEl = document.getElementById("aiRiver");
+        const actions = document.getElementById("loadingActions");
+        const closeBtn = document.getElementById("loadingCloseBtn");
+        const retryBtn = document.getElementById("loadingRetryBtn");
         const btn = document.getElementById("generateBtn");
         const levelSelect = document.getElementById("levelSelect");
         const targetCount = document.getElementById("targetCount");
         if (!form || !overlay) return;
+
+        let streamStartedDelta = false;
 
         const selectedWordIds = new Set();
         const wordIdsEl = document.getElementById("word_ids");
@@ -137,9 +146,14 @@
             headers: { "Accept": "text/event-stream" },
             body: fd,
           });
+          const ct = (resp.headers.get("content-type") || "").toLowerCase();
           if (!resp.ok) {
             const text = await resp.text().catch(() => "");
             throw new Error(text || `HTTP ${resp.status}`);
+          }
+          if (!ct.includes("text/event-stream")) {
+            const text = await resp.text().catch(() => "");
+            throw new Error(`返回类型不是 SSE（${ct || "unknown"}）。可能登录失效或被重定向：${text.slice(0, 160)}`);
           }
           if (!resp.body) throw new Error("Streaming not supported by this browser.");
 
@@ -181,20 +195,17 @@
                  if (msg.t === "delta" && typeof msg.c === "string") {
                    if (!startedDelta) {
                      startedDelta = true;
-                     if (note) {
-                       const t = (note.textContent || "").trim();
-                       if (t.startsWith("已选词汇")) note.textContent = "AI 开始生成…";
-                     }
-                   }
-                   appendRiver(msg.c);
-                 } else if (msg.t === "note" && typeof msg.msg === "string") {
-                   // Keep the local "已选词汇…" hint until the AI starts streaming content.
-                   if (startedDelta && note) note.textContent = msg.msg;
-                   appendRiver(`${msg.msg}\n`);
-                 } else if (msg.t === "done" && typeof msg.sim_id === "number") {
-                   window.location.href = `/simulations/${msg.sim_id}`;
-                   return;
-                 } else if (msg.t === "error" && typeof msg.msg === "string") {
+                     streamStartedDelta = true;
+                     if (note) note.textContent = "AI 生成中…";
+                    }
+                    appendRiver(msg.c);
+                  } else if (msg.t === "note" && typeof msg.msg === "string") {
+                    // Technical progress stays in the river; keep the visible note concise.
+                    appendRiver(`${msg.msg}\n`);
+                  } else if (msg.t === "done" && typeof msg.sim_id === "number") {
+                    window.location.href = `/simulations/${msg.sim_id}`;
+                    return;
+                  } else if (msg.t === "error" && typeof msg.msg === "string") {
                   throw new Error(msg.msg);
                 }
               }
@@ -203,19 +214,29 @@
           throw new Error("连接结束，但未收到完成信号。");
         }
 
-        form.addEventListener("submit", (e) => {
-          e.preventDefault();
+        function setOverlayError(errText) {
+          if (note) note.textContent = errText;
+          if (actions) actions.style.display = "flex";
+        }
+
+        function clearOverlayError() {
+          if (actions) actions.style.display = "none";
+        }
+
+        function startGenerate() {
           const ids = collectWordIds();
+          streamStartedDelta = false;
 
           if (note) {
             if (ids.length) {
-              note.textContent = `已选词汇：${ids.length} 个`;
+              note.textContent = `选词：${ids.length}个`;
             } else {
               const k = (document.getElementById("targetCount")?.value || "").trim();
-              note.textContent = k ? `已选词汇：自动挑词（目标 ${k} 个）` : "已选词汇：自动挑词";
+              note.textContent = k ? `自动选词：${k}个` : "自动选词";
             }
           }
 
+          clearOverlayError();
           overlay.classList.remove("hidden");
           if (btn) btn.disabled = true;
           if (riverEl) riverEl.textContent = "";
@@ -230,11 +251,43 @@
           }
 
           postStream().catch((err) => {
-            if (note) note.textContent = `生成失败：${err?.message || String(err)}`;
-            overlay.classList.add("hidden");
+            const msg = `生成失败：${err?.message || String(err)}`;
+            setOverlayError(msg);
+            try {
+              const t = new Date().toISOString().replace("T", " ").replace("Z", "");
+              if (riverEl) riverEl.textContent = (riverEl.textContent || "") + `\n[${t}] ${msg}\n`;
+            } catch {}
             if (btn) btn.disabled = false;
           });
+        }
+
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          startGenerate();
         });
+
+        // UX: pressing Enter in inputs should NOT trigger generation.
+        form.addEventListener("keydown", (e) => {
+          if (e.key !== "Enter") return;
+          const el = e.target;
+          if (!el || !(el instanceof HTMLElement)) return;
+          if (!(el.tagName === "INPUT" || el.tagName === "SELECT")) return;
+          e.preventDefault();
+          try { el.blur(); } catch {}
+        });
+
+        if (closeBtn) {
+          closeBtn.addEventListener("click", () => {
+            overlay.classList.add("hidden");
+            clearOverlayError();
+            if (btn) btn.disabled = false;
+          });
+        }
+        if (retryBtn) {
+          retryBtn.addEventListener("click", () => {
+            startGenerate();
+          });
+        }
       })();
     </script>
   {% endif %}
