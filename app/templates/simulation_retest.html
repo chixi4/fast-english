@@ -13,34 +13,37 @@
       <div class="muted">这篇短文涉及的错词已清空</div>
     </div>
   {% else %}
-    <div class="review-card" id="reviewCard" data-revealed="0">
-      <div class="review-term big mono">{{ word.term }}</div>
+    <script type="application/json" id="retestPrefetch">{{ prefetch_words_json | safe }}</script>
+    <div class="review-stage">
+      <div class="review-card" id="reviewCard" data-revealed="0">
+        <div class="review-term big mono">{{ word.term }}</div>
 
-      <div id="answer" class="review-answer" style="width: 100%;">
-        {% if word.definition %}
-          <div class="review-def">{{ word.definition }}</div>
-        {% endif %}
-        {% if word.example %}
-          <div class="example" style="font-size: 15px; margin-bottom: 16px;">{{ word.example }}</div>
-        {% endif %}
-        <div class="muted" style="margin-bottom: 16px;">
-          <span>还剩：<span class="mono">{{ remaining }}</span> / <span class="mono">{{ total }}</span></span>
+        <div id="answer" class="review-answer" style="width: 100%;">
+          {% if word.definition %}
+            <div class="review-def">{{ word.definition }}</div>
+          {% endif %}
+          {% if word.example %}
+            <div class="example" style="font-size: 15px; margin-bottom: 16px;">{{ word.example }}</div>
+          {% endif %}
+          <div class="muted" style="margin-bottom: 16px;">
+            <span>还剩：<span class="mono">{{ remaining }}</span> / <span class="mono">{{ total }}</span></span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="review-reveal-overlay" id="revealOverlay" role="button" tabindex="0" aria-label="点击显示释义">
-      <div class="review-prompt-area" aria-hidden="true">
-        <div class="review-prompt muted" id="reviewPrompt">
-          <div class="review-prompt-title">请回忆单词释义</div>
-          <div class="review-prompt-sub">点击屏幕显示答案</div>
+      <div class="review-reveal-overlay" id="revealOverlay" role="button" tabindex="0" aria-label="点击显示释义">
+        <div class="review-prompt-area" aria-hidden="true">
+          <div class="review-prompt muted" id="reviewPrompt">
+            <div class="review-prompt-title">请回忆单词释义</div>
+            <div class="review-prompt-sub">点击屏幕显示答案</div>
+          </div>
         </div>
       </div>
     </div>
 
     <div class="review-bottombar hidden" id="reviewBottomBar" aria-hidden="true">
       <div class="review-bottombar-inner">
-        <form class="review-rating-grid" method="post" action="/simulations/{{ sim.id }}/retest/{{ word.id }}">
+        <form class="review-rating-grid" id="retestRateForm" hx-boost="false" method="post" action="/simulations/{{ sim.id }}/retest/{{ word.id }}">
           <input type="hidden" name="i" value="{{ i }}" />
           <button class="btn danger" type="submit" name="rating" value="again">不认识</button>
           <button class="btn warn" type="submit" name="rating" value="hard">不确定</button>
@@ -59,8 +62,43 @@
         const revealOverlay = document.getElementById('revealOverlay');
         const reviewCard = document.getElementById('reviewCard');
         const prompt = document.getElementById('reviewPrompt');
+        const answer = document.getElementById('answer');
         const bottomBar = document.getElementById('reviewBottomBar');
         const bottomSpacer = document.getElementById('reviewBottomSpacer');
+        const rateForm = document.getElementById('retestRateForm');
+        const prefetchEl = document.getElementById('retestPrefetch');
+        const metaMonos = document.querySelectorAll('.review-meta .mono');
+        const metaRemainingEl = metaMonos && metaMonos.length ? metaMonos[0] : null;
+        const metaTotalEl = metaMonos && metaMonos.length > 1 ? metaMonos[1] : null;
+
+        const simId = {{ sim.id }};
+        let idx = {{ i }};
+        let words = [];
+        try {
+          words = JSON.parse((prefetchEl && prefetchEl.textContent) ? prefetchEl.textContent : '[]') || [];
+        } catch {
+          words = [];
+        }
+
+        const escapeHtml = (s) => String(s || '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('\"', '&quot;')
+          .replaceAll("'", '&#39;');
+
+        const resetRevealUi = () => {
+          if (!reviewCard) return;
+          reviewCard.dataset.revealed = "0";
+          reviewCard.classList.remove("revealed");
+          if (prompt) prompt.style.display = "";
+          if (revealOverlay) revealOverlay.style.display = "";
+          if (bottomBar) {
+            bottomBar.classList.add("hidden");
+            bottomBar.setAttribute("aria-hidden", "true");
+          }
+          if (bottomSpacer) bottomSpacer.classList.add("hidden");
+        };
 
         const reveal = () => {
           if (!reviewCard) return;
@@ -76,6 +114,38 @@
           if (bottomSpacer) bottomSpacer.classList.remove("hidden");
         };
 
+        const renderWord = (w) => {
+          if (!w || !reviewCard) return;
+          const termEl = reviewCard.querySelector('.review-term');
+          if (termEl) termEl.textContent = w.term || '';
+          if (answer) {
+            const parts = [];
+            if (w.definition) parts.push(`<div class="review-def">${escapeHtml(w.definition)}</div>`);
+            if (w.example) parts.push(`<div class="example" style="font-size: 15px; margin-bottom: 16px;">${escapeHtml(w.example)}</div>`);
+            answer.innerHTML = parts.join('');
+          }
+          if (rateForm) rateForm.action = `/simulations/${simId}/retest/${w.word_id}`;
+          resetRevealUi();
+        };
+
+        const setRemaining = () => {
+          const remaining = Math.max(0, words.length - idx);
+          if (metaRemainingEl) metaRemainingEl.textContent = String(remaining);
+          if (metaTotalEl) metaTotalEl.textContent = String(words.length);
+        };
+
+        const showDone = () => {
+          if (!reviewCard) return;
+          reviewCard.style.display = "none";
+          if (revealOverlay) revealOverlay.style.display = "none";
+          if (bottomBar) bottomBar.style.display = "none";
+          if (bottomSpacer) bottomSpacer.style.display = "none";
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.innerHTML = '<div class="big">已全部重测</div><div class="muted">这篇短文涉及的错词已清空</div>';
+          reviewCard.parentElement && reviewCard.parentElement.insertBefore(card, reviewCard);
+        };
+
         if (revealOverlay) {
           revealOverlay.addEventListener('click', reveal);
           revealOverlay.addEventListener('keydown', (e) => {
@@ -85,6 +155,45 @@
             }
           });
         }
+
+        const postRating = async (wordId, rating) => {
+          const fd = new FormData();
+          fd.set('rating', rating);
+          const resp = await fetch(`/api/simulations/${simId}/retest/${wordId}/rate`, { method: 'POST', body: fd });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        };
+
+        const buttons = rateForm ? rateForm.querySelectorAll('button[type="submit"][name="rating"]') : [];
+        buttons.forEach((btn) => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const w = words[idx];
+            if (!w) return;
+
+            const rating = btn.value;
+            const movedOut = (rating === 'good' || rating === 'easy');
+
+            // Switch locally first (no waiting)
+            if (movedOut) {
+              words.splice(idx, 1);
+            } else {
+              idx += 1;
+            }
+            setRemaining();
+
+            const next = words[idx];
+            if (next) renderWord(next);
+            else showDone();
+
+            postRating(w.word_id, rating).catch(() => {
+              window.location.href = `/simulations/${simId}/retest`;
+            });
+          });
+        });
+
+        const initial = words[idx];
+        if (initial) renderWord(initial);
+        else showDone();
       })();
     </script>
   {% endif %}

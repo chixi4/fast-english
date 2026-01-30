@@ -308,6 +308,7 @@ mark.kw {
   gap: 12px;
   padding: 22px 16px;
 }
+.review-stage { position: relative; }
 .review-term {
   font-size: 42px;
   margin-bottom: 6px;
@@ -336,11 +337,8 @@ mark.kw {
 .review-card.revealed .review-answer { display: block; }
 
 .review-reveal-overlay {
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
+  position: absolute;
+  inset: 0;
   background: transparent;
   z-index: 950;
   display: flex;
@@ -353,8 +351,9 @@ mark.kw {
   position: absolute;
   left: 0;
   right: 0;
-  top: clamp(220px, 36vh, 420px);
-  bottom: calc(132px + env(safe-area-inset-bottom));
+  top: 50%;
+  transform: translateY(-50%);
+  bottom: auto;
   display: flex;
   align-items: center;
   justify-content: center;
