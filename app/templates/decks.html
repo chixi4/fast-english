@@ -6,37 +6,14 @@
     <div class="card">{{ toast }}</div>
   {% endif %}
 
-  <div class="actions">
+  <div class="actions actions-full">
     <a class="btn primary" href="/library">导入词书</a>
   </div>
 
   <div class="fullbleed divider-bar"></div>
 
   <h2>已有词书</h2>
-  <div class="only-desktop">
-    <table class="table">
-      <thead>
-        <tr>
-          <th>名称</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in items %}
-          <tr>
-            <td><a href="/decks/{{ item.deck.id }}">{{ item.deck.name }}</a></td>
-            <td>
-              <div class="actions">
-                <a class="btn" href="/decks/{{ item.deck.id }}">详情</a>
-              </div>
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  <div class="only-mobile deck-mobile">
+  <div class="deck-mobile">
     {% for item in items %}
       <div class="card">
         <div class="deck-title">

@@ -156,6 +156,8 @@ h2 { margin: 18px 0 10px; font-size: 18px; color: var(--muted); }
 .btn:active { transform: translateY(1px) scale(0.99); }
 
 .actions { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
+.actions.actions-full { flex-direction: column; }
+.actions.actions-full .btn { width: 100%; }
 .row { display: flex; gap: 10px; align-items: center; margin: 10px 0; }
 .row input { flex: 1; }
 .stack { display: grid; gap: 10px; }
