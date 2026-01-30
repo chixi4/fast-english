@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>注册</h1>
+
+  {% if toast %}
+    <div class="card">{{ toast }}</div>
+  {% endif %}
+
+  <div class="card auth-card">
+    <form class="stack" method="post" action="/auth/register">
+      <input type="hidden" name="next" value="{{ next or '/' }}" />
+      <label>账号
+        <input name="username" autocomplete="username" required value="{{ username or '' }}" />
+      </label>
+      <label>密码
+        <input name="password" type="password" autocomplete="new-password" required />
+      </label>
+      <label>确认密码
+        <input name="password2" type="password" autocomplete="new-password" required />
+      </label>
+      <button class="btn primary" type="submit">创建账号</button>
+    </form>
+
+    <div class="muted" style="margin-top: 12px;">
+      已有账号？<a href="/auth/login{% if next %}?next={{ next }}{% endif %}">去登录</a>
+    </div>
+  </div>
+{% endblock %}

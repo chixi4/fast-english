@@ -32,6 +32,16 @@ a { color: var(--text); }
 .topbar-inner { display: flex; align-items: center; justify-content: space-between; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand a { text-decoration: none; font-weight: 700; letter-spacing: 0.2px; }
+.userbar { display: flex; align-items: center; gap: 10px; }
+.userchip {
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  line-height: 1;
+}
+.userchip:hover { color: var(--text); border-color: var(--muted); }
 .back-link {
   font-weight: 600;
   color: var(--muted);
@@ -119,6 +129,7 @@ h2 { margin: 18px 0 10px; font-size: 18px; color: var(--muted); }
 .row { display: flex; gap: 10px; align-items: center; margin: 10px 0; }
 .row input { flex: 1; }
 .stack { display: grid; gap: 10px; }
+.auth-card { max-width: 520px; margin: 0 auto; }
 input, textarea, select {
   width: 100%;
   background: var(--panel);

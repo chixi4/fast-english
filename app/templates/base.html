@@ -12,12 +12,21 @@
         <div class="brand">
           <a href="/">Vocabulary Study</a>
         </div>
-        <nav class="nav">
-          <a href="/">今日</a>
-          <a href="/decks">词书</a>
-          <a href="/practice">练习</a>
-          <a href="/settings">我的</a>
-        </nav>
+
+        {% if request.state.user_username %}
+          <nav class="nav">
+            <a href="/">浠婃棩</a>
+            <a href="/decks">璇嶄功</a>
+            <a href="/practice">缁冧範</a>
+            <a href="/settings">鎴戠殑</a>
+          </nav>
+          <div class="userbar">
+            <a class="userchip" href="/settings">@{{ request.state.user_username }}</a>
+            <form method="post" action="/auth/logout" style="margin:0;">
+              <button class="btn" type="submit">退出</button>
+            </form>
+          </div>
+        {% endif %}
       </div>
     </header>
 
@@ -30,3 +39,4 @@
 
   </body>
 </html>
+
