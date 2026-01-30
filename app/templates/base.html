@@ -3,11 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#1c1c1e" />
     <title>{{ title or "Vocabulary Study MVP" }}</title>
-    <link rel="stylesheet" href="/static/app.css" />
-    <script defer src="/static/htmx.min.js"></script>
+    <link rel="stylesheet" href="/static/app.css?v={{ static_v() }}" />
+    <script defer src="/static/htmx.min.js?v={{ static_v() }}"></script>
   </head>
-  <body hx-boost="true" hx-indicator="#loading">
+  <body style="background:#1c1c1e;color:#f5f5f7" hx-boost="true" hx-target="#content" hx-select="#content" hx-swap="outerHTML" hx-indicator="#loading">
     <div id="loading" class="htmx-indicator"></div>
     <header class="topbar">
       <div class="container topbar-inner">
@@ -26,7 +28,7 @@
       </div>
     </header>
 
-    <main class="container">
+    <main id="content" class="container">
       {% block content %}{% endblock %}
     </main>
     <footer class="container footer">

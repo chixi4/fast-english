@@ -21,6 +21,7 @@ body {
   line-height: 1.45;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 a { color: var(--text); }
@@ -68,6 +69,23 @@ a { color: var(--text); }
 
 h1 { margin: 10px 0 14px; font-size: 26px; }
 h2 { margin: 18px 0 10px; font-size: 18px; color: var(--muted); }
+
+.title-accent {
+  position: relative;
+  display: inline-block;
+  padding-right: 14px;
+}
+.title-accent::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0.65em;
+  width: 8px;
+  height: 8px;
+  background: var(--primary);
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px rgba(212, 102, 44, 0.12);
+}
 
 .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .card {
@@ -146,10 +164,104 @@ input, textarea, select {
   width: 100%;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 10px;
   padding: 10px 12px;
   color: var(--text);
 }
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  box-shadow: none;
+  border-color: var(--border);
+}
+input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, a.btn:focus-visible, summary:focus-visible {
+  outline: 2px solid rgba(212, 102, 44, 0.55);
+  outline-offset: 2px;
+}
+input:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible),
+select:focus:not(:focus-visible),
+button:focus:not(:focus-visible),
+a.btn:focus:not(:focus-visible),
+summary:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
+
+select {
+  /* keep default platform select arrow */
+  appearance: auto;
+  -webkit-appearance: menulist;
+}
+
+/* Use native select look where desired (e.g. deck picker). */
+.native-select {
+  appearance: auto;
+  -webkit-appearance: menulist;
+  background-image: none;
+  padding-right: 12px;
+  border-radius: 4px;
+}
+.native-select:focus,
+.native-select:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.deck-picker { position: relative; margin-top: 10px; }
+.deck-picker-summary {
+  display: block;
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  padding-right: 42px;
+  cursor: pointer;
+  color: var(--text);
+  user-select: none;
+  position: relative;
+  list-style: none;
+}
+.deck-picker-summary::-webkit-details-marker { display: none; }
+.deck-picker-summary::marker { content: ""; }
+.deck-picker-summary::after {
+  content: "";
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: translateY(-60%) rotate(45deg);
+}
+.deck-picker-summary:focus,
+.deck-picker-summary:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.deck-picker[open] .deck-picker-summary { border-color: var(--border); }
+.deck-picker-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 10px);
+  background: rgba(44, 44, 46, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  z-index: 200;
+}
+.deck-picker-item {
+  display: block;
+  padding: 12px 12px;
+  text-decoration: none;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.deck-picker-item:last-child { border-bottom: none; }
+.deck-picker-item:active { background: rgba(212, 102, 44, 0.14); }
 
 /* hide number spinners (the white stepper on the right) */
 input[type="number"]::-webkit-outer-spin-button,
@@ -259,17 +371,31 @@ mark.kw {
 
 .review-deck-form select { width: 100%; }
 
-.library-list { display: grid; gap: 0; }
+.library-list { display: grid; gap: 10px; margin-top: 10px; }
 .library-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding: 14px 12px;
+  background: rgba(44, 44, 46, 0.72);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: 12px;
 }
+.card.library-item:last-child { border-bottom: 1px solid var(--border); }
 .library-left { min-width: 0; }
 .library-name { font-size: 18px; font-weight: 800; }
 .library-right { margin: 0; }
 .library-right .btn { white-space: nowrap; min-width: 86px; }
+
+.deck-mobile .card {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 14px 0;
+}
+
 
 .picker-list { display: grid; gap: 0; }
 .picker-row {

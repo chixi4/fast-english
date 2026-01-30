@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>词书</h1>
+  <h1 class="title-accent">词书</h1>
 
   {% if toast %}
     <div class="card">{{ toast }}</div>
   {% endif %}
 
   <div class="actions">
-    <a class="btn" href="/library">导入词书</a>
+    <a class="btn primary" href="/library">导入词书</a>
   </div>
 
   <div class="fullbleed divider-bar"></div>

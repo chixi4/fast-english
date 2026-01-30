@@ -42,6 +42,16 @@ init_auth_db()
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+def _static_v() -> str:
+    try:
+        css_v = (BASE_DIR / "static" / "app.css").stat().st_mtime_ns
+        js_v = (BASE_DIR / "static" / "htmx.min.js").stat().st_mtime_ns
+        return str(max(css_v, js_v))
+    except Exception:
+        return "0"
+
+templates.env.globals["static_v"] = _static_v
+
 app = FastAPI(title="Vocabulary Study MVP")
 app.add_middleware(GZipMiddleware, minimum_size=500)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
@@ -572,6 +582,13 @@ def home(request: Request, deck_id: int | None = None, toast: str | None = None)
         if suggested_deck_id is None and decks:
             suggested_deck_id = decks[0].id
 
+        selected_deck_label = "全部词书"
+        if deck_id is not None:
+            for d in decks:
+                if int(d.id) == int(deck_id):
+                    selected_deck_label = d.name
+                    break
+
         unplanned_word_count = int(
             session.query(func.count(Word.id))
             .outerjoin(SrsCard, SrsCard.word_id == Word.id)
@@ -618,6 +635,7 @@ def home(request: Request, deck_id: int | None = None, toast: str | None = None)
             "daily_review_limit": daily_review_limit,
             "suspend_new_when_due_over": suspend_new_when_due_over,
             "quick_add_count": quick_add_count,
+            "selected_deck_label": selected_deck_label,
         },
     )
 

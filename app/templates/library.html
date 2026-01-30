@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>词书库</h1>
+  <h1 class="title-accent">词书库</h1>
 
   <div class="library-list">
     {% for s in sources %}
@@ -13,7 +13,7 @@
           <input type="hidden" name="deck_name" value="{{ s.default_deck }}" />
           <input type="hidden" name="default_tags" value="{{ s.default_tags }}" />
           <input type="hidden" name="on_conflict" value="skip" />
-          <button class="btn" type="submit">导入</button>
+          <button class="btn primary" type="submit">导入</button>
         </form>
       </div>
     {% endfor %}

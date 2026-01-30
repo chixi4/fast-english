@@ -47,7 +47,7 @@
       <div class="big">暂无到期卡片</div>
       <div class="actions">
         <a class="btn primary" href="/mistakes">错词篮</a>
-        <a class="btn" href="/">返回今日</a>
+        <a class="btn" href="/">返回主页</a>
       </div>
     </div>
   {% else %}
@@ -217,6 +217,32 @@
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         };
 
+        let doneShown = false;
+        const showDone = () => {
+          if (doneShown) return;
+          doneShown = true;
+          const stage = reviewCard ? reviewCard.closest('.review-stage') : null;
+          if (stage) stage.style.display = "none";
+          if (revealOverlay) revealOverlay.style.display = "none";
+          if (bottomBar) bottomBar.style.display = "none";
+          if (bottomSpacer) bottomSpacer.style.display = "none";
+
+          const card = document.createElement('div');
+          card.className = 'card';
+          const qs = deckId ? `?deck_id=${encodeURIComponent(deckId)}` : '';
+          card.innerHTML =
+            '<div class="big">已学完</div>' +
+            '<div class="muted" style="margin-top: 8px;">今天到期的卡片已经完成。若刚刚点了“不认识”，它可能会稍后再次出现。</div>' +
+            '<div class="actions" style="margin-top: 12px;">' +
+              '<a class="btn primary" href="/">返回主页</a>' +
+              '<a class="btn" href="/review' + qs + '">刷新看看</a>' +
+              '<a class="btn" href="/mistakes">错词篮</a>' +
+            '</div>';
+
+          const container = (stage && stage.parentElement) ? stage.parentElement : document.body;
+          container.insertBefore(card, stage ? stage.nextSibling : null);
+        };
+
         const buttons = rateForm ? rateForm.querySelectorAll('button[type="submit"][name="rating"]') : [];
         buttons.forEach((btn) => {
           btn.addEventListener('click', (e) => {
@@ -228,15 +254,13 @@
             if (durationMs) durationMs.value = String(ms);
 
             // Switch locally first (no waiting), then sync rating in the background.
-            const next = cards[idx + 1];
             const prev = current;
+            const next = cards[idx + 1];
             if (next) {
               idx += 1;
               renderCard(next);
             } else {
-              const qs = deckId ? `?deck_id=${encodeURIComponent(deckId)}` : '';
-              window.location.href = `/review${qs}`;
-              return;
+              showDone();
             }
 
             postRating(prev.word_id, rating, ms).catch(() => {
