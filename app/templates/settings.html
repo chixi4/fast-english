@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>鎴戠殑</h1>
+  <h1>我的</h1>
 
   <div class="card" style="margin-top: 12px;">
     <div class="card-k">当前账号</div>
@@ -20,30 +20,30 @@
 
   <div class="cards">
     <div class="card">
-      <div class="card-k">AI 鐘舵€?/div>
+      <div class="card-k">AI 状态</div>
       <div class="card-v">{{ ai_status }}</div>
       <div class="muted">{{ ai_model }}</div>
     </div>
 
     <div class="card">
-      <div class="card-k">瀛︿範璁″垝</div>
-      <div class="card-v">{{ plan_daily_new_limit }}/澶?/div>
+      <div class="card-k">学习计划</div>
+      <div class="card-v">{{ plan_daily_new_limit }}/天</div>
       <form class="stack" method="post" action="/settings/plan" style="margin-top: 10px;">
-        <label>姣忔棩鏂拌瘝涓婇檺
+        <label>每日新词上限
           <input type="number" name="daily_new_limit" min="1" max="200" value="{{ plan_daily_new_limit }}" />
         </label>
-        <label>姣忔棩澶嶄範涓婇檺
+        <label>每日复习上限
           <input type="number" name="daily_review_limit" min="0" max="5000" value="{{ plan_daily_review_limit }}" />
         </label>
-        <button class="btn primary" type="submit">淇濆瓨</button>
+        <button class="btn primary" type="submit">保存</button>
       </form>
     </div>
 
     <div class="card">
-      <div class="card-k">楂樼骇</div>
+      <div class="card-k">高级</div>
       <div class="card-v">Tools</div>
       <div class="actions">
-        <a class="btn" href="/words">鍗曡瘝搴?/a>
+        <a class="btn" href="/words">单词库</a>
         <a class="btn" href="/simulations">瀹炴垬鐭枃</a>
       </div>
     </div>
@@ -51,4 +51,3 @@
 
   <div class="fullbleed divider-tail"></div>
 {% endblock %}
-
