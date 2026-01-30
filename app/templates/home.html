@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>今日</h1>
+  <h1 class="title-accent">今日</h1>
 
   {% if toast %}
     <div class="card">{{ toast }}</div>
@@ -49,15 +49,30 @@
       </div>
     </div>
   {% else %}
-    <form class="row" method="get" action="/">
-      <select name="deck_id" onchange="this.form.submit()">
-        <option value="0">全部词书</option>
-        {% for d in decks %}
-          <option value="{{ d.id }}" {% if deck_id == d.id %}selected{% endif %}>{{ d.name }}</option>
-        {% endfor %}
-      </select>
-      <div class="muted">预计用时：<span class="mono">{{ est_minutes }}</span> 分钟</div>
-    </form>
+    <div class="only-desktop">
+      <form class="row" method="get" action="/">
+        <select class="native-select" name="deck_id" onchange="this.form.submit()">
+          <option value="0">全部词书</option>
+          {% for d in decks %}
+            <option value="{{ d.id }}" {% if deck_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+          {% endfor %}
+        </select>
+        <div class="muted">预计用时：<span class="mono">{{ est_minutes }}</span> 分钟</div>
+      </form>
+    </div>
+
+    <div class="only-mobile">
+      <details class="deck-picker" id="deckPicker">
+        <summary class="deck-picker-summary">{{ selected_deck_label }}</summary>
+        <div class="deck-picker-menu" role="listbox" aria-label="选择词书">
+          <a class="deck-picker-item" href="/?deck_id=0">全部词书</a>
+          {% for d in decks %}
+            <a class="deck-picker-item" href="/?deck_id={{ d.id }}">{{ d.name }}</a>
+          {% endfor %}
+        </div>
+      </details>
+      <div class="muted" style="margin-top: 10px;">预计用时：<span class="mono">{{ est_minutes }}</span> 分钟</div>
+    </div>
 
     <div class="fullbleed divider-bar"></div>
 
