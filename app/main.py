@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fsrs import Rating
-from sqlalchemy import func
+from sqlalchemy import case, func
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import GZipMiddleware
 
@@ -113,6 +113,45 @@ async def _auth_session_middleware(request: Request, call_next):
 def _redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url=url, status_code=303)
 
+
+def _is_htmx(request: Request) -> bool:
+    return (request.headers.get("HX-Request") or "").strip().lower() == "true"
+
+
+def _word_display_parts(word: Word | None) -> tuple[str, str]:
+    if word is None or not word.definition:
+        return ("", "")
+    raw = str(word.definition)
+    text = raw.replace("\r\n", "\n").replace("\\r\\n", "\n").replace("\\n", "\n")
+    t = text.strip()
+    if t.startswith("/") and t.find("/", 1) > 1:
+        j = t.find("/", 1)
+        return (t[: j + 1].strip(), t[j + 1 :].strip())
+    return ("", t)
+
+
+def _review_card_dict(word: Word, card: SrsCard, *, chapter: str = "") -> dict[str, Any]:
+    phonetic, definition_text = _word_display_parts(word)
+    return {
+        "word_id": int(word.id),
+        "term": str(word.term or ""),
+        "chapter": str(chapter or ""),
+        "phonetic": phonetic,
+        "definition_text": definition_text,
+        "example": str(word.example or ""),
+        "state": int(card.state or 0),
+        "correct_count": int(word.correct_count or 0),
+        "wrong_count": int(word.wrong_count or 0),
+    }
+
+
+def _word_dict(word: Word) -> dict[str, Any]:
+    return {
+        "word_id": int(word.id),
+        "term": str(word.term or ""),
+        "definition": str(word.definition or ""),
+        "example": str(word.example or ""),
+    }
 
 def _cookie_is_secure(request: Request) -> bool:
     xf_proto = (request.headers.get("x-forwarded-proto") or "").strip().lower()
@@ -1342,9 +1381,13 @@ def review(request: Request, deck_id: int | None = None, toast: str | None = Non
     if deck_id == 0:
         deck_id = None
     now = _utcnow()
+    prefetch_limit = 120
     with get_session() as session:
         decks = session.query(Deck).order_by(Deck.name.asc()).all()
         plan = _ensure_default_plan(session)
+
+        if deck_id is None and decks:
+            deck_id = int(decks[0].id)
 
         word_count = int(session.query(func.count(Word.id)).scalar() or 0)
 
@@ -1364,10 +1407,38 @@ def review(request: Request, deck_id: int | None = None, toast: str | None = Non
                 .filter(DeckWord.deck_id == deck_id)
             )
 
-        due_q = base_q.filter(SrsCard.due_at <= now)
-        due_pair = due_q.order_by(SrsCard.due_at.asc(), Word.term.asc()).first()
-        due_count = int(due_q.count())
-        total = int(base_q.count())
+        due_q = base_q.filter(SrsCard.due_at <= now).order_by(SrsCard.due_at.asc(), Word.term.asc())
+        prefetch_rows: list[Any] = []
+        if deck_id is not None:
+            prefetch_rows = (
+                session.query(Word, SrsCard, DeckWord.chapter)
+                .join(SrsCard, SrsCard.word_id == Word.id)
+                .join(DeckWord, DeckWord.word_id == Word.id)
+                .filter(DeckWord.deck_id == deck_id)
+                .filter(SrsCard.due_at <= now)
+                .order_by(SrsCard.due_at.asc(), Word.term.asc())
+                .limit(prefetch_limit)
+                .all()
+            )
+        else:
+            prefetch_rows = due_q.limit(prefetch_limit).all()
+
+        due_pair = None
+        if prefetch_rows:
+            if deck_id is not None:
+                w, c, _ch = prefetch_rows[0]
+                due_pair = (w, c)
+            else:
+                due_pair = prefetch_rows[0]
+        cards_q = session.query(SrsCard)
+        if deck_id is not None:
+            cards_q = cards_q.join(DeckWord, DeckWord.word_id == SrsCard.word_id).filter(DeckWord.deck_id == deck_id)
+        total, due_count = cards_q.with_entities(
+            func.count(SrsCard.word_id),
+            func.coalesce(func.sum(case((SrsCard.due_at <= now, 1), else_=0)), 0),
+        ).first() or (0, 0)
+        total = int(total or 0)
+        due_count = int(due_count or 0)
 
         next_pair = base_q.filter(SrsCard.due_at > now).order_by(SrsCard.due_at.asc()).first()
         next_due_at = next_pair[1].due_at if next_pair else None
@@ -1380,18 +1451,16 @@ def review(request: Request, deck_id: int | None = None, toast: str | None = Non
             link = session.query(DeckWord).filter(DeckWord.deck_id == deck_id, DeckWord.word_id == word.id).first()
             chapter = link.chapter if link else ""
 
-    word_phonetic = ""
-    word_definition_text = ""
-    if word is not None and word.definition:
-        raw = str(word.definition)
-        text = raw.replace("\r\n", "\n").replace("\\r\\n", "\n").replace("\\n", "\n")
-        t = text.strip()
-        if t.startswith("/") and t.find("/", 1) > 1:
-            j = t.find("/", 1)
-            word_phonetic = t[: j + 1].strip()
-            word_definition_text = t[j + 1 :].strip()
+    word_phonetic, word_definition_text = _word_display_parts(word)
+
+    prefetch_cards: list[dict[str, Any]] = []
+    if prefetch_rows:
+        if deck_id is not None:
+            for w, c, ch in prefetch_rows:
+                prefetch_cards.append(_review_card_dict(w, c, chapter=str(ch or "")))
         else:
-            word_definition_text = t
+            for w, c in prefetch_rows:
+                prefetch_cards.append(_review_card_dict(w, c))
 
     return templates.TemplateResponse(
         request,
@@ -1414,12 +1483,14 @@ def review(request: Request, deck_id: int | None = None, toast: str | None = Non
             "toast": (toast or "").strip(),
             "daily_new_limit": int(plan.daily_new_limit or 20),
             "state_map": {1: "Learning", 2: "Review", 3: "Relearning"},
+            "prefetch_cards_json": json.dumps(prefetch_cards, ensure_ascii=False),
         },
     )
 
 
 @app.post("/review/{word_id}")
 def submit_review(
+    request: Request,
     word_id: int,
     rating: str = Form(...),
     deck_id: int | None = Form(None),
@@ -1458,9 +1529,57 @@ def submit_review(
             )
         )
 
+    # HTMX (mobile) optimization: avoid POST->redirect->GET roundtrip.
+    if _is_htmx(request):
+        return review(request, deck_id=deck_id)
+
     if deck_id is not None:
         return _redirect(f"/review?deck_id={deck_id}")
     return _redirect("/review")
+
+
+@app.post("/api/review/{word_id}/rate", response_class=JSONResponse)
+def api_rate_review_word(
+    word_id: int,
+    rating: str = Form(...),
+    deck_id: int | None = Form(None),
+    duration_ms: int | None = Form(None),
+):
+    try:
+        r = parse_rating(rating)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid rating") from None
+
+    with get_session() as session:
+        word = session.get(Word, word_id)
+        if not word:
+            raise HTTPException(status_code=404, detail="not found")
+
+        card_row = _ensure_srs_card(session, word_id)
+        scheduler = get_scheduler()
+        fsrs_card = db_card_to_fsrs(card_row)
+        updated_card, _log = scheduler.review_card(fsrs_card, r)
+        apply_fsrs_to_db(card_row, updated_card)
+
+        now = _utcnow()
+        word.last_reviewed_at = now
+
+        if r == Rating.Again:
+            word.wrong_count += 1
+            session.add(Mistake(word_id=word_id))
+        else:
+            word.correct_count += 1
+
+        session.add(
+            SrsReviewLog(
+                word_id=word_id,
+                rating=int(r.value),
+                reviewed_at=now,
+                duration_ms=duration_ms,
+            )
+        )
+
+    return {"ok": True, "deck_id": deck_id}
 
 
 @app.get("/mistakes", response_class=HTMLResponse)
@@ -1894,11 +2013,14 @@ def simulation_retest(request: Request, sim_id: int, i: int = 0, toast: str | No
         # Only retest words that are currently in mistakes (错词篮)
         fetched: list[Word] = []
         if terms:
-            fetched = session.query(Word).filter(Word.term.in_(terms)).all()
+            fetched = (
+                session.query(Word)
+                .join(Mistake, Mistake.word_id == Word.id)
+                .filter(Word.term.in_(terms))
+                .all()
+            )
         by_term = {w.term: w for w in fetched}
-
-        mistake_ids = set(x for (x,) in session.query(Mistake.word_id).distinct().all())
-        retest_words = [by_term[t] for t in terms if t in by_term and by_term[t].id in mistake_ids]
+        retest_words = [by_term[t] for t in terms if t in by_term]
 
         total = len(retest_words)
         if total == 0:
@@ -1914,15 +2036,31 @@ def simulation_retest(request: Request, sim_id: int, i: int = 0, toast: str | No
         word = retest_words[i]
         remaining = total - i
 
+        prefetch_words = [_word_dict(w) for w in retest_words]
+
     return templates.TemplateResponse(
         request,
         "simulation_retest.html",
-        {"sim": row, "word": word, "i": i, "total": total, "remaining": remaining, "toast": (toast or "").strip()},
+        {
+            "sim": row,
+            "word": word,
+            "i": i,
+            "total": total,
+            "remaining": remaining,
+            "toast": (toast or "").strip(),
+            "prefetch_words_json": json.dumps(prefetch_words, ensure_ascii=False),
+        },
     )
 
 
 @app.post("/simulations/{sim_id}/retest/{word_id}")
-def simulation_retest_rate(sim_id: int, word_id: int, rating: str = Form(...), i: int = Form(0)):
+def simulation_retest_rate(
+    request: Request,
+    sim_id: int,
+    word_id: int,
+    rating: str = Form(...),
+    i: int = Form(0),
+):
     try:
         i = int(i)
     except Exception:
@@ -1947,7 +2085,34 @@ def simulation_retest_rate(sim_id: int, word_id: int, rating: str = Form(...), i
 
     # If removed from mistakes, the list shrinks; keep index.
     next_i = i if moved_out else (i + 1)
+    # HTMX (mobile) optimization: avoid POST->redirect->GET roundtrip.
+    if _is_htmx(request):
+        return simulation_retest(request, sim_id, i=next_i)
+
     return _redirect("/simulations/" + str(sim_id) + "/retest?" + urlencode({"i": str(next_i)}))
+
+
+@app.post("/api/simulations/{sim_id}/retest/{word_id}/rate", response_class=JSONResponse)
+def api_rate_simulation_retest(
+    sim_id: int,
+    word_id: int,
+    rating: str = Form(...),
+):
+    moved_out = False
+    with get_session() as session:
+        row = session.get(Simulation, sim_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="not found")
+        w = session.get(Word, int(word_id))
+        if not w:
+            raise HTTPException(status_code=404, detail="word not found")
+
+        r = (rating or "").strip().lower()
+        if r in {"good", "easy"}:
+            session.query(Mistake).filter(Mistake.word_id == w.id).delete(synchronize_session=False)
+            moved_out = True
+
+    return {"ok": True, "moved_out": moved_out}
 
 
 @app.get("/simulations", response_class=HTMLResponse)

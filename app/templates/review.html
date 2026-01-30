@@ -6,15 +6,6 @@
     <div class="card">{{ toast }}</div>
   {% endif %}
 
-  <form class="review-deck-form" method="get" action="/review">
-    <select name="deck_id" onchange="this.form.submit()">
-      <option value="0">全部词书</option>
-      {% for d in decks %}
-        <option value="{{ d.id }}" {% if deck_id == d.id %}selected{% endif %}>{{ d.name }}</option>
-      {% endfor %}
-    </select>
-  </form>
-
   {% if word_count == 0 %}
     <div class="card">
       <div class="big">还没有单词</div>
@@ -60,40 +51,43 @@
       </div>
     </div>
   {% else %}
-    <div class="review-card" id="reviewCard" data-revealed="0">
-      <div class="review-term big mono">{{ word.term }}</div>
+    <script type="application/json" id="reviewPrefetch">{{ prefetch_cards_json | safe }}</script>
+    <div class="review-stage">
+      <div class="review-card" id="reviewCard" data-revealed="0">
+        <div class="review-term big mono">{{ word.term }}</div>
 
-      <div id="answer" class="review-answer" style="width: 100%;">
-        {% if chapter %}
-          <div class="muted" style="margin-bottom: 8px;">章节：<span class="mono">{{ chapter }}</span></div>
-        {% endif %}
-        {% if word_phonetic %}
-          <div class="review-phonetic">{{ word_phonetic }}</div>
-        {% endif %}
-        {% if word_definition_text %}
-          <div class="review-def">{{ word_definition_text }}</div>
-        {% endif %}
-        {% if word.example %}
-          <div class="example" style="font-size: 15px; margin-bottom: 16px;">{{ word.example }}</div>
-        {% endif %}
-        <div class="muted" style="margin-bottom: 16px;">
-          <span class="mono">{{ state_map.get(card.state, card.state) }}</span> | 正确/错误：{{ word.correct_count }}/{{ word.wrong_count }}
+        <div id="answer" class="review-answer" style="width: 100%;">
+          {% if chapter %}
+            <div class="muted" style="margin-bottom: 8px;">章节：<span class="mono">{{ chapter }}</span></div>
+          {% endif %}
+          {% if word_phonetic %}
+            <div class="review-phonetic">{{ word_phonetic }}</div>
+          {% endif %}
+          {% if word_definition_text %}
+            <div class="review-def">{{ word_definition_text }}</div>
+          {% endif %}
+          {% if word.example %}
+            <div class="example" style="font-size: 15px; margin-bottom: 16px;">{{ word.example }}</div>
+          {% endif %}
+          <div class="muted" style="margin-bottom: 16px;">
+            <span class="mono">{{ state_map.get(card.state, card.state) }}</span> | 正确/错误：{{ word.correct_count }}/{{ word.wrong_count }}
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="review-reveal-overlay" id="revealOverlay" role="button" tabindex="0" aria-label="点击显示答案">
-      <div class="review-prompt-area" aria-hidden="true">
-        <div class="review-prompt muted" id="reviewPrompt">
-          <div class="review-prompt-title">请回忆单词释义</div>
-          <div class="review-prompt-sub">点击屏幕显示答案</div>
+      <div class="review-reveal-overlay" id="revealOverlay" role="button" tabindex="0" aria-label="点击显示答案">
+        <div class="review-prompt-area" aria-hidden="true">
+          <div class="review-prompt muted" id="reviewPrompt">
+            <div class="review-prompt-title">请回忆单词释义</div>
+            <div class="review-prompt-sub">点击屏幕显示答案</div>
+          </div>
         </div>
       </div>
     </div>
 
     <div class="review-bottombar hidden" id="reviewBottomBar" aria-hidden="true">
       <div class="review-bottombar-inner">
-        <form class="review-rating-grid" method="post" action="/review/{{ word.id }}">
+        <form class="review-rating-grid" id="reviewRateForm" hx-boost="false" method="post" action="/review/{{ word.id }}">
           {% if deck_id %}
             <input type="hidden" name="deck_id" value="{{ deck_id }}" />
           {% endif %}
@@ -115,7 +109,6 @@
 
     <script>
       (() => {
-        const startedAt = Date.now();
         const revealOverlay = document.getElementById('revealOverlay');
         const reviewCard = document.getElementById('reviewCard');
         const prompt = document.getElementById('reviewPrompt');
@@ -123,6 +116,45 @@
         const durationMs = document.getElementById('duration_ms');
         const bottomBar = document.getElementById('reviewBottomBar');
         const bottomSpacer = document.getElementById('reviewBottomSpacer');
+        const rateForm = document.getElementById('reviewRateForm');
+        const prefetchEl = document.getElementById('reviewPrefetch');
+        const deckIdEl = rateForm ? rateForm.querySelector('input[name="deck_id"]') : null;
+        const deckId = deckIdEl ? String(deckIdEl.value || '') : '';
+
+        let startedAt = Date.now();
+        let cards = [];
+        try {
+          cards = JSON.parse((prefetchEl && prefetchEl.textContent) ? prefetchEl.textContent : '[]') || [];
+        } catch {
+          cards = [];
+        }
+        let idx = 0;
+        let current = cards[idx] || null;
+
+        const escapeHtml = (s) => String(s || '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('\"', '&quot;')
+          .replaceAll("'", '&#39;');
+
+        const stateLabel = (state) => {
+          const map = { 1: "Learning", 2: "Review", 3: "Relearning" };
+          return map[String(state)] || map[state] || String(state || "");
+        };
+
+        const resetRevealUi = () => {
+          if (!reviewCard) return;
+          reviewCard.dataset.revealed = "0";
+          reviewCard.classList.remove("revealed");
+          if (prompt) prompt.style.display = "";
+          if (revealOverlay) revealOverlay.style.display = "";
+          if (bottomBar) {
+            bottomBar.classList.add("hidden");
+            bottomBar.setAttribute("aria-hidden", "true");
+          }
+          if (bottomSpacer) bottomSpacer.classList.add("hidden");
+        };
 
         const reveal = () => {
           if (!reviewCard || !answer) return;
@@ -140,6 +172,32 @@
           if (first) first.focus();
         };
 
+        const renderAnswer = (c) => {
+          if (!answer) return;
+          const parts = [];
+          if (c.chapter) parts.push(`<div class="muted" style="margin-bottom: 8px;">章节：<span class="mono">${escapeHtml(c.chapter)}</span></div>`);
+          if (c.phonetic) parts.push(`<div class="review-phonetic">${escapeHtml(c.phonetic)}</div>`);
+          if (c.definition_text) parts.push(`<div class="review-def">${escapeHtml(c.definition_text)}</div>`);
+          if (c.example) parts.push(`<div class="example" style="font-size: 15px; margin-bottom: 16px;">${escapeHtml(c.example)}</div>`);
+          parts.push(
+            `<div class="muted" style="margin-bottom: 16px;">` +
+              `<span class="mono">${escapeHtml(stateLabel(c.state))}</span> | 正确/错误：${escapeHtml(String(c.correct_count))}/${escapeHtml(String(c.wrong_count))}` +
+            `</div>`
+          );
+          answer.innerHTML = parts.join('');
+        };
+
+        const renderCard = (c) => {
+          if (!c || !reviewCard) return;
+          current = c;
+          startedAt = Date.now();
+          const termEl = reviewCard.querySelector('.review-term');
+          if (termEl) termEl.textContent = c.term || '';
+          renderAnswer(c);
+          if (rateForm) rateForm.action = `/review/${c.word_id}`;
+          resetRevealUi();
+        };
+
         if (revealOverlay) {
           revealOverlay.addEventListener('click', reveal);
           revealOverlay.addEventListener('keydown', (e) => {
@@ -150,12 +208,45 @@
           });
         }
 
-        const buttons = document.querySelectorAll('form[action^="/review/"] button[type="submit"]');
+        const postRating = async (wordId, rating, ms) => {
+          const fd = new FormData();
+          fd.set('rating', rating);
+          if (deckId) fd.set('deck_id', deckId);
+          if (ms != null) fd.set('duration_ms', String(ms));
+          const resp = await fetch(`/api/review/${wordId}/rate`, { method: 'POST', body: fd });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        };
+
+        const buttons = rateForm ? rateForm.querySelectorAll('button[type="submit"][name="rating"]') : [];
         buttons.forEach((btn) => {
-          btn.addEventListener('click', () => {
-            if (durationMs) durationMs.value = String(Date.now() - startedAt);
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (!current) return;
+
+            const rating = btn.value;
+            const ms = Date.now() - startedAt;
+            if (durationMs) durationMs.value = String(ms);
+
+            // Switch locally first (no waiting), then sync rating in the background.
+            const next = cards[idx + 1];
+            const prev = current;
+            if (next) {
+              idx += 1;
+              renderCard(next);
+            } else {
+              const qs = deckId ? `?deck_id=${encodeURIComponent(deckId)}` : '';
+              window.location.href = `/review${qs}`;
+              return;
+            }
+
+            postRating(prev.word_id, rating, ms).catch(() => {
+              const qs = deckId ? `?deck_id=${encodeURIComponent(deckId)}` : '';
+              window.location.href = `/review${qs}`;
+            });
           });
         });
+
+        if (current) renderCard(current);
       })();
     </script>
   {% endif %}
