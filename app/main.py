@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
-from datetime import datetime
+from datetime import datetime, timedelta
 import hmac
 import html
 import json
+import os
 import time
 from pathlib import Path
 import re
@@ -28,7 +29,7 @@ from app.ai import AiClient, LEVEL_GUIDE, _safe_json_extract
 from app.ai_types import GeneratedSimulation
 from app.auth import decode_session, encode_session, hash_password, new_session_for_user, verify_password
 from app.auth_db import get_auth_session, init_auth_db
-from app.auth_models import AuthUser
+from app.auth_models import AuthEvent, AuthUser
 from app.config import get_settings
 from app.db import get_session, init_db
 from app.models import Deck, DeckWord, Mistake, Plan, PlanDeck, PlanWord, Simulation, SrsCard, SrsReviewLog, Word
@@ -116,10 +117,102 @@ async def _auth_session_middleware(request: Request, call_next):
         return RedirectResponse(url="/auth/login?" + qs, status_code=303)
 
     ctx_token = push_current_user_identity(username)
+    started = time.perf_counter()
     try:
-        return await call_next(request)
+        resp = await call_next(request)
+    except Exception:
+        _log_auth_event(
+            user_id=user_id,
+            username=username,
+            kind="error",
+            path=str(request.url.path or "/"),
+            method=str(request.method or ""),
+            status_code=500,
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            meta={"exc": "unhandled"},
+        )
+        raise
     finally:
         pop_current_user_identity(ctx_token)
+
+    if username and (not is_public):
+        path = str(request.url.path or "/")
+        if not path.startswith(("/static", "/favicon", "/metrics")):
+            ctype = (resp.headers.get("content-type") or "").lower()
+            kind = "page_view" if (request.method == "GET" and "text/html" in ctype) else "api"
+            _log_auth_event(
+                user_id=user_id,
+                username=username,
+                kind=kind,
+                path=path,
+                method=str(request.method or ""),
+                status_code=int(getattr(resp, "status_code", 0) or 0),
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                meta={
+                    "hx": (request.headers.get("HX-Request") or "").strip().lower() == "true",
+                    "ua": (request.headers.get("user-agent") or "")[:200],
+                    "qs": (request.url.query or "")[:500],
+                    "ref": (request.headers.get("referer") or "")[:300],
+                    "ip": (getattr(request.client, "host", "") or "")[:80],
+                    "lang": (request.headers.get("accept-language") or "")[:120],
+                },
+            )
+
+    return resp
+
+
+def _log_auth_event(
+    *,
+    user_id: int | None,
+    username: str | None,
+    kind: str,
+    path: str,
+    method: str,
+    status_code: int,
+    duration_ms: int,
+    meta: dict[str, Any] | None = None,
+) -> None:
+    if not username or user_id is None:
+        return
+
+    def _scrub(obj: Any) -> Any:
+        # Best-effort: keep logs rich but avoid obvious secrets.
+        if isinstance(obj, dict):
+            out: dict[str, Any] = {}
+            for k, v in obj.items():
+                ks = str(k).lower()
+                if any(s in ks for s in ("password", "passwd", "pwd", "secret", "token", "api_key", "apikey", "key")):
+                    out[k] = "[redacted]"
+                else:
+                    out[k] = _scrub(v)
+            return out
+        if isinstance(obj, list):
+            return [_scrub(v) for v in obj][:500]
+        if isinstance(obj, str):
+            return obj[:6000]
+        return obj
+
+    meta = _scrub(meta or {})
+    try:
+        meta_s = json.dumps(meta or {}, ensure_ascii=False, separators=(",", ":"))
+    except Exception:
+        meta_s = "{}"
+    try:
+        with get_auth_session() as session:
+            session.add(
+                AuthEvent(
+                    user_id=int(user_id),
+                    username_norm=(username or "").strip().lower(),
+                    kind=(kind or "").strip()[:32],
+                    path=(path or "/")[:256],
+                    method=(method or "").strip().upper()[:8],
+                    status_code=int(status_code or 0),
+                    duration_ms=int(duration_ms or 0),
+                    meta_json=meta_s[:8000],
+                )
+            )
+    except Exception:
+        return
 
 
 def _redirect(url: str) -> RedirectResponse:
@@ -771,6 +864,116 @@ def update_plan_settings(
     if (return_to or "").strip().lower() in {"home", "today", "/"}:
         return _redirect("/?" + urlencode(msg))
     return _redirect("/settings?" + urlencode(msg))
+
+
+@app.get("/analytics", response_class=HTMLResponse)
+def analytics_page(request: Request, days: int = 7):
+    try:
+        days = int(days)
+    except Exception:
+        days = 7
+    days = max(1, min(days, 90))
+
+    username = getattr(request.state, "user_username", None)
+    username_norm = (username or "").strip().lower()
+
+    admin_raw = os.getenv("APP_ANALYTICS_ADMIN_USERS", "") or os.getenv("APP_ANALYTICS_ADMIN_USER", "")
+    admin_set = {u.strip().lower() for u in admin_raw.replace(";", ",").split(",") if u.strip()}
+    is_admin = bool(admin_set) and (username_norm in admin_set)
+
+    cutoff = _utcnow() - timedelta(days=days)
+
+    with get_auth_session() as session:
+        users = session.query(AuthUser).order_by(AuthUser.id.asc()).all()
+        q = session.query(AuthEvent).filter(AuthEvent.created_at >= cutoff)
+        if not is_admin and username_norm:
+            q = q.filter(AuthEvent.username_norm == username_norm)
+        events = q.order_by(AuthEvent.created_at.asc()).all()
+
+    # Aggregate (keep it simple; this is MVP-sized data).
+    per_user: dict[str, dict[str, Any]] = {}
+    for u in users:
+        per_user[u.username_norm] = {
+            "username": u.username,
+            "username_norm": u.username_norm,
+            "page_views": 0,
+            "actions": 0,
+            "errors": 0,
+            "last_seen": None,
+        }
+
+    daily: dict[str, int] = {}
+    top_paths: dict[str, int] = {}
+    actions: dict[str, int] = {}
+
+    for ev in events:
+        un = str(ev.username_norm or "")
+        row = per_user.setdefault(
+            un,
+            {
+                "username": un,
+                "username_norm": un,
+                "page_views": 0,
+                "actions": 0,
+                "errors": 0,
+                "last_seen": None,
+            },
+        )
+        row["last_seen"] = ev.created_at
+        if ev.kind == "page_view":
+            row["page_views"] += 1
+            top_paths[ev.path] = top_paths.get(ev.path, 0) + 1
+        elif ev.kind in {"action", "client", "api"}:
+            row["actions"] += 1
+            act = "action"
+            try:
+                meta = json.loads(ev.meta_json or "{}")
+                if ev.kind == "action":
+                    act = str(meta.get("action") or "action")
+                elif ev.kind == "client":
+                    evp = meta.get("ev") if isinstance(meta, dict) else None
+                    t = (evp.get("t") if isinstance(evp, dict) else None) or "client"
+                    act = f"client:{t}"
+                else:
+                    act = f"api:{ev.path}"
+            except Exception:
+                act = "action"
+            actions[act] = actions.get(act, 0) + 1
+        elif ev.kind == "error":
+            row["errors"] += 1
+
+        d = (ev.created_at.date().isoformat() if ev.created_at else "")
+        if d:
+            daily[d] = daily.get(d, 0) + 1
+
+    max_views = max([v["page_views"] for v in per_user.values()] + [1])
+    max_actions = max([v["actions"] for v in per_user.values()] + [1])
+
+    user_rows = list(per_user.values())
+    user_rows.sort(key=lambda r: (r["page_views"] + r["actions"], r["username_norm"]), reverse=True)
+
+    daily_rows = [{"day": d, "count": daily[d]} for d in sorted(daily.keys())]
+    top_path_rows = [{"path": p, "count": c} for p, c in sorted(top_paths.items(), key=lambda kv: kv[1], reverse=True)[:12]]
+    action_rows = [{"action": a, "count": c} for a, c in sorted(actions.items(), key=lambda kv: kv[1], reverse=True)[:12]]
+
+    return templates.TemplateResponse(
+        request,
+        "analytics.html",
+        {
+            "title": "交互报表",
+            "days": days,
+            "cutoff": cutoff,
+            "is_admin": is_admin,
+            "admin_hint_set": bool(admin_set),
+            "current_user": username,
+            "users": user_rows,
+            "daily": daily_rows,
+            "top_paths": top_path_rows,
+            "actions": action_rows,
+            "max_views": max_views,
+            "max_actions": max_actions,
+        },
+    )
 
 
 @app.get("/decks", response_class=HTMLResponse)
@@ -1620,6 +1823,7 @@ def submit_review(
 
 @app.post("/api/review/{word_id}/rate", response_class=JSONResponse)
 def api_rate_review_word(
+    request: Request,
     word_id: int,
     rating: str = Form(...),
     deck_id: int | None = Form(None),
@@ -1659,7 +1863,64 @@ def api_rate_review_word(
             )
         )
 
+    _log_auth_event(
+        user_id=getattr(request.state, "user_id", None),
+        username=getattr(request.state, "user_username", None),
+        kind="action",
+        path=str(request.url.path or "/"),
+        method="POST",
+        status_code=200,
+        duration_ms=0,
+        meta={"action": "review_rate", "word_id": int(word_id), "rating": str(rating), "deck_id": deck_id},
+    )
     return {"ok": True, "deck_id": deck_id}
+
+
+@app.post("/api/analytics/events", response_class=JSONResponse)
+async def api_analytics_events(request: Request):
+    username = getattr(request.state, "user_username", None)
+    user_id = getattr(request.state, "user_id", None)
+    if not username or user_id is None:
+        raise HTTPException(status_code=401, detail="not logged in")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = None
+
+    if isinstance(payload, list):
+        events = payload
+        ctx: dict[str, Any] = {}
+    elif isinstance(payload, dict):
+        events = payload.get("events") or []
+        ctx = {k: payload.get(k) for k in ("sid", "pid", "url", "page") if k in payload}
+    else:
+        events = []
+        ctx = {}
+
+    if not isinstance(events, list):
+        events = []
+
+    # Store each event as a row for maximal detail (small userbase; OK).
+    stored = 0
+    for ev in events[:300]:
+        if not isinstance(ev, dict):
+            continue
+        path = str(ev.get("path") or request.url.path or "/")
+        meta = {"ctx": ctx, "ev": ev}
+        _log_auth_event(
+            user_id=user_id,
+            username=username,
+            kind="client",
+            path=path,
+            method="POST",
+            status_code=200,
+            duration_ms=int(ev.get("dt_ms") or 0),
+            meta=meta,
+        )
+        stored += 1
+
+    return {"ok": True, "stored": stored}
 
 
 @app.get("/mistakes", response_class=HTMLResponse)
@@ -2239,6 +2500,7 @@ def simulation_retest_rate(
 
 @app.post("/api/simulations/{sim_id}/retest/{word_id}/rate", response_class=JSONResponse)
 def api_rate_simulation_retest(
+    request: Request,
     sim_id: int,
     word_id: int,
     rating: str = Form(...),
@@ -2257,6 +2519,22 @@ def api_rate_simulation_retest(
             session.query(Mistake).filter(Mistake.word_id == w.id).delete(synchronize_session=False)
             moved_out = True
 
+    _log_auth_event(
+        user_id=getattr(request.state, "user_id", None),
+        username=getattr(request.state, "user_username", None),
+        kind="action",
+        path=str(request.url.path or "/"),
+        method="POST",
+        status_code=200,
+        duration_ms=0,
+        meta={
+            "action": "retest_rate",
+            "sim_id": int(sim_id),
+            "word_id": int(word_id),
+            "rating": str(rating),
+            "moved_out": bool(moved_out),
+        },
+    )
     return {"ok": True, "moved_out": moved_out}
 
 

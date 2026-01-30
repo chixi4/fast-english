@@ -20,3 +20,20 @@ class AuthUser(AuthBase):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+
+class AuthEvent(AuthBase):
+    __tablename__ = "auth_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    username_norm: Mapped[str] = mapped_column(String(64), index=True)
+
+    kind: Mapped[str] = mapped_column(String(32), index=True)  # e.g. page_view, action, api, error
+    path: Mapped[str] = mapped_column(String(256), index=True)
+    method: Mapped[str] = mapped_column(String(8))
+    status_code: Mapped[int] = mapped_column(Integer)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    meta_json: Mapped[str] = mapped_column(String(8000), default="{}")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
