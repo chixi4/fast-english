@@ -139,6 +139,192 @@
           });
         }
 
+        // Background river: typing + highlighting (shared across requests)
+        const SYSTEM_CHUNK_MIN = 4;
+        const SYSTEM_CHUNK_MAX = 7;
+        const SYSTEM_DELAY_MS = 55;
+        const SYSTEM_DELAY_JITTER_MS = 22;
+        const SYSTEM_START_DELAY_MS = 200;
+
+        const debugEnabled = (() => {
+          try {
+            const qs = new URLSearchParams(window.location.search || "");
+            if (qs.has("debug_river")) return true;
+            return (window.localStorage && window.localStorage.getItem("debug_river") === "1") || false;
+          } catch {
+            return false;
+          }
+        })();
+        const dlog = (...args) => { if (debugEnabled) console.debug("[river]", ...args); };
+
+        const escapeHtml = (s) =>
+          String(s)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll("\"", "&quot;")
+            .replaceAll("'", "&#39;");
+        const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+        const fixedKeywords = [
+          "error",
+          "failed",
+          "retry",
+          "attempt",
+          "waiting",
+          "token",
+          "parse",
+          "prompt",
+          "selection",
+          "terms",
+          "json",
+          "dt",
+          "ms",
+        ];
+
+        let riverStartedDelta = false;
+        let riverDisplayText = "";
+        let riverSystemQueue = "";
+        let riverTypingTimer = null; // timeout id
+        let riverTypingStartTimer = null; // timeout id
+        let riverAllowTypingAt = 0;
+
+        const accentTerms = new Set();
+        let accentRe = null;
+        const rebuildAccentRegex = () => {
+          const kwAlts = fixedKeywords.map(escapeRegExp).join("|");
+          const termAlts = Array.from(accentTerms).map(escapeRegExp).join("|");
+          const parts = [
+            "\\[[0-9]+(?:\\.[0-9]+)?s\\]",
+            kwAlts ? `\\b(?:${kwAlts})\\b` : "",
+            termAlts ? `\\b(?:${termAlts})\\b` : "",
+          ].filter(Boolean);
+          accentRe = parts.length ? new RegExp(parts.join("|"), "gi") : null;
+        };
+        rebuildAccentRegex();
+
+        const tryIngestTermsFromNote = (msg) => {
+          // Backend note format includes: "... terms=K [t1, t2, ...]"
+          const s = String(msg || "");
+          const idx = s.indexOf("terms=");
+          if (idx < 0) return;
+          const lb = s.indexOf("[", idx);
+          const rb = s.indexOf("]", lb + 1);
+          if (lb < 0 || rb < 0) return;
+          const inside = s.slice(lb + 1, rb).trim();
+          if (!inside) return;
+          const terms = inside.split(",").map((x) => x.trim()).filter(Boolean);
+          let changed = false;
+          for (const t of terms) {
+            // Highlight only normal vocabulary tokens to avoid noisy matches.
+            if (!/^[A-Za-z][A-Za-z'-]*$/.test(t)) continue;
+            const key = t.toLowerCase();
+            if (!accentTerms.has(key)) {
+              accentTerms.add(key);
+              changed = true;
+            }
+          }
+          if (changed) {
+            rebuildAccentRegex();
+            dlog("accent terms", Array.from(accentTerms));
+            dlog("accent regex", accentRe ? accentRe.source : null);
+          }
+        };
+
+        const randInt = (min, max) => Math.floor(min + Math.random() * (max - min + 1));
+        const randDelay = () => {
+          const v = SYSTEM_DELAY_MS + (Math.random() * 2 - 1) * SYSTEM_DELAY_JITTER_MS;
+          return Math.max(18, Math.min(140, Math.round(v)));
+        };
+
+        const riverRender = (chunkForDebug) => {
+          if (!riverEl) return;
+          const escaped = escapeHtml(riverDisplayText);
+          const re = accentRe;
+          if (!re) {
+            riverEl.textContent = riverDisplayText;
+            return;
+          }
+          if (debugEnabled && chunkForDebug) {
+            const localRe = new RegExp(re.source, re.flags);
+            const matches = [];
+            let m;
+            while ((m = localRe.exec(chunkForDebug)) && matches.length < 12) matches.push(m[0]);
+            if (matches.length) dlog("chunk matches", matches);
+          }
+          riverEl.innerHTML = escaped.replace(re, (m) => {
+            if (m.startsWith("[")) return `<span class="ai-river-dim">${m}</span>`;
+            return `<span class="ai-river-accent">${m}</span>`;
+          });
+        };
+
+        const riverAppend = (chunk) => {
+          if (!riverEl) return;
+          riverDisplayText += String(chunk || "");
+          if (riverDisplayText.length > 24000) riverDisplayText = riverDisplayText.slice(-24000);
+          riverRender(String(chunk || ""));
+        };
+
+        const riverStopTyping = () => {
+          if (riverTypingStartTimer) {
+            clearTimeout(riverTypingStartTimer);
+            riverTypingStartTimer = null;
+          }
+          if (riverTypingTimer) {
+            clearTimeout(riverTypingTimer);
+            riverTypingTimer = null;
+          }
+        };
+
+        const riverTickTyping = () => {
+          if (!riverSystemQueue) {
+            riverTypingTimer = null;
+            return;
+          }
+          const n = randInt(SYSTEM_CHUNK_MIN, SYSTEM_CHUNK_MAX);
+          const chunk = riverSystemQueue.slice(0, n);
+          riverSystemQueue = riverSystemQueue.slice(n);
+          riverAppend(chunk);
+          riverTypingTimer = setTimeout(riverTickTyping, randDelay());
+        };
+
+        const riverStartTyping = () => {
+          if (riverTypingTimer || riverTypingStartTimer) return;
+          const delay = Math.max(0, riverAllowTypingAt - Date.now());
+          riverTypingStartTimer = setTimeout(() => {
+            riverTypingStartTimer = null;
+            riverTickTyping();
+          }, delay);
+        };
+
+        const riverEnqueueSystem = (text) => {
+          riverSystemQueue += String(text || "");
+          if (!riverStartedDelta) {
+            riverStartTyping();
+          } else {
+            riverAppend(riverSystemQueue);
+            riverSystemQueue = "";
+          }
+        };
+
+        const riverFlushSystem = () => {
+          if (!riverSystemQueue) return;
+          riverStopTyping();
+          riverAppend(riverSystemQueue);
+          riverSystemQueue = "";
+        };
+
+        const riverReset = (startDelayMs) => {
+          riverStartedDelta = false;
+          riverDisplayText = "";
+          riverSystemQueue = "";
+          riverStopTyping();
+          accentTerms.clear();
+          rebuildAccentRegex();
+          riverAllowTypingAt = Date.now() + (startDelayMs || 0);
+          if (riverEl) riverEl.textContent = "";
+        };
+
         async function postStream() {
           const fd = new FormData(form);
           const resp = await fetch("/simulations/generate_stream", {
@@ -160,16 +346,7 @@
           const reader = resp.body.getReader();
           const decoder = new TextDecoder();
           let buf = "";
-          let riverText = "";
-          let startedDelta = false;
-
-          const appendRiver = (chunk) => {
-            if (!riverEl) return;
-            riverText += chunk;
-            if (riverText.length > 24000) riverText = riverText.slice(-24000);
-            riverEl.textContent = riverText;
-          };
-          appendRiver("已连接服务器，等待 AI 开始输出…\n");
+          riverEnqueueSystem("已连接服务器，等待 AI 开始输出…\n");
 
           while (true) {
             const { value, done } = await reader.read();
@@ -192,23 +369,33 @@
                 } catch {
                   continue;
                 }
-                 if (msg.t === "delta" && typeof msg.c === "string") {
-                   if (!startedDelta) {
-                     startedDelta = true;
-                     streamStartedDelta = true;
-                     if (note) note.textContent = "AI 生成中…";
-                    }
-                    appendRiver(msg.c);
-                  } else if (msg.t === "note" && typeof msg.msg === "string") {
-                    // Technical progress stays in the river; keep the visible note concise.
-                    appendRiver(`${msg.msg}\n`);
-                  } else if (msg.t === "done" && typeof msg.sim_id === "number") {
-                    window.location.href = `/simulations/${msg.sim_id}`;
-                    return;
-                  } else if (msg.t === "error" && typeof msg.msg === "string") {
-                  throw new Error(msg.msg);
+                if (msg.t === "delta" && typeof msg.c === "string") {
+                  if (!riverStartedDelta) {
+                    riverFlushSystem();
+                    riverStartedDelta = true;
+                    streamStartedDelta = true;
+                    dlog("first delta received");
+                    if (note) note.textContent = "AI 生成中…";
+                  }
+                  riverAppend(msg.c);
+                } else if (msg.t === "note" && typeof msg.msg === "string") {
+                  // Technical progress stays in the river; keep the visible note concise.
+                  dlog("note", msg.msg);
+                  tryIngestTermsFromNote(msg.msg);
+                  riverEnqueueSystem(`${msg.msg}\n`);
+                } else if (msg.t === "done" && typeof msg.sim_id === "number") {
+                  const url = `/simulations/${msg.sim_id}`;
+                  // Stop the fake typing loop before leaving this page.
+                  riverFlushSystem();
+                  riverStopTyping();
+                  if (note) note.textContent = "打开题目…";
+                  // Use a single hard navigation to avoid any chance of double-refresh.
+                  window.location.replace(url);
+                  return;
+                } else if (msg.t === "error" && typeof msg.msg === "string") {
+                    throw new Error(msg.msg);
+                  }
                 }
-              }
             }
           }
           throw new Error("连接结束，但未收到完成信号。");
@@ -226,6 +413,7 @@
         function startGenerate() {
           const ids = collectWordIds();
           streamStartedDelta = false;
+          riverReset(SYSTEM_START_DELAY_MS);
 
           if (note) {
             if (ids.length) {
@@ -280,6 +468,7 @@
           closeBtn.addEventListener("click", () => {
             overlay.classList.add("hidden");
             clearOverlayError();
+            riverStopTyping();
             if (btn) btn.disabled = false;
           });
         }
