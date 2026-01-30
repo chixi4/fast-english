@@ -72,5 +72,223 @@
       document.addEventListener('htmx:replacedInHistory', setActiveNav);
       window.addEventListener('popstate', setActiveNav);
     </script>
+    <script>
+      (() => {
+        const ENDPOINT = '/api/analytics/events';
+        const SID_KEY = 'vs_sid';
+
+        const safeText = (s, max = 80) => {
+          const t = String(s || '').replace(/\s+/g, ' ').trim();
+          return t.length > max ? t.slice(0, max) : t;
+        };
+
+        const looksSensitive = (name, type) => {
+          const n = String(name || '').toLowerCase();
+          const t = String(type || '').toLowerCase();
+          if (t === 'password') return true;
+          return /(pass|passwd|password|pwd|token|secret|api[_-]?key|apikey|key)/i.test(n);
+        };
+
+        const randId = () => {
+          try {
+            if (crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+          } catch {}
+          return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+        };
+
+        const getSid = () => {
+          try {
+            const cur = sessionStorage.getItem(SID_KEY);
+            if (cur) return cur;
+            const sid = randId();
+            sessionStorage.setItem(SID_KEY, sid);
+            return sid;
+          } catch {
+            return randId();
+          }
+        };
+
+        const sid = getSid();
+        const pid = randId();
+
+        let q = [];
+        let timer = null;
+
+        const enqueue = (ev) => {
+          try {
+            q.push(ev);
+            if (q.length >= 30) flush();
+            else schedule();
+          } catch {}
+        };
+
+        const schedule = () => {
+          if (timer) return;
+          timer = window.setTimeout(flush, 700 + Math.random() * 500);
+        };
+
+        const flush = () => {
+          if (timer) {
+            clearTimeout(timer);
+            timer = null;
+          }
+          if (!q.length) return;
+
+          const batch = q.splice(0, 200);
+          const body = JSON.stringify({
+            sid,
+            pid,
+            url: window.location.href,
+            events: batch,
+          });
+
+          try {
+            if (navigator.sendBeacon) {
+              navigator.sendBeacon(ENDPOINT, new Blob([body], { type: 'application/json' }));
+              return;
+            }
+          } catch {}
+
+          try {
+            fetch(ENDPOINT, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body,
+              keepalive: true,
+              credentials: 'same-origin',
+            }).catch(() => {});
+          } catch {}
+        };
+
+        window.addEventListener('pagehide', flush);
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'hidden') flush();
+        });
+
+        const elInfo = (el) => {
+          if (!el || !(el instanceof Element)) return null;
+          const tag = (el.tagName || '').toLowerCase();
+          const id = el.id ? String(el.id).slice(0, 60) : '';
+          const cls = el.className ? safeText(el.className, 80) : '';
+          const name = el.getAttribute('name') || '';
+          const role = el.getAttribute('role') || '';
+          const href = (tag === 'a' ? (el.getAttribute('href') || '') : '');
+          const text = safeText(el.textContent || '', 80);
+          return { tag, id, cls, name, role, href: href.slice(0, 200), text };
+        };
+
+        // Page-level snapshot
+        enqueue({
+          t: 'page',
+          ts: Date.now(),
+          path: window.location.pathname || '/',
+          v: {
+            w: window.innerWidth,
+            h: window.innerHeight,
+            dpr: window.devicePixelRatio || 1,
+            tz: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+            lang: navigator.language || '',
+          },
+        });
+
+        // Clicks
+        document.addEventListener('click', (e) => {
+          const el = (e.target instanceof Element) ? e.target.closest('a,button,input,select,textarea,label,[role]') : null;
+          enqueue({
+            t: 'click',
+            ts: Date.now(),
+            path: window.location.pathname || '/',
+            el: elInfo(el),
+          });
+        }, { capture: true, passive: true });
+
+        // Form submits
+        document.addEventListener('submit', (e) => {
+          const form = e.target;
+          enqueue({
+            t: 'submit',
+            ts: Date.now(),
+            path: window.location.pathname || '/',
+            el: elInfo(form),
+            action: (form && form.getAttribute) ? (form.getAttribute('action') || '') : '',
+          });
+        }, true);
+
+        // Inputs/changes (redact obvious secrets)
+        document.addEventListener('change', (e) => {
+          const el = e.target;
+          if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) return;
+          const name = el.name || el.id || '';
+          const type = (el instanceof HTMLInputElement) ? (el.type || '') : (el instanceof HTMLSelectElement ? 'select' : 'textarea');
+          const val = looksSensitive(name, type) ? '[redacted]' : safeText(el.value, 120);
+          enqueue({
+            t: 'change',
+            ts: Date.now(),
+            path: window.location.pathname || '/',
+            el: elInfo(el),
+            f: { name, type, len: String(el.value || '').length, val },
+          });
+        }, true);
+
+        // Global errors
+        window.addEventListener('error', (e) => {
+          enqueue({
+            t: 'error',
+            ts: Date.now(),
+            path: window.location.pathname || '/',
+            msg: safeText(e && e.message, 200),
+            src: safeText(e && e.filename, 120),
+            ln: e && e.lineno,
+            cn: e && e.colno,
+          });
+        });
+        window.addEventListener('unhandledrejection', (e) => {
+          const reason = e && e.reason;
+          enqueue({
+            t: 'rejection',
+            ts: Date.now(),
+            path: window.location.pathname || '/',
+            msg: safeText(reason && (reason.message || String(reason)), 200),
+          });
+        });
+
+        // HTMX network lifecycle (if used)
+        const xhrStart = new WeakMap();
+        document.addEventListener('htmx:beforeRequest', (e) => {
+          try {
+            const xhr = e.detail && e.detail.xhr;
+            if (xhr) xhrStart.set(xhr, performance.now());
+            enqueue({
+              t: 'htmx_before',
+              ts: Date.now(),
+              path: window.location.pathname || '/',
+              req: {
+                method: safeText(e.detail && e.detail.verb, 12),
+                path: safeText(e.detail && e.detail.path, 200),
+                target: (e.detail && e.detail.target && e.detail.target.id) ? String(e.detail.target.id) : '',
+              },
+            });
+          } catch {}
+        });
+        document.addEventListener('htmx:afterRequest', (e) => {
+          try {
+            const xhr = e.detail && e.detail.xhr;
+            const startedAt = xhr ? xhrStart.get(xhr) : null;
+            const dt = (startedAt != null) ? Math.max(0, Math.round(performance.now() - startedAt)) : 0;
+            const status = xhr ? xhr.status : 0;
+            enqueue({
+              t: 'htmx_after',
+              ts: Date.now(),
+              dt_ms: dt,
+              path: window.location.pathname || '/',
+              resp: { status },
+            });
+          } catch {}
+        });
+
+        // Flush a bit after load to capture early actions without feeling laggy.
+        window.setTimeout(() => flush(), 1500);
+      })();
+    </script>
   </body>
 </html>

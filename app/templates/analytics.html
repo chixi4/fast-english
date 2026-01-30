@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>交互报表</h1>
+
+  <div class="card" style="margin-top: 12px;">
+    <div class="card-k">范围</div>
+    <div class="muted">最近 {{ days }} 天（从 {{ cutoff.strftime("%Y-%m-%d") }} 起）</div>
+    {% if is_admin %}
+      <div class="muted" style="margin-top: 6px;">当前为管理员视图（显示所有账号）</div>
+    {% else %}
+      {% if admin_hint_set %}
+        <div class="muted" style="margin-top: 6px;">当前为个人视图（未授权查看所有账号）</div>
+      {% else %}
+        <div class="muted" style="margin-top: 6px;">提示：设置环境变量 APP_ANALYTICS_ADMIN_USERS=你的用户名，可开启全站视图</div>
+      {% endif %}
+    {% endif %}
+    <form class="row" method="get" action="/analytics" style="margin-top: 10px;">
+      <label style="display:flex; align-items:center; gap:10px;">
+        天数
+        <input type="number" name="days" min="1" max="90" value="{{ days }}" style="max-width: 120px;" />
+      </label>
+      <button class="btn primary" type="submit">刷新</button>
+    </form>
+  </div>
+
+  <div class="cards" style="margin-top: 10px;">
+    <div class="card">
+      <div class="card-k">每日总交互</div>
+      {% if daily and daily|length %}
+        <div style="display:grid; gap:8px; margin-top: 10px;">
+          {% set max_daily = (daily | map(attribute='count') | max) %}
+          {% for r in daily %}
+            <div style="display:flex; align-items:center; gap:10px;">
+              <div class="mono" style="min-width: 88px; font-size: 12px;">{{ r.day }}</div>
+              <div style="flex:1; height:8px; background: var(--border); border-radius: 999px; overflow:hidden;">
+                <div style="height:100%; width: {{ (100 * r.count / (max_daily if max_daily else 1)) | round(0, 'floor') }}%; background: var(--primary);"></div>
+              </div>
+              <div class="mono" style="min-width: 44px; text-align:right;">{{ r.count }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="muted" style="margin-top: 10px;">暂无数据</div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-k">动作类型 Top</div>
+      {% if actions and actions|length %}
+        <div style="display:grid; gap:8px; margin-top: 10px;">
+          {% set max_act = (actions | map(attribute='count') | max) %}
+          {% for r in actions %}
+            <div style="display:flex; align-items:center; gap:10px;">
+              <div class="mono" style="min-width: 120px; font-size: 12px;">{{ r.action }}</div>
+              <div style="flex:1; height:8px; background: var(--border); border-radius: 999px; overflow:hidden;">
+                <div style="height:100%; width: {{ (100 * r.count / (max_act if max_act else 1)) | round(0, 'floor') }}%; background: rgba(212, 102, 44, 0.7);"></div>
+              </div>
+              <div class="mono" style="min-width: 44px; text-align:right;">{{ r.count }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="muted" style="margin-top: 10px;">暂无数据</div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-k">页面 Top</div>
+      {% if top_paths and top_paths|length %}
+        <div style="display:grid; gap:8px; margin-top: 10px;">
+          {% set max_p = (top_paths | map(attribute='count') | max) %}
+          {% for r in top_paths %}
+            <div style="display:flex; align-items:center; gap:10px;">
+              <div class="mono" style="min-width: 120px; font-size: 12px; overflow:hidden; text-overflow: ellipsis;">{{ r.path }}</div>
+              <div style="flex:1; height:8px; background: var(--border); border-radius: 999px; overflow:hidden;">
+                <div style="height:100%; width: {{ (100 * r.count / (max_p if max_p else 1)) | round(0, 'floor') }}%; background: rgba(245, 245, 247, 0.6);"></div>
+              </div>
+              <div class="mono" style="min-width: 44px; text-align:right;">{{ r.count }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="muted" style="margin-top: 10px;">暂无数据</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <h2 style="margin-top: 16px;">账号概览</h2>
+  <div class="card" style="margin-top: 8px;">
+    {% if users and users|length %}
+      <div style="display:grid; gap:12px;">
+        {% for u in users %}
+          <div style="border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
+            <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px;">
+              <div class="mono" style="font-size: 14px;">@{{ u.username }}</div>
+              <div class="muted" style="font-size: 12px;">
+                {% if u.last_seen %}最近：{{ u.last_seen.strftime("%Y-%m-%d %H:%M") }}{% else %}暂无{% endif %}
+              </div>
+            </div>
+
+            <div style="display:grid; gap:8px; margin-top: 10px;">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <div class="muted" style="min-width: 72px;">浏览</div>
+                <div style="flex:1; height:8px; background: var(--border); border-radius: 999px; overflow:hidden;">
+                  <div style="height:100%; width: {{ (100 * u.page_views / (max_views if max_views else 1)) | round(0, 'floor') }}%; background: rgba(245,245,247,0.8);"></div>
+                </div>
+                <div class="mono" style="min-width: 44px; text-align:right;">{{ u.page_views }}</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <div class="muted" style="min-width: 72px;">动作</div>
+                <div style="flex:1; height:8px; background: var(--border); border-radius: 999px; overflow:hidden;">
+                  <div style="height:100%; width: {{ (100 * u.actions / (max_actions if max_actions else 1)) | round(0, 'floor') }}%; background: rgba(212, 102, 44, 0.65);"></div>
+                </div>
+                <div class="mono" style="min-width: 44px; text-align:right;">{{ u.actions }}</div>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <div class="muted">错误</div>
+                <div class="mono">{{ u.errors }}</div>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="muted">暂无数据</div>
+    {% endif %}
+  </div>
+
+  <div class="fullbleed divider-tail"></div>
+{% endblock %}
+
