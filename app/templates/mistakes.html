@@ -139,6 +139,9 @@
           });
         }
 
+        let generationInFlight = false;
+        let streamAbortController = null;
+
         // Background river: typing + highlighting (shared across requests)
         const SYSTEM_CHUNK_MIN = 4;
         const SYSTEM_CHUNK_MAX = 7;
@@ -326,11 +329,16 @@
         };
 
         async function postStream() {
+          if (streamAbortController) {
+            try { streamAbortController.abort(); } catch {}
+          }
+          streamAbortController = new AbortController();
           const fd = new FormData(form);
           const resp = await fetch("/simulations/generate_stream", {
             method: "POST",
             headers: { "Accept": "text/event-stream" },
             body: fd,
+            signal: streamAbortController.signal,
           });
           const ct = (resp.headers.get("content-type") || "").toLowerCase();
           if (!resp.ok) {
@@ -390,12 +398,13 @@
                   riverStopTyping();
                   if (note) note.textContent = "打开题目…";
                   // Use a single hard navigation to avoid any chance of double-refresh.
+                  try { streamAbortController?.abort(); } catch {}
                   window.location.replace(url);
                   return;
                 } else if (msg.t === "error" && typeof msg.msg === "string") {
-                    throw new Error(msg.msg);
-                  }
+                  throw new Error(msg.msg);
                 }
+              }
             }
           }
           throw new Error("连接结束，但未收到完成信号。");
@@ -411,6 +420,8 @@
         }
 
         function startGenerate() {
+          if (generationInFlight) return;
+          generationInFlight = true;
           const ids = collectWordIds();
           streamStartedDelta = false;
           riverReset(SYSTEM_START_DELAY_MS);
@@ -446,6 +457,7 @@
               if (riverEl) riverEl.textContent = (riverEl.textContent || "") + `\n[${t}] ${msg}\n`;
             } catch {}
             if (btn) btn.disabled = false;
+            generationInFlight = false;
           });
         }
 
@@ -469,14 +481,27 @@
             overlay.classList.add("hidden");
             clearOverlayError();
             riverStopTyping();
+            try { streamAbortController?.abort(); } catch {}
+            generationInFlight = false;
             if (btn) btn.disabled = false;
           });
         }
         if (retryBtn) {
           retryBtn.addEventListener("click", () => {
+            try { streamAbortController?.abort(); } catch {}
+            generationInFlight = false;
             startGenerate();
           });
         }
+
+        // If we leave this page via HTMX, abort any in-flight stream.
+        document.addEventListener("htmx:beforeSwap", (e) => {
+          const target = e?.detail?.target;
+          if (!target || target.id !== "content") return;
+          if (!generationInFlight) return;
+          try { streamAbortController?.abort(); } catch {}
+          generationInFlight = false;
+        });
       })();
     </script>
   {% endif %}

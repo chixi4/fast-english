@@ -122,6 +122,7 @@
         const deckId = deckIdEl ? String(deckIdEl.value || '') : '';
 
         let startedAt = Date.now();
+        let revealViaKeyboard = false;
         let cards = [];
         try {
           cards = JSON.parse((prefetchEl && prefetchEl.textContent) ? prefetchEl.textContent : '[]') || [];
@@ -168,8 +169,10 @@
             bottomBar.setAttribute("aria-hidden", "false");
           }
           if (bottomSpacer) bottomSpacer.classList.remove("hidden");
-          const first = (bottomBar || document).querySelector('button[type="submit"]');
-          if (first) first.focus();
+          if (revealViaKeyboard) {
+            const first = (bottomBar || document).querySelector('button[type="submit"]');
+            if (first) first.focus({ preventScroll: true });
+          }
         };
 
         const renderAnswer = (c) => {
@@ -198,15 +201,30 @@
           resetRevealUi();
         };
 
-        if (revealOverlay) {
-          revealOverlay.addEventListener('click', reveal);
-          revealOverlay.addEventListener('keydown', (e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              reveal();
-            }
-          });
-        }
+        const isInteractiveTarget = (target) => {
+          if (!target || !(target instanceof Element)) return false;
+          return !!target.closest(
+            'a, button, input, select, textarea, summary, details, label, .review-bottombar, .topbar, .nav'
+          );
+        };
+
+        // Whole-screen tap/click to reveal, but never steal clicks from real controls.
+        document.addEventListener('click', (e) => {
+          if (!reviewCard || reviewCard.dataset.revealed === '1') return;
+          if (isInteractiveTarget(e.target)) return;
+          revealViaKeyboard = false;
+          reveal();
+        }, { capture: true });
+
+        document.addEventListener('keydown', (e) => {
+          if (!reviewCard || reviewCard.dataset.revealed === '1') return;
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          if (isInteractiveTarget(e.target)) return;
+          e.preventDefault();
+          revealViaKeyboard = true;
+          reveal();
+          revealViaKeyboard = false;
+        }, { capture: true });
 
         const postRating = async (wordId, rating, ms) => {
           const fd = new FormData();

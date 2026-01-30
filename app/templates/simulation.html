@@ -14,7 +14,7 @@
         <div class="q-stem">
           <span class="mono">{{ q.id }}</span>
           <span class="badge">{{ q.type }}</span>
-          {{ q.stem }}
+          {{ q.stem | kw }}
           {% if q.target_term %}
             <span class="badge muted">target: {{ q.target_term }}</span>
           {% endif %}
@@ -23,7 +23,7 @@
           {% for c in q.choices %}
             <label class="choice">
               <input type="radio" name="{{ q.id }}" value="{{ loop.index0 }}" {% if loop.index0 == 0 %}required{% endif %} />
-              <span>{{ c }}</span>
+              <span>{{ c | kw }}</span>
             </label>
           {% endfor %}
         </div>

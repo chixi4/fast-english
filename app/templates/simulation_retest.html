@@ -4,7 +4,6 @@
 
   <div class="actions">
     <a class="btn" href="/simulations/{{ sim.id }}">返回短文</a>
-    <a class="btn" href="/mistakes">回到错词篮</a>
   </div>
 
   {% if not word %}
@@ -146,15 +145,27 @@
           reviewCard.parentElement && reviewCard.parentElement.insertBefore(card, reviewCard);
         };
 
-        if (revealOverlay) {
-          revealOverlay.addEventListener('click', reveal);
-          revealOverlay.addEventListener('keydown', (e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              reveal();
-            }
-          });
-        }
+        const isInteractiveTarget = (target) => {
+          if (!target || !(target instanceof Element)) return false;
+          return !!target.closest(
+            'a, button, input, select, textarea, summary, details, label, .review-bottombar, .topbar, .nav, .actions'
+          );
+        };
+
+        // Whole-screen tap/click to reveal, but never steal clicks from real controls.
+        document.addEventListener('click', (e) => {
+          if (!reviewCard || reviewCard.dataset.revealed === '1') return;
+          if (isInteractiveTarget(e.target)) return;
+          reveal();
+        }, { capture: true });
+
+        document.addEventListener('keydown', (e) => {
+          if (!reviewCard || reviewCard.dataset.revealed === '1') return;
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          if (isInteractiveTarget(e.target)) return;
+          e.preventDefault();
+          reveal();
+        }, { capture: true });
 
         const postRating = async (wordId, rating) => {
           const fd = new FormData();
