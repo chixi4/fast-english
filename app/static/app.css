@@ -54,6 +54,18 @@ a { color: var(--text); }
 .nav a { margin-left: 14px; text-decoration: none; color: var(--muted); }
 .nav a:hover { color: var(--text); }
 
+.htmx-indicator {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--primary);
+  z-index: 9999;
+}
+.htmx-indicator.htmx-request { display: block; }
+
 h1 { margin: 10px 0 14px; font-size: 26px; }
 h2 { margin: 18px 0 10px; font-size: 18px; color: var(--muted); }
 

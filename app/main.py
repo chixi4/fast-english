@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 from fsrs import Rating
 from sqlalchemy import func
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.gzip import GZipMiddleware
 
 from app.ai import AiClient, LEVEL_GUIDE, _safe_json_extract
 from app.ai_types import GeneratedSimulation
@@ -42,7 +43,17 @@ BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 app = FastAPI(title="Vocabulary Study MVP")
+app.add_middleware(GZipMiddleware, minimum_size=500)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+@app.middleware("http")
+async def _static_cache_headers(request: Request, call_next):
+    resp = await call_next(request)
+    if (request.url.path or "").startswith("/static/") and resp.status_code == 200:
+        if "cache-control" not in {k.lower() for k in resp.headers.keys()}:
+            resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
 
 @app.middleware("http")
 async def _basic_auth_middleware(request: Request, call_next):
