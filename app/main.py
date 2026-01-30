@@ -19,6 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fsrs import Rating
+from markupsafe import Markup
 from sqlalchemy import case, func
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import GZipMiddleware
@@ -384,6 +385,16 @@ def _passage_to_html(passage: str) -> str:
     return _PASSAGE_MARK_RE.sub(r'<mark class="kw">\1</mark>', escaped)
 
 
+def _kw_to_html(text: str | None) -> Markup:
+    escaped = html.escape(text or "")
+    escaped = escaped.replace("\r\n", "\n").replace("\r", "\n")
+    escaped = escaped.replace("\n", "<br>")
+    return Markup(_PASSAGE_MARK_RE.sub(r"<mark class=\"kw\">\1</mark>", escaped))
+
+
+templates.env.filters["kw"] = _kw_to_html
+
+
 def _ensure_deck(session, name: str) -> Deck:
     name = (name or "").strip()
     if not name:
@@ -693,11 +704,67 @@ def update_plan_settings(
 
     with get_session() as session:
         plan = _ensure_default_plan(session)
+        old_new_limit = int(plan.daily_new_limit or 20)
         plan.daily_new_limit = new_limit
         plan.daily_review_limit = review_limit
         plan.suspend_new_when_due_over = suspend_over
 
-    msg = {"toast": "已保存学习计划设置"}
+        # If user increases daily_new_limit, top up "today due new cards" so 首页「今天待学」会立刻增加。
+        # This matches the UX expectation that changing the plan immediately makes more words available.
+        auto_added = 0
+        if new_limit > old_new_limit:
+            now = _utcnow()
+            due_total = int(session.query(func.count(SrsCard.word_id)).filter(SrsCard.due_at <= now).scalar() or 0)
+            due_new = int(
+                session.query(func.count(SrsCard.word_id))
+                .filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_(None))
+                .scalar()
+                or 0
+            )
+            if suspend_over <= 0 or due_total <= suspend_over:
+                need = max(0, new_limit - due_new)
+                if need > 0:
+                    planned_ids_subq = session.query(PlanWord.word_id).filter(PlanWord.plan_id == plan.id).subquery()
+                    # Prefer decks already linked to the plan (by priority), then any deck with remaining words.
+                    plan_deck_ids = [
+                        int(did)
+                        for (did,) in session.query(PlanDeck.deck_id)
+                        .filter(PlanDeck.plan_id == plan.id)
+                        .order_by(PlanDeck.priority.asc(), PlanDeck.id.asc())
+                        .all()
+                    ]
+
+                    def _deck_remaining_counts(deck_ids: list[int] | None) -> list[tuple[int, int]]:
+                        q = session.query(DeckWord.deck_id, func.count(DeckWord.word_id))
+                        q = q.filter(~DeckWord.word_id.in_(planned_ids_subq))
+                        if deck_ids:
+                            q = q.filter(DeckWord.deck_id.in_(deck_ids))
+                        q = q.group_by(DeckWord.deck_id).order_by(func.count(DeckWord.word_id).desc())
+                        return [(int(d), int(c)) for (d, c) in q.all()]
+
+                    candidates: list[int] = []
+                    # First pass: plan decks
+                    for did, _cnt in _deck_remaining_counts(plan_deck_ids):
+                        if did not in candidates:
+                            candidates.append(did)
+                    # Second pass: any decks
+                    for did, _cnt in _deck_remaining_counts(None):
+                        if did not in candidates:
+                            candidates.append(did)
+
+                    for did in candidates:
+                        if need <= 0:
+                            break
+                        _name, added, _remaining = _add_next_words_to_plan(session, deck_id=did, count=need)
+                        if added > 0:
+                            auto_added += int(added)
+                            need -= int(added)
+                    # If still need > 0, there simply aren't enough remaining words to add.
+
+    toast = "已保存学习计划设置"
+    if auto_added > 0:
+        toast += f"（已补充今日新词 {auto_added} 个）"
+    msg = {"toast": toast}
     if (return_to or "").strip().lower() in {"home", "today", "/"}:
         return _redirect("/?" + urlencode(msg))
     return _redirect("/settings?" + urlencode(msg))

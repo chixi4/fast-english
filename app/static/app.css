@@ -39,7 +39,9 @@ a { color: var(--text); }
 .topbar { position: relative; background: var(--bg); border-bottom: 1px solid var(--border); z-index: 1000; flex: 0 0 auto; }
 .topbar-inner { display: flex; align-items: center; justify-content: space-between; }
 .brand { display: flex; align-items: center; gap: 10px; }
-.brand a { text-decoration: none; font-weight: 700; letter-spacing: 0.2px; }
+.brand a { text-decoration: none; font-size: 52px; letter-spacing: 6px; line-height: 1; }
+.brand-text { color: var(--text); font-weight: 400; }
+.brand-accent { color: var(--primary); font-weight: 800; }
 .userbar { display: flex; align-items: center; gap: 10px; }
 .userchip {
   color: var(--muted);
@@ -155,22 +157,36 @@ h2 { margin: 18px 0 10px; font-size: 18px; color: var(--muted); }
   text-decoration: none;
   box-shadow: none;
 }
-.btn:hover {
-  border-color: var(--muted);
-  background: rgba(255, 255, 255, 0.04);
+/* Avoid "stuck hover" states on touch devices */
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover {
+    border-color: var(--muted);
+    background: rgba(255, 255, 255, 0.04);
+  }
+}
+.btn:not(.primary):not(.danger):not(.warn):not(.easy):active {
+  background: rgba(245, 245, 247, 0.92);
+  border-color: rgba(245, 245, 247, 0.92);
+  color: var(--bg);
 }
 .btn.primary {
   background: transparent;
-  border: 2px solid var(--primary);
+  border: 1px solid var(--border);
   color: var(--primary);
 }
-.btn.primary:hover {
+@media (hover: hover) and (pointer: fine) {
+  .btn.primary:hover {
+    background: var(--primary);
+    color: var(--bg);
+  }
+}
+.btn.primary:active {
   background: var(--primary);
   color: var(--bg);
 }
 .btn.danger {
   background: transparent;
-  border: 2px solid var(--danger);
+  border: 1px solid var(--danger);
   color: var(--danger);
 }
 .btn.danger:hover {
@@ -179,7 +195,7 @@ h2 { margin: 18px 0 10px; font-size: 18px; color: var(--muted); }
 }
 .btn.warn {
   background: transparent;
-  border: 2px solid var(--warn);
+  border: 1px solid var(--warn);
   color: var(--warn);
 }
 .btn.warn:hover {
@@ -188,7 +204,7 @@ h2 { margin: 18px 0 10px; font-size: 18px; color: var(--muted); }
 }
 .btn.easy {
   background: transparent;
-  border: 2px solid var(--easy);
+  border: 1px solid var(--easy);
   color: var(--easy);
 }
 .btn.easy:hover {
@@ -197,13 +213,13 @@ h2 { margin: 18px 0 10px; font-size: 18px; color: var(--muted); }
 }
 
 /* 底部评分按钮：纯边框扁平风格 */
-.review-rating-grid .btn.primary { background: transparent; color: var(--primary); border: 2px solid var(--primary); }
-.review-rating-grid .btn.primary:hover { background: var(--primary); color: var(--bg); }
-.review-rating-grid .btn.danger { background: transparent; color: var(--danger); border: 2px solid var(--danger); }
+.review-rating-grid .btn.primary { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
+.review-rating-grid .btn.primary:active { background: var(--primary); color: var(--bg); }
+.review-rating-grid .btn.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
 .review-rating-grid .btn.danger:hover { background: var(--danger); color: var(--bg); }
-.review-rating-grid .btn.warn { background: transparent; color: var(--warn); border: 2px solid var(--warn); }
+.review-rating-grid .btn.warn { background: transparent; color: var(--warn); border: 1px solid var(--warn); }
 .review-rating-grid .btn.warn:hover { background: var(--warn); color: var(--bg); }
-.review-rating-grid .btn.easy { background: transparent; color: var(--easy); border: 2px solid var(--easy); }
+.review-rating-grid .btn.easy { background: transparent; color: var(--easy); border: 1px solid var(--easy); }
 .review-rating-grid .btn.easy:hover { background: var(--easy); color: var(--bg); }
 
 .btn {
@@ -240,6 +256,16 @@ input:focus, textarea:focus, select:focus {
 input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, a.btn:focus-visible, summary:focus-visible {
   outline: 2px solid rgba(212, 102, 44, 0.55);
   outline-offset: 2px;
+}
+@media (hover: none) and (pointer: coarse) {
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  button:focus-visible,
+  a.btn:focus-visible,
+  summary:focus-visible {
+    outline: none;
+  }
 }
 input:focus:not(:focus-visible),
 textarea:focus:not(:focus-visible),
@@ -347,10 +373,15 @@ label { display: grid; gap: 6px; color: var(--muted); }
 .q-choices { display: grid; gap: 8px; margin-top: 10px; }
 .choice { display: flex; gap: 10px; align-items: flex-start; color: var(--muted); }
 .choice input { width: auto; margin-top: 4px; }
+input[type="radio"],
+input[type="checkbox"] {
+  accent-color: var(--primary);
+}
 .badge { display: inline-block; padding: 2px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; color: var(--muted); margin: 0 6px; }
 .badge.ok { border-color: var(--ok); color: var(--ok); }
 .badge.bad { border-color: var(--danger); color: var(--danger); }
 
+mark,
 mark.kw {
   background: rgba(212, 102, 44, 0.22);
   border: 1px solid rgba(212, 102, 44, 0.55);
@@ -528,6 +559,7 @@ mark.kw {
   padding: 10px 12px;
   pointer-events: none;
   max-width: 520px;
+  margin: 0 auto;
 }
 .review-prompt-title { font-size: 15px; color: var(--text); opacity: 0.95; }
 .review-prompt-sub { font-size: 13px; margin-top: 6px; }
@@ -535,7 +567,7 @@ mark.kw {
 .review-card.revealed .review-answer { display: block; }
 
 .review-reveal-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: transparent;
   z-index: 950;
@@ -543,6 +575,7 @@ mark.kw {
   align-items: stretch;
   justify-content: stretch;
   padding: 0;
+  pointer-events: none;
 }
 
 .review-prompt-area {
@@ -621,7 +654,7 @@ mark.kw {
 
   /* 导航栏 - 简化 */
   .topbar-inner { padding: 10px 16px; }
-  .brand a { font-size: 14px; }
+  .brand a { font-size: 28px; letter-spacing: 3px; }
   .nav a { margin-left: 10px; font-size: 14px; }
 
   /* 卡片单列布局 */
@@ -709,7 +742,7 @@ mark.kw {
 
 @media (max-width: 380px) {
   .nav a { margin-left: 8px; font-size: 13px; }
-  .brand a { font-size: 13px; }
+  .brand a { font-size: 24px; letter-spacing: 2px; }
   .big { font-size: 20px; }
   .card-v { font-size: 18px; }
 }

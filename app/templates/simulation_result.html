@@ -18,11 +18,11 @@
         {% else %}
           <span class="badge bad">错误</span>
         {% endif %}
-        {{ q.stem }}
+        {{ q.stem | kw }}
       </div>
       <div class="muted">你的选择：{{ q.user_answer_index }}</div>
       <div class="muted">正确答案：{{ q.answer_index }}</div>
-      <div class="example">{{ q.explanation }}</div>
+      <div class="example">{{ q.explanation | kw }}</div>
     </div>
   {% endfor %}
 {% endblock %}
