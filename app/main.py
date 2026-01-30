@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 from datetime import datetime
+import hmac
 import html
 import json
 from pathlib import Path
@@ -11,7 +14,7 @@ from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fsrs import Rating
@@ -20,15 +23,20 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.ai import AiClient, LEVEL_GUIDE, _safe_json_extract
 from app.ai_types import GeneratedSimulation
+from app.auth import decode_session, encode_session, hash_password, new_session_for_user, verify_password
+from app.auth_db import get_auth_session, init_auth_db
+from app.auth_models import AuthUser
 from app.config import get_settings
 from app.db import get_session, init_db
 from app.models import Deck, DeckWord, Mistake, Plan, PlanDeck, PlanWord, Simulation, SrsCard, SrsReviewLog, Word
+from app.request_context import pop_current_user_identity, push_current_user_identity
 from app.srs import apply_fsrs_to_db, db_card_to_fsrs, get_scheduler, parse_rating
 from app.wordbooks import get_source, list_sources, load_rows
 
 
 load_dotenv()
 init_db()
+init_auth_db()
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -36,9 +44,231 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app = FastAPI(title="Vocabulary Study MVP")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
+@app.middleware("http")
+async def _basic_auth_middleware(request: Request, call_next):
+    settings = get_settings()
+    if not settings.basic_auth_user or not settings.basic_auth_pass:
+        return await call_next(request)
+
+    auth = request.headers.get("authorization") or ""
+    if auth.lower().startswith("basic "):
+        token = auth.split(" ", 1)[1].strip()
+        try:
+            raw = base64.b64decode(token).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError):
+            raw = ""
+        username, _, password = raw.partition(":")
+        if hmac.compare_digest(username, settings.basic_auth_user) and hmac.compare_digest(
+            password, settings.basic_auth_pass
+        ):
+            return await call_next(request)
+
+    return Response(
+        status_code=401,
+        headers={"WWW-Authenticate": f'Basic realm="{settings.basic_auth_realm}", charset="UTF-8"'},
+    )
+
+
+@app.middleware("http")
+async def _auth_session_middleware(request: Request, call_next):
+    settings = get_settings()
+
+    path = request.url.path or "/"
+    is_public = path.startswith("/static") or path.startswith("/auth/")
+
+    username: str | None = None
+    user_id: int | None = None
+
+    token_raw = request.cookies.get(settings.auth_cookie_name) or ""
+    sess = decode_session(token_raw)
+    if sess is not None:
+        username = sess.username
+        user_id = sess.user_id
+
+    request.state.user_username = username
+    request.state.user_id = user_id
+
+    if settings.require_login and (not username) and (not is_public):
+        qs = urlencode({"next": str(request.url.path)})
+        return RedirectResponse(url="/auth/login?" + qs, status_code=303)
+
+    ctx_token = push_current_user_identity(username)
+    try:
+        return await call_next(request)
+    finally:
+        pop_current_user_identity(ctx_token)
+
 
 def _redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url=url, status_code=303)
+
+
+def _cookie_is_secure(request: Request) -> bool:
+    xf_proto = (request.headers.get("x-forwarded-proto") or "").strip().lower()
+    if xf_proto == "https":
+        return True
+    return request.url.scheme == "https"
+
+
+def _set_session_cookie(resp: Response, request: Request, token: str) -> None:
+    settings = get_settings()
+    max_age = int(settings.auth_cookie_days) * 86400
+    resp.set_cookie(
+        settings.auth_cookie_name,
+        token,
+        max_age=max_age,
+        httponly=True,
+        secure=_cookie_is_secure(request),
+        samesite="lax",
+        path="/",
+    )
+
+
+def _clear_session_cookie(resp: Response) -> None:
+    settings = get_settings()
+    resp.delete_cookie(settings.auth_cookie_name, path="/")
+
+
+def _norm_username(username: str) -> tuple[str, str]:
+    raw = (username or "").strip()
+    return raw, raw.lower()
+
+
+def _safe_next(next_url: str | None) -> str:
+    n = (next_url or "/").strip() or "/"
+    # Avoid open redirects.
+    if not n.startswith("/"):
+        return "/"
+    return n
+
+
+@app.get("/auth/login", response_class=HTMLResponse)
+def auth_login(request: Request, next: str = "/", toast: str | None = None, username: str | None = None):
+    if request.state.user_username:
+        return _redirect(_safe_next(next))
+    return templates.TemplateResponse(
+        request,
+        "auth_login.html",
+        {
+            "title": "登录",
+            "toast": (toast or "").strip(),
+            "next": _safe_next(next),
+            "username": (username or "").strip(),
+        },
+    )
+
+
+@app.post("/auth/login", response_class=HTMLResponse)
+def auth_login_post(request: Request, username: str = Form(...), password: str = Form(...), next: str = Form("/")):
+    next = _safe_next(next)
+    raw, norm = _norm_username(username)
+    if not raw or not password:
+        return templates.TemplateResponse(
+            request,
+            "auth_login.html",
+            {"title": "登录", "toast": "请输入账号和密码。", "next": next, "username": raw},
+            status_code=400,
+        )
+
+    with get_auth_session() as session:
+        user = session.query(AuthUser).filter(AuthUser.username_norm == norm).first()
+        if not user or not verify_password(password, user.password_hash):
+            return templates.TemplateResponse(
+                request,
+                "auth_login.html",
+                {"title": "登录", "toast": "账号或密码错误。", "next": next, "username": raw},
+                status_code=400,
+            )
+
+    sess = new_session_for_user(user.id, user.username)
+    token = encode_session(sess)
+    resp = _redirect(next)
+    _set_session_cookie(resp, request, token)
+    return resp
+
+
+@app.get("/auth/register", response_class=HTMLResponse)
+def auth_register(request: Request, next: str = "/", toast: str | None = None, username: str | None = None):
+    if request.state.user_username:
+        return _redirect(_safe_next(next))
+    return templates.TemplateResponse(
+        request,
+        "auth_register.html",
+        {
+            "title": "注册",
+            "toast": (toast or "").strip(),
+            "next": _safe_next(next),
+            "username": (username or "").strip(),
+        },
+    )
+
+
+@app.post("/auth/register", response_class=HTMLResponse)
+def auth_register_post(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    password2: str = Form(...),
+    next: str = Form("/"),
+):
+    next = _safe_next(next)
+    raw, norm = _norm_username(username)
+    if not raw:
+        return templates.TemplateResponse(
+            request,
+            "auth_register.html",
+            {"title": "注册", "toast": "请输入账号。", "next": next, "username": raw},
+            status_code=400,
+        )
+    if len(raw) > 64:
+        return templates.TemplateResponse(
+            request,
+            "auth_register.html",
+            {"title": "注册", "toast": "账号太长（最多 64 字）。", "next": next, "username": raw},
+            status_code=400,
+        )
+    if not password or len(password) < 4:
+        return templates.TemplateResponse(
+            request,
+            "auth_register.html",
+            {"title": "注册", "toast": "密码至少 4 位。", "next": next, "username": raw},
+            status_code=400,
+        )
+    if password != password2:
+        return templates.TemplateResponse(
+            request,
+            "auth_register.html",
+            {"title": "注册", "toast": "两次输入的密码不一致。", "next": next, "username": raw},
+            status_code=400,
+        )
+
+    with get_auth_session() as session:
+        existed = session.query(AuthUser).filter(AuthUser.username_norm == norm).first()
+        if existed:
+            return templates.TemplateResponse(
+                request,
+                "auth_register.html",
+                {"title": "注册", "toast": "该账号已存在，请换一个。", "next": next, "username": raw},
+                status_code=400,
+            )
+        user = AuthUser(username=raw, username_norm=norm, password_hash=hash_password(password))
+        session.add(user)
+        session.flush()
+        uid = int(user.id)
+        display = user.username
+
+    sess = new_session_for_user(uid, display)
+    token = encode_session(sess)
+    resp = _redirect(next)
+    _set_session_cookie(resp, request, token)
+    return resp
+
+
+@app.post("/auth/logout")
+def auth_logout(request: Request):
+    resp = _redirect("/auth/login")
+    _clear_session_cookie(resp)
+    return resp
 
 
 def _utcnow() -> datetime:
