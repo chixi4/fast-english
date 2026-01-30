@@ -7,6 +7,7 @@ from datetime import datetime
 import hmac
 import html
 import json
+import time
 from pathlib import Path
 import re
 from typing import Any
@@ -1839,53 +1840,78 @@ async def generate_simulation_stream(
     if len(ids) > 14:
         ids = ids[:14]
 
-    with get_session() as session:
-        words: list[Word] = []
-        if ids:
-            fetched = session.query(Word).filter(Word.id.in_(ids)).all()
-            by_id = {w.id: w for w in fetched}
-            words = [by_id[i] for i in ids if i in by_id]
-        else:
-            rows = (
-                session.query(Mistake, Word)
-                .join(Word, Mistake.word_id == Word.id)
-                .order_by(Mistake.id.desc())
-                .limit(600)
-                .all()
-            )
-            latest: dict[int, tuple[Word, datetime]] = {}
-            for m, w in rows:
-                if w.id not in latest:
-                    latest[w.id] = (w, m.created_at)
-            candidates = list(latest.values())
-            candidates.sort(key=lambda t: (t[0].wrong_count, t[1]), reverse=True)
-            words = [w for (w, _ts) in candidates[:k]]
-
-    if not words:
-        return StreamingResponse(
-            iter([_sse({"t": "error", "msg": "还没有错词可生成。先去“今日学习”里点几次“不认识/Again”。"})]),
-            media_type="text/event-stream",
-        )
-
-    terms = [w.term for w in words]
-    term_notes = {w.term: (w.definition or w.example or "").strip() for w in words}
-
-    min_words = _min_words(selected_level, selected_length_mode)
-    target_words = max(min_words, len(terms) * 30)
-    lo = int(round(target_words * 0.9))
-    hi = int(round(target_words * 1.15))
-    p_lo, p_hi = _paragraph_range(target_words)
-    question_count = max(6, min(10, int(round(target_words / 60))))
-
     settings = get_settings()
     client = AiClient(settings=settings)
 
     async def gen():
         try:
-            yield _sse({"t": "note", "msg": f"已选词：{len(terms)} 个，准备生成..."})
+            started_at = time.perf_counter()
+
+            def _stamp() -> str:
+                return f"{(time.perf_counter() - started_at):.2f}s"
+
+            def _note(msg: str) -> str:
+                return _sse({"t": "note", "msg": f"[{_stamp()}] {msg}"})
+
+            yield _note(
+                f"request accepted level={selected_level} length={selected_length_mode} "
+                f"k={k} manual_ids={len(ids)}"
+            )
+
+            # Select words (manual IDs or auto-pick from mistakes)
+            sel_t0 = time.perf_counter()
+            with get_session() as session:
+                words: list[Word] = []
+                if ids:
+                    fetched = session.query(Word).filter(Word.id.in_(ids)).all()
+                    by_id = {w.id: w for w in fetched}
+                    words = [by_id[i] for i in ids if i in by_id]
+                    yield _note(
+                        "word selection=manual "
+                        f"requested={len(ids)} found={len(words)} dt={(time.perf_counter() - sel_t0) * 1000:.0f}ms"
+                    )
+                else:
+                    rows = (
+                        session.query(Mistake, Word)
+                        .join(Word, Mistake.word_id == Word.id)
+                        .order_by(Mistake.id.desc())
+                        .limit(600)
+                        .all()
+                    )
+                    latest: dict[int, tuple[Word, datetime]] = {}
+                    for m, w in rows:
+                        if w.id not in latest:
+                            latest[w.id] = (w, m.created_at)
+                    candidates = list(latest.values())
+                    candidates.sort(key=lambda t: (t[0].wrong_count, t[1]), reverse=True)
+                    words = [w for (w, _ts) in candidates[:k]]
+                    yield _note(
+                        "word selection=auto "
+                        f"scanned_rows={len(rows)} unique={len(candidates)} picked={len(words)} "
+                        f"sort=(wrong_count,latest) dt={(time.perf_counter() - sel_t0) * 1000:.0f}ms"
+                    )
+
+            if not words:
+                yield _sse({"t": "error", "msg": "还没有错词可生成。先去“今日学习”里点几次“不认识/Again”。"})
+                return
+
+            terms = [w.term for w in words]
+            term_notes = {w.term: (w.definition or w.example or "").strip() for w in words}
+            yield _note(f"terms={len(terms)} [{', '.join(terms)}]")
+
+            min_words = _min_words(selected_level, selected_length_mode)
+            target_words = max(min_words, len(terms) * 30)
+            lo = int(round(target_words * 0.9))
+            hi = int(round(target_words * 1.15))
+            p_lo, p_hi = _paragraph_range(target_words)
+            question_count = max(6, min(10, int(round(target_words / 60))))
+            yield _note(
+                "generation plan "
+                f"passage_words≈{target_words} range=[{lo},{hi}] paragraphs=[{p_lo},{p_hi}] questions={question_count}"
+            )
 
             if settings.ai_mock:
-                yield _sse({"t": "note", "msg": "AI_MOCK=1：生成模拟输出..."})
+                yield _note("AI_MOCK=1 generating mock output")
                 sim = await client.generate_simulation(
                     level=selected_level,
                     terms=terms,
@@ -1905,7 +1931,8 @@ async def generate_simulation_stream(
                     yield _sse({"t": "error", "msg": "AI 未配置：请在 .env 配置 AI_API_KEY，或开启 AI_MOCK=1。"})
                     return
 
-                yield _sse({"t": "note", "msg": "正在构建提示词..."})
+                prompt_t0 = time.perf_counter()
+                yield _note("building prompt")
                 payload, system, user = client.build_simulation_payload(
                     level=selected_level,
                     terms=terms,
@@ -1914,28 +1941,60 @@ async def generate_simulation_stream(
                     paragraph_range=(p_lo, p_hi),
                     question_count=question_count,
                 )
-                yield _sse({"t": "note", "msg": "提示词就绪，正在请求 AI..."})
+                prompt_ms = (time.perf_counter() - prompt_t0) * 1000
+                yield _note(
+                    "prompt ready "
+                    f"dt={prompt_ms:.0f}ms system_chars={len(system)} user_chars={len(user)} "
+                    f"messages={len(payload.get('messages') or [])}"
+                )
 
                 last_parsed: GeneratedSimulation | None = None
                 last_missing: list[str] | None = None
                 sim: GeneratedSimulation | None = None
                 for attempt in range(1, 4):
-                    yield _sse({"t": "note", "msg": f"请求 AI（第 {attempt}/3 次）..."})
+                    yield _note(f"AI request attempt={attempt}/3")
                     parts: list[str] = []
-                    async for delta in client.chat_completions_content_stream(payload):
+
+                    stream_it = client.chat_completions_content_stream(payload).__aiter__()
+                    got_any = False
+                    attempt_started_at = time.perf_counter()
+
+                    pending = asyncio.create_task(stream_it.__anext__())
+                    while True:
+                        try:
+                            delta = await asyncio.wait_for(asyncio.shield(pending), timeout=0.9)
+                        except asyncio.TimeoutError:
+                            if not got_any:
+                                waited = time.perf_counter() - attempt_started_at
+                                yield _note(f"waiting for first token... waited={waited:.1f}s")
+                            continue
+                        except StopAsyncIteration:
+                            break
+
+                        if not got_any:
+                            got_any = True
+                            waited = time.perf_counter() - attempt_started_at
+                            yield _note(f"first token received waited={waited:.2f}s")
+
                         parts.append(delta)
                         masked = _mask_stream_text(delta)
                         if masked:
                             yield _sse({"t": "delta", "c": masked})
 
+                        pending = asyncio.create_task(stream_it.__anext__())
+
                     text = "".join(parts)
                     try:
+                        parse_t0 = time.perf_counter()
+                        yield _note(f"stream finished, parsing json chars={len(text)}")
                         json_text = _safe_json_extract(text)
                         parsed = GeneratedSimulation.model_validate(json.loads(json_text))
                         sim = parsed
+                        parse_ms = (time.perf_counter() - parse_t0) * 1000
+                        yield _note(f"parse ok dt={parse_ms:.0f}ms")
                         break
                     except Exception:
-                        yield _sse({"t": "note", "msg": "输出校验失败，准备重试..."})
+                        yield _note("validation failed, retrying with stricter instructions")
                         payload = {
                             **payload,
                             "messages": [
