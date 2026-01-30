@@ -355,15 +355,6 @@ def _merge_tags(*values: str) -> str:
     return ", ".join(items)
 
 
-def _mask_stream_text(text: str) -> str:
-    if not text:
-        return ""
-    out: list[str] = []
-    for ch in text:
-        out.append(ch if ch.isspace() else "•")
-    return "".join(out)
-
-
 def _format_next_due_at(next_due_at: datetime | None, *, now: datetime) -> str:
     if next_due_at is None:
         return ""
@@ -1924,7 +1915,7 @@ async def generate_simulation_stream(
                 step = 140
                 for i in range(0, len(mock_text), step):
                     chunk = mock_text[i : i + step]
-                    yield _sse({"t": "delta", "c": _mask_stream_text(chunk)})
+                    yield _sse({"t": "delta", "c": chunk})
                     await asyncio.sleep(0.01)
             else:
                 if not settings.ai_api_key:
@@ -1977,9 +1968,8 @@ async def generate_simulation_stream(
                             yield _note(f"first token received waited={waited:.2f}s")
 
                         parts.append(delta)
-                        masked = _mask_stream_text(delta)
-                        if masked:
-                            yield _sse({"t": "delta", "c": masked})
+                        if delta:
+                            yield _sse({"t": "delta", "c": delta})
 
                         pending = asyncio.create_task(stream_it.__anext__())
 

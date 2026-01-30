@@ -329,10 +329,12 @@ mark.kw {
 .overlay.hidden { display: none; }
 .overlay-card {
   width: min(620px, calc(100vw - 40px));
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  background: rgba(44, 44, 46, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
   padding: 14px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 .spinner {
   width: 34px;
@@ -349,6 +351,7 @@ mark.kw {
   inset: 0;
   overflow: hidden;
   pointer-events: none;
+  z-index: 0;
 }
 .ai-river-text {
   position: absolute;
@@ -359,13 +362,19 @@ mark.kw {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 12px;
   line-height: 1.35;
-  color: rgba(245, 245, 247, 0.96);
+  color: rgba(245, 245, 247, 1);
   white-space: pre-wrap;
   word-break: break-word;
   user-select: none;
   filter: blur(7px);
-  opacity: 0.48;
+  opacity: 1;
 }
+.ai-river-text .ai-river-accent {
+  color: rgba(212, 102, 44, 0.92);
+  font-weight: 800;
+  text-shadow: 0 0 10px rgba(212, 102, 44, 0.35);
+}
+.ai-river-text .ai-river-dim { color: rgba(245, 245, 247, 0.55); }
 
 .overlay-foreground { position: relative; z-index: 2; }
 
@@ -514,7 +523,7 @@ mark.kw {
   right: 0;
   bottom: 0;
   z-index: 980;
-  background: linear-gradient(to top, rgba(28, 28, 30, 0.92), rgba(28, 28, 30, 0));
+  background: rgba(28, 28, 30, 0.92);
   backdrop-filter: blur(10px);
 }
 .review-bottombar.hidden { display: none; }
