@@ -147,6 +147,7 @@
           const decoder = new TextDecoder();
           let buf = "";
           let riverText = "";
+          let startedDelta = false;
 
           const appendRiver = (chunk) => {
             if (!riverEl) return;
@@ -154,6 +155,7 @@
             if (riverText.length > 24000) riverText = riverText.slice(-24000);
             riverEl.textContent = riverText;
           };
+          appendRiver("已连接服务器，等待 AI 开始输出…\n");
 
           while (true) {
             const { value, done } = await reader.read();
@@ -176,14 +178,23 @@
                 } catch {
                   continue;
                 }
-                if (msg.t === "delta" && typeof msg.c === "string") {
-                  appendRiver(msg.c);
-                } else if (msg.t === "note" && typeof msg.msg === "string") {
-                  if (note) note.textContent = msg.msg;
-                } else if (msg.t === "done" && typeof msg.sim_id === "number") {
-                  window.location.href = `/simulations/${msg.sim_id}`;
-                  return;
-                } else if (msg.t === "error" && typeof msg.msg === "string") {
+                 if (msg.t === "delta" && typeof msg.c === "string") {
+                   if (!startedDelta) {
+                     startedDelta = true;
+                     if (note) {
+                       const t = (note.textContent || "").trim();
+                       if (t.startsWith("已选词汇")) note.textContent = "AI 开始生成…";
+                     }
+                   }
+                   appendRiver(msg.c);
+                 } else if (msg.t === "note" && typeof msg.msg === "string") {
+                   // Keep the local "已选词汇…" hint until the AI starts streaming content.
+                   if (startedDelta && note) note.textContent = msg.msg;
+                   appendRiver(`${msg.msg}\n`);
+                 } else if (msg.t === "done" && typeof msg.sim_id === "number") {
+                   window.location.href = `/simulations/${msg.sim_id}`;
+                   return;
+                 } else if (msg.t === "error" && typeof msg.msg === "string") {
                   throw new Error(msg.msg);
                 }
               }
@@ -210,12 +221,7 @@
           if (riverEl) riverEl.textContent = "";
 
           // UX: show "已选词汇" first, then (if still waiting) switch to "正在请求AI……"
-          setTimeout(() => {
-            if (overlay.classList.contains("hidden")) return;
-            if (!note) return;
-            const t = (note.textContent || "").trim();
-            if (t.startsWith("已选词汇")) note.textContent = "正在请求AI……";
-          }, 9000);
+          // (Intentionally no timer here: keep the local hint until we receive the first streamed delta.)
 
           const supportsStreaming = !!(window.fetch && window.ReadableStream && window.TextDecoder);
           if (!supportsStreaming) {
@@ -233,4 +239,3 @@
     </script>
   {% endif %}
 {% endblock %}
-

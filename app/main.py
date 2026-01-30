@@ -1885,6 +1885,7 @@ async def generate_simulation_stream(
             yield _sse({"t": "note", "msg": f"已选词：{len(terms)} 个，准备生成..."})
 
             if settings.ai_mock:
+                yield _sse({"t": "note", "msg": "AI_MOCK=1：生成模拟输出..."})
                 sim = await client.generate_simulation(
                     level=selected_level,
                     terms=terms,
@@ -1904,6 +1905,7 @@ async def generate_simulation_stream(
                     yield _sse({"t": "error", "msg": "AI 未配置：请在 .env 配置 AI_API_KEY，或开启 AI_MOCK=1。"})
                     return
 
+                yield _sse({"t": "note", "msg": "正在构建提示词..."})
                 payload, system, user = client.build_simulation_payload(
                     level=selected_level,
                     terms=terms,
@@ -1912,11 +1914,13 @@ async def generate_simulation_stream(
                     paragraph_range=(p_lo, p_hi),
                     question_count=question_count,
                 )
+                yield _sse({"t": "note", "msg": "提示词就绪，正在请求 AI..."})
 
                 last_parsed: GeneratedSimulation | None = None
                 last_missing: list[str] | None = None
                 sim: GeneratedSimulation | None = None
                 for attempt in range(1, 4):
+                    yield _sse({"t": "note", "msg": f"请求 AI（第 {attempt}/3 次）..."})
                     parts: list[str] = []
                     async for delta in client.chat_completions_content_stream(payload):
                         parts.append(delta)
@@ -1931,6 +1935,7 @@ async def generate_simulation_stream(
                         sim = parsed
                         break
                     except Exception:
+                        yield _sse({"t": "note", "msg": "输出校验失败，准备重试..."})
                         payload = {
                             **payload,
                             "messages": [
