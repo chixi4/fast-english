@@ -158,10 +158,13 @@ def _review_card_dict(word: Word, card: SrsCard, *, chapter: str = "") -> dict[s
 
 
 def _word_dict(word: Word) -> dict[str, Any]:
+    phonetic, definition_text = _word_display_parts(word)
     return {
         "word_id": int(word.id),
         "term": str(word.term or ""),
         "definition": str(word.definition or ""),
+        "phonetic": phonetic,
+        "definition_text": definition_text,
         "example": str(word.example or ""),
     }
 
@@ -2176,6 +2179,7 @@ def simulation_retest(request: Request, sim_id: int, i: int = 0, toast: str | No
         remaining = total - i
 
         prefetch_words = [_word_dict(w) for w in retest_words]
+        word_phonetic, word_definition_text = _word_display_parts(word)
 
     return templates.TemplateResponse(
         request,
@@ -2188,6 +2192,8 @@ def simulation_retest(request: Request, sim_id: int, i: int = 0, toast: str | No
             "remaining": remaining,
             "toast": (toast or "").strip(),
             "prefetch_words_json": json.dumps(prefetch_words, ensure_ascii=False),
+            "word_phonetic": word_phonetic,
+            "word_definition_text": word_definition_text,
         },
     )
 
