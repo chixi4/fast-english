@@ -18,10 +18,10 @@
         </div>
 
         <nav class="nav">
-          <a href="/">今日</a>
-          <a href="/decks">词书</a>
-          <a href="/practice">练习</a>
-          <a href="/settings">我的</a>
+          <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">今日</a>
+          <a href="/decks" class="{% if request.url.path.startswith('/decks') %}active{% endif %}">词书</a>
+          <a href="/practice" class="{% if request.url.path == '/practice' %}active{% endif %}">练习</a>
+          <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">我的</a>
         </nav>
       </div>
     </header>
@@ -34,6 +34,21 @@
 
     {% block scripts %}{% endblock %}
     <script>
+      function setActiveNav() {
+        const nav = document.querySelector('.nav');
+        if (!nav) return;
+        const path = window.location.pathname || '/';
+        nav.querySelectorAll('a').forEach((a) => {
+          let hrefPath = '/';
+          try { hrefPath = new URL(a.getAttribute('href'), window.location.origin).pathname || '/'; } catch {}
+          const isRoot = hrefPath === '/';
+          const on = isRoot ? path === '/' : (path === hrefPath || path.startsWith(hrefPath + '/'));
+          a.classList.toggle('active', on);
+          if (on) a.setAttribute('aria-current', 'page');
+          else a.removeAttribute('aria-current');
+        });
+      }
+
       // When navigating via HTMX (hx-boost), keep UX consistent: the inner scroller starts at top.
       // This avoids odd scroll snaps when switching to a long page like "我的".
       document.addEventListener('DOMContentLoaded', () => {
@@ -41,13 +56,19 @@
           // We'll manage the scroll position ourselves.
           window.htmx.config.scrollIntoViewOnBoost = false;
         }
+        setActiveNav();
       });
 
       document.addEventListener('htmx:afterSwap', (e) => {
         const target = e?.detail?.target;
         if (!target || target.id !== 'content') return;
         target.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        setActiveNav();
       });
+
+      document.addEventListener('htmx:pushedIntoHistory', setActiveNav);
+      document.addEventListener('htmx:replacedInHistory', setActiveNav);
+      window.addEventListener('popstate', setActiveNav);
     </script>
   </body>
 </html>

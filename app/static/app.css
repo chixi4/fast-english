@@ -61,6 +61,8 @@ a { color: var(--text); }
 .back-link:hover { color: var(--text); border-color: var(--muted); }
 .nav a { margin-left: 14px; text-decoration: none; color: var(--muted); }
 .nav a:hover { color: var(--text); }
+.nav a.active { font-weight: 800; }
+.nav a.active { color: var(--primary); }
 
 .htmx-indicator {
   display: none;
@@ -151,23 +153,63 @@ h2 { margin: 18px 0 10px; font-size: 18px; color: var(--muted); }
   border-radius: 4px;
   cursor: pointer;
   text-decoration: none;
+  box-shadow: none;
 }
-.btn:hover { border-color: var(--muted); }
-.btn.primary { background: rgba(212, 102, 44, 0.15); border-color: var(--primary); }
-.btn.danger { background: rgba(204, 68, 68, 0.15); border-color: var(--danger); }
-.btn.warn { background: rgba(196, 138, 42, 0.16); border-color: var(--warn); }
-.btn.easy { background: rgba(90, 140, 106, 0.18); border-color: var(--easy); }
+.btn:hover {
+  border-color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+.btn.primary {
+  background: transparent;
+  border: 2px solid var(--primary);
+  color: var(--primary);
+}
+.btn.primary:hover {
+  background: var(--primary);
+  color: var(--bg);
+}
+.btn.danger {
+  background: transparent;
+  border: 2px solid var(--danger);
+  color: var(--danger);
+}
+.btn.danger:hover {
+  background: var(--danger);
+  color: var(--bg);
+}
+.btn.warn {
+  background: transparent;
+  border: 2px solid var(--warn);
+  color: var(--warn);
+}
+.btn.warn:hover {
+  background: var(--warn);
+  color: var(--bg);
+}
+.btn.easy {
+  background: transparent;
+  border: 2px solid var(--easy);
+  color: var(--easy);
+}
+.btn.easy:hover {
+  background: var(--easy);
+  color: var(--bg);
+}
 
-/* 底部评分按钮：文字颜色跟边框一致 & 不用半透明底色 */
-.review-rating-grid .btn.primary { background: transparent; color: var(--primary); }
-.review-rating-grid .btn.danger { background: transparent; color: var(--danger); }
-.review-rating-grid .btn.warn { background: transparent; color: var(--warn); }
-.review-rating-grid .btn.easy { background: transparent; color: var(--easy); }
+/* 底部评分按钮：纯边框扁平风格 */
+.review-rating-grid .btn.primary { background: transparent; color: var(--primary); border: 2px solid var(--primary); }
+.review-rating-grid .btn.primary:hover { background: var(--primary); color: var(--bg); }
+.review-rating-grid .btn.danger { background: transparent; color: var(--danger); border: 2px solid var(--danger); }
+.review-rating-grid .btn.danger:hover { background: var(--danger); color: var(--bg); }
+.review-rating-grid .btn.warn { background: transparent; color: var(--warn); border: 2px solid var(--warn); }
+.review-rating-grid .btn.warn:hover { background: var(--warn); color: var(--bg); }
+.review-rating-grid .btn.easy { background: transparent; color: var(--easy); border: 2px solid var(--easy); }
+.review-rating-grid .btn.easy:hover { background: var(--easy); color: var(--bg); }
 
 .btn {
-  transition: background 180ms ease, border-color 180ms ease, transform 90ms ease;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
-.btn:active { transform: translateY(1px) scale(0.99); }
+.btn:active { transform: translateY(1px); }
 
 .actions { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
 .actions.actions-full { flex-direction: column; }
