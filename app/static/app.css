@@ -13,6 +13,7 @@
 }
 
 * { box-sizing: border-box; }
+html, body { height: 100%; }
 body {
   margin: 0;
   background: var(--bg);
@@ -22,6 +23,12 @@ body {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
+  height: 100vh;
+  height: 100svh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  display: flex;
+  flex-direction: column;
 }
 
 a { color: var(--text); }
@@ -29,7 +36,7 @@ a { color: var(--text); }
 .muted { color: var(--muted); }
 
 .container { --gutter: 18px; max-width: 980px; margin: 0 auto; padding: var(--gutter); }
-.topbar { position: sticky; top: 0; background: var(--bg); border-bottom: 1px solid var(--border); }
+.topbar { position: relative; background: var(--bg); border-bottom: 1px solid var(--border); z-index: 1000; flex: 0 0 auto; }
 .topbar-inner { display: flex; align-items: center; justify-content: space-between; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand a { text-decoration: none; font-weight: 700; letter-spacing: 0.2px; }
@@ -118,7 +125,14 @@ h2 { margin: 18px 0 10px; font-size: 18px; color: var(--muted); }
 .divider-tail {
   background: var(--divider);
   margin-top: 0;
+  height: 8px;
 }
+
+/* Avoid double bottom bars when a standalone card already has a thick bottom divider. */
+.card + .divider-tail { height: 0; }
+
+/* In list views (e.g. decks), rely on the page tail bar instead of the last card bar. */
+.deck-mobile .card:last-child { border-bottom: none; }
 .card-k { color: var(--muted); font-size: 13px; }
 .today-k { font-weight: 700; }
 .card-v { font-size: 28px; font-weight: 700; margin-top: 6px; }
@@ -162,6 +176,11 @@ h2 { margin: 18px 0 10px; font-size: 18px; color: var(--muted); }
 .row input { flex: 1; }
 .stack { display: grid; gap: 10px; }
 .auth-card { max-width: 520px; margin: 0 auto; }
+.auth-card input,
+.auth-card textarea,
+.auth-card select {
+  border-radius: 4px;
+}
 input, textarea, select {
   width: 100%;
   background: var(--panel);
@@ -556,7 +575,7 @@ mark.kw {
 
   /* 卡片单列布局 */
   .cards { grid-template-columns: 1fr; gap: 0; }
-  main.container .card:not(.overlay-card) {
+  main#content .card:not(.overlay-card) {
     margin-left: calc(-1 * var(--gutter));
     margin-right: calc(-1 * var(--gutter));
     padding: 18px var(--gutter);
@@ -632,6 +651,11 @@ mark.kw {
 }
 
 /* 小手机 */
+/* Desktop: avoid segmented thick dividers inside multi-column card grids */
+@media (min-width: 641px) {
+  .cards .card { border-bottom: none; }
+}
+
 @media (max-width: 380px) {
   .nav a { margin-left: 8px; font-size: 13px; }
   .brand a { font-size: 13px; }
@@ -639,3 +663,9 @@ mark.kw {
   .card-v { font-size: 18px; }
 }
 h2 { margin: 18px 0 10px; font-size: 18px; color: var(--muted); }
+main#content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: none;
+}

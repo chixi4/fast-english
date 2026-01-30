@@ -26,12 +26,28 @@
       </div>
     </header>
 
-    <main id="content" class="container">
-      {% block content %}{% endblock %}
+    <main id="content">
+      <div class="container">
+        {% block content %}{% endblock %}
+      </div>
     </main>
-    <footer class="container footer">
-      <div class="muted"></div>
-    </footer>
 
+    {% block scripts %}{% endblock %}
+    <script>
+      // When navigating via HTMX (hx-boost), keep UX consistent: the inner scroller starts at top.
+      // This avoids odd scroll snaps when switching to a long page like "我的".
+      document.addEventListener('DOMContentLoaded', () => {
+        if (window.htmx) {
+          // We'll manage the scroll position ourselves.
+          window.htmx.config.scrollIntoViewOnBoost = false;
+        }
+      });
+
+      document.addEventListener('htmx:afterSwap', (e) => {
+        const target = e?.detail?.target;
+        if (!target || target.id !== 'content') return;
+        target.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      });
+    </script>
   </body>
 </html>
