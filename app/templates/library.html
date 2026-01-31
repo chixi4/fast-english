@@ -2,20 +2,27 @@
 {% block content %}
   <h1 class="title-accent">词书库</h1>
 
-  <div class="library-list">
+  <div class="fullbleed divider-bar"></div>
+
+  <h2>可导入词书</h2>
+  <div class="deck-mobile">
     {% for s in sources %}
-      <div class="card library-item">
-        <div class="library-left">
-          <div class="library-name">{{ s.name }}</div>
+      <div class="card">
+        <div class="library-row">
+          <div class="deck-title">
+            <strong>{{ s.name }}</strong>
+          </div>
+          <form method="post" action="/library/import" style="margin:0;">
+            <input type="hidden" name="source_id" value="{{ s.id }}" />
+            <input type="hidden" name="deck_name" value="{{ s.default_deck }}" />
+            <input type="hidden" name="default_tags" value="{{ s.default_tags }}" />
+            <input type="hidden" name="on_conflict" value="skip" />
+            <button class="btn primary compact" type="submit">导入</button>
+          </form>
         </div>
-        <form class="library-right" method="post" action="/library/import">
-          <input type="hidden" name="source_id" value="{{ s.id }}" />
-          <input type="hidden" name="deck_name" value="{{ s.default_deck }}" />
-          <input type="hidden" name="default_tags" value="{{ s.default_tags }}" />
-          <input type="hidden" name="on_conflict" value="skip" />
-          <button class="btn primary" type="submit">导入</button>
-        </form>
       </div>
     {% endfor %}
   </div>
+
+  <div class="fullbleed divider-tail"></div>
 {% endblock %}

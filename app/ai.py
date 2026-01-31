@@ -20,6 +20,15 @@ LEVEL_GUIDE: dict[str, str] = {
     "kaoyan": "考研：600-820词，6-8段；信息密度更高，长难句占比更高。",
 }
 
+# Short Chinese labels for UI (keys remain stable for backend).
+LEVEL_LABELS: dict[str, str] = {
+    "junior": "初中",
+    "senior": "高中",
+    "cet4": "四级",
+    "cet6": "六级",
+    "kaoyan": "考研",
+}
+
 
 def _safe_json_extract(text: str) -> str:
     text = text.strip()

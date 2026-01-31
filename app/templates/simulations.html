@@ -15,7 +15,7 @@
       {% for item in items %}
         <tr>
           <td class="mono"><a href="/simulations/{{ item.sim.id }}">#{{ item.sim.id }}</a></td>
-          <td class="mono">{{ item.sim.level }}</td>
+          <td class="mono">{{ level_labels.get(item.sim.level, item.sim.level) }}</td>
           <td class="mono">{{ ", ".join(item.terms) }}</td>
           <td class="mono">{{ item.sim.created_at }}</td>
         </tr>
