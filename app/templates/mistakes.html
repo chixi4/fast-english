@@ -21,11 +21,11 @@
       </div>
     </div>
   {% else %}
-    <form class="stack" id="generateForm" method="post" action="/simulations/generate">
+    <form class="stack" id="generateForm" method="post" action="/simulations/generate" hx-boost="false">
       <label>难度
         <select name="level" id="levelSelect">
           {% for lv in levels %}
-            <option value="{{ lv }}" {% if selected_level == lv %}selected{% endif %}>{{ lv }}</option>
+            <option value="{{ lv }}" {% if selected_level == lv %}selected{% endif %}>{{ level_labels.get(lv, lv) }}</option>
           {% endfor %}
         </select>
       </label>
@@ -147,7 +147,7 @@
         const SYSTEM_CHUNK_MAX = 7;
         const SYSTEM_DELAY_MS = 55;
         const SYSTEM_DELAY_JITTER_MS = 22;
-        const SYSTEM_START_DELAY_MS = 200;
+        const SYSTEM_START_DELAY_MS = 400;
 
         const debugEnabled = (() => {
           try {

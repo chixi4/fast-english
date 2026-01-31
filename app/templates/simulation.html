@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
   <h1>实战短文 #{{ sim.id }}</h1>
-  <p class="muted">难度：{{ sim.level }} - {{ level_guide.get(sim.level, "") }}</p>
+  <p class="muted">难度：{{ level_labels.get(sim.level, sim.level) }} - {{ level_guide.get(sim.level, "") }}</p>
 
   <div class="card">
     <div class="passage">{{ passage_html | safe }}</div>

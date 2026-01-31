@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1 class="title-accent">今日</h1>
+  <h1>今日</h1>
 
   {% if toast %}
     <div class="card">{{ toast }}</div>
@@ -10,8 +10,8 @@
     <div class="card">
       <div class="big">开始背词</div>
       <div class="actions">
-        <a class="btn primary" href="/library">导入词书</a>
-        <a class="btn" href="/words">手动导入</a>
+        <a class="btn primary" href="/library"><span class="btn-label with-hint-dot">导入词书</span></a>
+        <a class="btn" href="/words">高级导入</a>
       </div>
     </div>
   {% elif total == 0 %}
@@ -76,8 +76,8 @@
 
     <div class="fullbleed divider-bar"></div>
 
-    <div class="card" style="margin-top: 12px;">
-      <div class="card-k today-k">今天待学</div>
+    <h2 class="today-section-title">今天待学</h2>
+    <div class="card today-summary-card" style="margin-top: 0;">
       <div class="card-v">{{ due_count }}</div>
       <div class="muted">计划内总卡片：<span class="mono">{{ total }}</span></div>
       <div class="actions" style="margin-top: 12px;">

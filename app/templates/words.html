@@ -76,4 +76,13 @@
       {% endfor %}
     </tbody>
   </table>
+
+  <script>
+    // Ensure selects are skinned even on HTMX navigation where only #content is swapped.
+    (() => {
+      try {
+        if (window.enhanceSelectMenus) window.enhanceSelectMenus(document.getElementById('content') || document);
+      } catch {}
+    })();
+  </script>
 {% endblock %}

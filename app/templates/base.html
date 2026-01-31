@@ -7,6 +7,10 @@
     <meta name="theme-color" content="#1c1c1e" />
     <title>{{ title or "应语单词" }}</title>
     <link rel="stylesheet" href="/static/app.css?v={{ static_v() }}" />
+    <script>
+      // Used for CSS fallbacks (avoid first-paint native selects before we enhance them).
+      document.documentElement.classList.add('js');
+    </script>
     <script defer src="/static/htmx.min.js?v={{ static_v() }}"></script>
   </head>
   <body style="background:#1c1c1e;color:#f5f5f7" hx-boost="true" hx-target="#content" hx-select="#content" hx-swap="outerHTML" hx-indicator="#loading">
@@ -71,6 +75,168 @@
       document.addEventListener('htmx:pushedIntoHistory', setActiveNav);
       document.addEventListener('htmx:replacedInHistory', setActiveNav);
       window.addEventListener('popstate', setActiveNav);
+
+      // Close the deck picker (<details>) when tapping/clicking outside.
+      const closeOpenDeckPickers = (target) => {
+        document.querySelectorAll('details.deck-picker[open]').forEach((d) => {
+          if (target && d.contains(target)) return;
+          d.removeAttribute('open');
+        });
+      };
+
+      document.addEventListener('click', (e) => {
+        closeOpenDeckPickers(e.target);
+      }, { capture: true });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        closeOpenDeckPickers(null);
+      }, { capture: true });
+
+      // Unify all <select> menus into the same deck-picker (<details>) UI.
+      function enhanceSelectMenus(root) {
+        const scope = root && root.querySelectorAll ? root : document;
+        const selects = scope.querySelectorAll('select');
+        selects.forEach((sel) => {
+          if (!(sel instanceof HTMLSelectElement)) return;
+          if (sel.multiple) return;
+          if (sel.dataset.vsPicker === '1') return;
+          if (sel.getAttribute('data-native') === '1') return;
+
+          // If already replaced (e.g. after back/forward), skip.
+          const next = sel.nextElementSibling;
+          if (next && next.matches && next.matches('details.deck-picker.vs-select-picker')) {
+            sel.dataset.vsPicker = '1';
+            return;
+          }
+
+          const key = sel.dataset.vsSelectKey || sel.id || sel.name || `vs_sel_${Math.random().toString(36).slice(2, 10)}`;
+          sel.dataset.vsSelectKey = key;
+
+          const details = document.createElement('details');
+          details.className = 'deck-picker vs-select-picker';
+          details.dataset.vsFor = key;
+
+          const summary = document.createElement('summary');
+          summary.className = 'deck-picker-summary';
+
+          const menu = document.createElement('div');
+          menu.className = 'deck-picker-menu';
+          menu.setAttribute('role', 'listbox');
+          menu.setAttribute('aria-label', (sel.name || sel.id || '选择') + ' 菜单');
+
+          const getSelectedText = () => {
+            const opt = sel.selectedOptions && sel.selectedOptions.length ? sel.selectedOptions[0] : null;
+            return (opt && opt.textContent ? opt.textContent : '') || '';
+          };
+          summary.textContent = getSelectedText();
+
+          Array.from(sel.options || []).forEach((opt) => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'deck-picker-item';
+            item.textContent = (opt.textContent || '').trim();
+            item.disabled = !!opt.disabled;
+            item.setAttribute('role', 'option');
+            item.setAttribute('aria-selected', opt.selected ? 'true' : 'false');
+            item.addEventListener('click', () => {
+              if (item.disabled) return;
+              sel.value = opt.value;
+              // Update aria-selected in the menu
+              menu.querySelectorAll('[role="option"]').forEach((n) => n.setAttribute('aria-selected', 'false'));
+              item.setAttribute('aria-selected', 'true');
+              summary.textContent = getSelectedText();
+              details.removeAttribute('open');
+              sel.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+            menu.appendChild(item);
+          });
+
+          details.appendChild(summary);
+          details.appendChild(menu);
+
+          // Hide native select but keep it for form submission and validation.
+          // Important: if the <select> is inside a <label>, moving it out avoids the label click
+          // triggering the native platform picker on some mobile browsers.
+          sel.style.display = 'none';
+          sel.dataset.vsPicker = '1';
+          sel.setAttribute('aria-hidden', 'true');
+          sel.tabIndex = -1;
+
+          const label = sel.closest('label');
+          if (label && label.contains(sel) && !label.getAttribute('for')) {
+            sel.replaceWith(details); // keep the picker where the select visually was
+            label.insertAdjacentElement('afterend', sel); // park the hidden select outside the label
+          } else {
+            sel.insertAdjacentElement('afterend', details);
+          }
+        });
+      }
+      // Make callable from swapped-in content scripts (HTMX only swaps #content).
+      window.enhanceSelectMenus = enhanceSelectMenus;
+
+      // Run on initial load, HTMX swaps, HTMX history restores, and any late DOM insertions.
+      const runEnhanceSoon = (() => {
+        let scheduled = false;
+        return (root) => {
+          if (scheduled) return;
+          scheduled = true;
+          Promise.resolve().then(() => {
+            scheduled = false;
+            enhanceSelectMenus(root || document);
+          });
+        };
+      })();
+
+      document.addEventListener('DOMContentLoaded', () => {
+        runEnhanceSoon(document);
+        const content = document.getElementById('content');
+        if (content && window.MutationObserver) {
+          const obs = new MutationObserver(() => runEnhanceSoon(content));
+          obs.observe(content, { childList: true, subtree: true });
+        }
+      });
+
+      // Fires for boosted navigation + partial swaps.
+      document.addEventListener('htmx:afterSwap', (e) => {
+        const target = e?.detail?.target;
+        if (!target) return;
+        runEnhanceSoon(target);
+      });
+
+      // Fires on history restore from cache.
+      document.addEventListener('htmx:load', (e) => {
+        const elt = e?.detail?.elt;
+        if (!elt) return;
+        runEnhanceSoon(elt);
+      });
+
+      // Covers bfcache restores on some mobile browsers.
+      window.addEventListener('pageshow', () => runEnhanceSoon(document));
+
+      // Safety net: if a native <select> somehow survives (timing/history quirks), intercept the first tap
+      // and replace it on-demand so the user never sees the system picker.
+      document.addEventListener('pointerdown', (e) => {
+        const target = e.target;
+        if (!(target instanceof Element)) return;
+        const sel = target.closest('select');
+        if (!sel || !(sel instanceof HTMLSelectElement)) return;
+        if (sel.multiple) return;
+        if (sel.getAttribute('data-native') === '1') return;
+        if (sel.dataset.vsPicker === '1') return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        enhanceSelectMenus(document);
+        const key = sel.dataset.vsSelectKey || sel.id || sel.name || '';
+        if (!key) return;
+        const details = document.querySelector(`details.deck-picker.vs-select-picker[data-vs-for="${CSS.escape(key)}"]`);
+        if (!details) return;
+        details.setAttribute('open', '');
+        const summary = details.querySelector('summary');
+        if (summary && summary.focus) summary.focus({ preventScroll: true });
+      }, { capture: true });
     </script>
     <script>
       (() => {

@@ -25,7 +25,7 @@ from sqlalchemy import case, func
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import GZipMiddleware
 
-from app.ai import AiClient, LEVEL_GUIDE, _safe_json_extract
+from app.ai import AiClient, LEVEL_GUIDE, LEVEL_LABELS, _safe_json_extract
 from app.ai_types import GeneratedSimulation
 from app.auth import decode_session, encode_session, hash_password, new_session_for_user, verify_password
 from app.auth_db import get_auth_session, init_auth_db
@@ -54,6 +54,7 @@ def _static_v() -> str:
         return "0"
 
 templates.env.globals["static_v"] = _static_v
+templates.env.globals["level_labels"] = LEVEL_LABELS
 
 app = FastAPI(title="Vocabulary Study MVP")
 app.add_middleware(GZipMiddleware, minimum_size=500)
@@ -1130,7 +1131,8 @@ def _add_next_words_to_plan(session, *, deck_id: int, count: int) -> tuple[str, 
         session.query(DeckWord.word_id)
         .join(Word, Word.id == DeckWord.word_id)
         .filter(DeckWord.deck_id == deck_id, ~DeckWord.word_id.in_(planned_ids_subq))
-        .order_by(DeckWord.position.asc(), Word.term.asc())
+        # Randomize selection so added words don't always follow deck order / alphabetical order.
+        .order_by(func.random())
         .limit(count)
         .all()
     )
@@ -1943,8 +1945,49 @@ def mistakes(
         mode = (mode or "standard").strip().lower()
         return mode if mode in {"standard", "long"} else "standard"
 
-    selected_level = _norm_level(level)
     selected_length_mode = _norm_length_mode(length_mode)
+
+    with get_session() as session:
+        def _guess_level_from_deck_name(name: str) -> str | None:
+            n = (name or "").strip().lower()
+            if not n:
+                return None
+            # Chinese / common naming conventions
+            if ("中考" in n) or ("初中" in n) or ("junior" in n):
+                return "junior"
+            if ("高考" in n) or ("高中" in n) or ("senior" in n):
+                return "senior"
+            if ("四级" in n) or ("cet4" in n) or ("cet-4" in n):
+                return "cet4"
+            if ("六级" in n) or ("cet6" in n) or ("cet-6" in n):
+                return "cet6"
+            if ("考研" in n) or ("研究生" in n) or ("kaoyan" in n):
+                return "kaoyan"
+            return None
+
+        # Get recent mistakes with word info (simple approach for MVP)
+        rows = (
+            session.query(Mistake, Word)
+            .join(Word, Mistake.word_id == Word.id)
+            .order_by(Mistake.id.desc())
+            .limit(200)
+            .all()
+        )
+        guessed_level: str | None = None
+        if level is None and rows:
+            # Find the most common deck among current mistakes and map it to a level.
+            deck_row = (
+                session.query(Deck.name, func.count(Mistake.id))
+                .join(DeckWord, DeckWord.deck_id == Deck.id)
+                .join(Mistake, Mistake.word_id == DeckWord.word_id)
+                .group_by(Deck.id)
+                .order_by(func.count(Mistake.id).desc(), Deck.id.asc())
+                .first()
+            )
+            if deck_row and deck_row[0]:
+                guessed_level = _guess_level_from_deck_name(str(deck_row[0]))
+
+    selected_level = _norm_level(level or guessed_level)
     if target_count is None:
         selected_target_count = _default_k(selected_level)
     else:
@@ -1954,15 +1997,6 @@ def mistakes(
             selected_target_count = _default_k(selected_level)
         selected_target_count = max(6, min(14, selected_target_count))
 
-    with get_session() as session:
-        # Get recent mistakes with word info (simple approach for MVP)
-        rows = (
-            session.query(Mistake, Word)
-            .join(Word, Mistake.word_id == Word.id)
-            .order_by(Mistake.id.desc())
-            .limit(200)
-            .all()
-        )
     items = [{"mistake": m, "word": w} for (m, w) in rows]
     return templates.TemplateResponse(
         request,
