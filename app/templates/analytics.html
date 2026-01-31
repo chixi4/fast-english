@@ -1,131 +1,325 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>交互报表</h1>
-
-  <div class="card" style="margin-top: 12px;">
-    <div class="card-k">范围</div>
-    <div class="muted">最近 {{ days }} 天（从 {{ cutoff.strftime("%Y-%m-%d") }} 起）</div>
-    {% if is_admin %}
-      <div class="muted" style="margin-top: 6px;">当前为管理员视图（显示所有账号）</div>
-    {% else %}
-      {% if admin_hint_set %}
-        <div class="muted" style="margin-top: 6px;">当前为个人视图（未授权查看所有账号）</div>
-      {% else %}
-        <div class="muted" style="margin-top: 6px;">提示：设置环境变量 APP_ANALYTICS_ADMIN_USERS=你的用户名，可开启全站视图</div>
-      {% endif %}
-    {% endif %}
-    <form class="row" method="get" action="/analytics" style="margin-top: 10px;">
-      <label style="display:flex; align-items:center; gap:10px;">
-        天数
-        <input type="number" name="days" min="1" max="90" value="{{ days }}" style="max-width: 120px;" />
-      </label>
-      <button class="btn primary" type="submit">刷新</button>
-    </form>
-  </div>
-
-  <div class="cards" style="margin-top: 10px;">
-    <div class="card">
-      <div class="card-k">每日总交互</div>
-      {% if daily and daily|length %}
-        <div style="display:grid; gap:8px; margin-top: 10px;">
-          {% set max_daily = (daily | map(attribute='count') | max) %}
-          {% for r in daily %}
-            <div style="display:flex; align-items:center; gap:10px;">
-              <div class="mono" style="min-width: 88px; font-size: 12px;">{{ r.day }}</div>
-              <div style="flex:1; height:8px; background: var(--border); border-radius: 999px; overflow:hidden;">
-                <div style="height:100%; width: {{ (100 * r.count / (max_daily if max_daily else 1)) | round(0, 'floor') }}%; background: var(--primary);"></div>
-              </div>
-              <div class="mono" style="min-width: 44px; text-align:right;">{{ r.count }}</div>
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <div class="muted" style="margin-top: 10px;">暂无数据</div>
-      {% endif %}
-    </div>
-
-    <div class="card">
-      <div class="card-k">动作类型 Top</div>
-      {% if actions and actions|length %}
-        <div style="display:grid; gap:8px; margin-top: 10px;">
-          {% set max_act = (actions | map(attribute='count') | max) %}
-          {% for r in actions %}
-            <div style="display:flex; align-items:center; gap:10px;">
-              <div class="mono" style="min-width: 120px; font-size: 12px;">{{ r.action }}</div>
-              <div style="flex:1; height:8px; background: var(--border); border-radius: 999px; overflow:hidden;">
-                <div style="height:100%; width: {{ (100 * r.count / (max_act if max_act else 1)) | round(0, 'floor') }}%; background: rgba(212, 102, 44, 0.7);"></div>
-              </div>
-              <div class="mono" style="min-width: 44px; text-align:right;">{{ r.count }}</div>
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <div class="muted" style="margin-top: 10px;">暂无数据</div>
-      {% endif %}
-    </div>
-
-    <div class="card">
-      <div class="card-k">页面 Top</div>
-      {% if top_paths and top_paths|length %}
-        <div style="display:grid; gap:8px; margin-top: 10px;">
-          {% set max_p = (top_paths | map(attribute='count') | max) %}
-          {% for r in top_paths %}
-            <div style="display:flex; align-items:center; gap:10px;">
-              <div class="mono" style="min-width: 120px; font-size: 12px; overflow:hidden; text-overflow: ellipsis;">{{ r.path }}</div>
-              <div style="flex:1; height:8px; background: var(--border); border-radius: 999px; overflow:hidden;">
-                <div style="height:100%; width: {{ (100 * r.count / (max_p if max_p else 1)) | round(0, 'floor') }}%; background: rgba(245, 245, 247, 0.6);"></div>
-              </div>
-              <div class="mono" style="min-width: 44px; text-align:right;">{{ r.count }}</div>
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <div class="muted" style="margin-top: 10px;">暂无数据</div>
-      {% endif %}
-    </div>
-  </div>
-
-  <h2 style="margin-top: 16px;">账号概览</h2>
-  <div class="card" style="margin-top: 8px;">
-    {% if users and users|length %}
-      <div style="display:grid; gap:12px;">
-        {% for u in users %}
-          <div style="border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
-            <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px;">
-              <div class="mono" style="font-size: 14px;">@{{ u.username }}</div>
-              <div class="muted" style="font-size: 12px;">
-                {% if u.last_seen %}最近：{{ u.last_seen.strftime("%Y-%m-%d %H:%M") }}{% else %}暂无{% endif %}
-              </div>
-            </div>
-
-            <div style="display:grid; gap:8px; margin-top: 10px;">
-              <div style="display:flex; align-items:center; gap:10px;">
-                <div class="muted" style="min-width: 72px;">浏览</div>
-                <div style="flex:1; height:8px; background: var(--border); border-radius: 999px; overflow:hidden;">
-                  <div style="height:100%; width: {{ (100 * u.page_views / (max_views if max_views else 1)) | round(0, 'floor') }}%; background: rgba(245,245,247,0.8);"></div>
-                </div>
-                <div class="mono" style="min-width: 44px; text-align:right;">{{ u.page_views }}</div>
-              </div>
-              <div style="display:flex; align-items:center; gap:10px;">
-                <div class="muted" style="min-width: 72px;">动作</div>
-                <div style="flex:1; height:8px; background: var(--border); border-radius: 999px; overflow:hidden;">
-                  <div style="height:100%; width: {{ (100 * u.actions / (max_actions if max_actions else 1)) | round(0, 'floor') }}%; background: rgba(212, 102, 44, 0.65);"></div>
-                </div>
-                <div class="mono" style="min-width: 44px; text-align:right;">{{ u.actions }}</div>
-              </div>
-              <div style="display:flex; align-items:center; justify-content:space-between;">
-                <div class="muted">错误</div>
-                <div class="mono">{{ u.errors }}</div>
-              </div>
-            </div>
+  <div id="analyticsDashboard" class="analytics-shell fullbleed">
+    <div class="analytics-top">
+      <div class="analytics-top-left">
+        <div class="analytics-title">
+          <div class="analytics-title-main">📊 数据中心</div>
+          <div class="muted analytics-title-sub">
+            最近 {{ days }} 天（自 {{ cutoff.strftime("%Y-%m-%d") }}）· {% if is_admin %}全站{% else %}个人{% endif %}
           </div>
-        {% endfor %}
+        </div>
+        {% if is_admin %}
+          <div class="muted analytics-hint">管理员视图：显示所有账号数据</div>
+        {% else %}
+          {% if admin_hint_set %}
+            <div class="muted analytics-hint">个人视图：未授权查看全站数据</div>
+          {% else %}
+            <div class="muted analytics-hint">提示：设置环境变量 APP_ANALYTICS_ADMIN_USERS=你的用户名，可开启全站视图</div>
+          {% endif %}
+        {% endif %}
       </div>
-    {% else %}
-      <div class="muted">暂无数据</div>
-    {% endif %}
+
+      <div class="analytics-top-right">
+        <form class="analytics-controls" method="get" action="/analytics">
+          <label class="analytics-control">
+            <span class="muted">时间范围</span>
+            <select name="days">
+              {% for d in [1, 7, 30, 90] %}
+                <option value="{{ d }}" {% if days == d %}selected{% endif %}>{{ d }}天</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button class="btn compact primary" type="submit">刷新</button>
+          <button class="btn compact" type="button" id="analyticsAutoRefreshBtn" aria-pressed="false">
+            <span class="btn-label" id="analyticsAutoRefreshLabel">自动刷新</span>
+          </button>
+        </form>
+        <div class="muted analytics-updated" data-analytics-updated>最后更新：—</div>
+      </div>
+    </div>
+
+    <div class="analytics-metrics">
+      {% set ov = dashboard.overview %}
+      <div class="analytics-metric" data-metric="active_users">
+        <div class="analytics-metric-k">{{ ov.active_users.icon }} {{ ov.active_users.label }}</div>
+        <div class="analytics-metric-v" data-value>{{ ov.active_users.value }}</div>
+        <div class="analytics-metric-delta trend-{{ ov.active_users.trend }}" data-delta>{{ ov.active_users.delta }}</div>
+      </div>
+
+      <div class="analytics-metric" data-metric="total_events">
+        <div class="analytics-metric-k">{{ ov.total_events.icon }} {{ ov.total_events.label }}</div>
+        <div class="analytics-metric-v" data-value data-format="int">{{ "{:,}".format(ov.total_events.value) }}</div>
+        <div class="analytics-metric-delta trend-{{ ov.total_events.trend }}" data-delta>{{ ov.total_events.delta }}</div>
+      </div>
+
+      <div class="analytics-metric" data-metric="review_count">
+        <div class="analytics-metric-k">{{ ov.review_count.icon }} {{ ov.review_count.label }}</div>
+        <div class="analytics-metric-v" data-value data-format="int">{{ "{:,}".format(ov.review_count.value) }}</div>
+        <div class="analytics-metric-delta trend-{{ ov.review_count.trend }}" data-delta>{{ ov.review_count.delta }}</div>
+      </div>
+
+      <div class="analytics-metric" data-metric="error_rate">
+        <div class="analytics-metric-k">{{ ov.error_rate.icon }} {{ ov.error_rate.label }}</div>
+        <div class="analytics-metric-v" data-value data-format="pct">{{ (ov.error_rate.value * 100) | round(1) }}%</div>
+        <div class="analytics-metric-delta trend-{{ ov.error_rate.trend }}" data-delta>{{ ov.error_rate.delta }}</div>
+      </div>
+
+      <div class="analytics-metric" data-metric="avg_response">
+        <div class="analytics-metric-k">{{ ov.avg_response.icon }} {{ ov.avg_response.label }}</div>
+        <div class="analytics-metric-v" data-value data-format="ms">{{ ov.avg_response.value }}ms</div>
+        <div class="analytics-metric-delta trend-{{ ov.avg_response.trend }}" data-delta>{{ ov.avg_response.delta }}</div>
+      </div>
+    </div>
+
+    <div class="analytics-grid two">
+      <section class="analytics-panel">
+        <header class="analytics-panel-h">📈 活跃趋势</header>
+        <div class="analytics-chart" data-chart="trend"></div>
+      </section>
+      <section class="analytics-panel">
+        <header class="analytics-panel-h">🕐 24小时分布</header>
+        <div class="analytics-chart" data-chart="hours"></div>
+      </section>
+    </div>
+
+    <div class="analytics-grid two">
+      <section class="analytics-panel">
+        <header class="analytics-panel-h">🔴 实时活动流</header>
+        <div class="analytics-list" data-analytics-activity data-analytics-scroll="activity">
+          {% for a in dashboard.activity %}
+            <div class="analytics-activity-item">
+              <div class="analytics-activity-top">
+                <div class="analytics-activity-user">{{ a.username }}</div>
+                <div class="muted analytics-activity-when">{{ a.when }}</div>
+              </div>
+              <div class="analytics-activity-line">{{ a.line }}</div>
+              {% if a.sub %}
+                <div class="muted analytics-activity-sub">{{ a.sub }}</div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="analytics-panel">
+        <header class="analytics-panel-h">👤 用户排行</header>
+        <div class="analytics-list" data-analytics-ranking data-analytics-scroll="ranking">
+          {% for u in dashboard.ranking %}
+            <div class="analytics-rank-item">
+              <div class="analytics-rank-left">
+                <div class="analytics-rank-name">{{ u.rank }}. {{ u.username }}</div>
+                <div class="analytics-rank-bar">
+                  <div class="analytics-rank-bar-fill" style="width: {{ u.bar }}%"></div>
+                </div>
+              </div>
+              <div class="analytics-rank-right mono">
+                <span class="analytics-rank-status">{{ u.status }}</span>
+                {{ u.count }}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+        <div class="analytics-subpanel">
+          <div class="muted analytics-subpanel-h">在线状态</div>
+          <div class="analytics-online" data-analytics-online>
+            {% for o in dashboard.online %}
+              <div class="analytics-online-item">
+                <span class="analytics-online-dot">{{ o.status }}</span>
+                <span class="analytics-online-name">{{ o.username }}</span>
+                <span class="muted analytics-online-when">{{ o.last_seen }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="analytics-panel">
+      <header class="analytics-panel-h">📚 学习数据</header>
+      <div class="analytics-grid three analytics-learning-grid">
+        <div class="analytics-panel analytics-panel-inset">
+          <header class="analytics-panel-h small">评分分布</header>
+          <div class="analytics-chart compact" data-chart="ratings"></div>
+        </div>
+        <div class="analytics-panel analytics-panel-inset">
+          <header class="analytics-panel-h small">单词难度 Top 10</header>
+          <div class="analytics-list" data-analytics-learning-list>
+            {% for w in dashboard.learning.difficulty %}
+              <div class="analytics-word-item">
+                <div class="analytics-word-left">
+                  <div class="mono analytics-word-term">{{ loop.index }}. {{ w.term }}</div>
+                  <div class="analytics-word-dots">{{ w.dots }}</div>
+                </div>
+                <div class="muted analytics-word-pct">{{ w.again_pct }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="analytics-panel analytics-panel-inset">
+          <header class="analytics-panel-h small">答题时间分布</header>
+          <div class="analytics-chart compact" data-chart="time"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="analytics-panel">
+      <header class="analytics-panel-h">🗺️ 用户旅程（功能漏斗）</header>
+      {% if is_admin %}
+        <div class="analytics-funnel-head">
+          <div class="muted analytics-funnel-note">
+            漏斗默认按去重用户（更能反映转化）。想看“使用次数”可切换为按次数。
+          </div>
+          <div class="analytics-toggle">
+            <button class="btn compact" type="button" data-analytics-funnel-mode="users" aria-pressed="true">按用户</button>
+            <button class="btn compact" type="button" data-analytics-funnel-mode="events" aria-pressed="false">按次数</button>
+          </div>
+        </div>
+        <div class="analytics-funnel" data-analytics-funnel>
+          {% if dashboard.funnel and dashboard.funnel.users %}
+            {% for r in dashboard.funnel.users %}
+              <div class="analytics-funnel-row">
+                <div class="analytics-funnel-name">{{ r.name }}</div>
+                <div class="analytics-funnel-bar">
+                  <div class="analytics-funnel-fill" style="--w: {{ r.width }}"></div>
+                </div>
+                <div class="analytics-funnel-meta">
+                  <div class="mono">{{ "{:,}".format(r.count) }}</div>
+                  {% if loop.index0 == 0 %}
+                    <span class="muted">去重用户</span>
+                  {% else %}
+                    <span class="muted">转化 {{ (r.conv * 100) | round(0) }}% · 流失 {{ (r.drop * 100) | round(0) }}%</span>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="muted analytics-empty">仅管理员可见</div>
+      {% endif %}
+    </section>
+
+    <div class="analytics-grid two">
+      <section class="analytics-panel">
+        <header class="analytics-panel-h">📅 留存分析</header>
+        {% if is_admin %}
+          <div class="analytics-retention">
+            <table class="table analytics-table" data-analytics-retention-table>
+              <thead>
+                <tr>
+                  <th>注册</th>
+                  <th>规模</th>
+                  <th>D1</th>
+                  <th>D3</th>
+                  <th>D7</th>
+                  <th>D14</th>
+                  <th>D30</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in dashboard.retention.table %}
+                  <tr>
+                    <td class="mono">{{ r.date }}</td>
+                    <td class="mono">{{ r.size }}</td>
+                    <td class="analytics-heat-cell" style="--heat: {{ (r.d1 or 0) / 100 }}">
+                      {% if r.d1 is not none %}{{ r.d1 }}%<div class="muted analytics-heat-sub">{{ r.d1_avg }} 次/活跃人</div>{% else %}-{% endif %}
+                    </td>
+                    <td class="analytics-heat-cell" style="--heat: {{ (r.d3 or 0) / 100 }}">
+                      {% if r.d3 is not none %}{{ r.d3 }}%<div class="muted analytics-heat-sub">{{ r.d3_avg }} 次/活跃人</div>{% else %}-{% endif %}
+                    </td>
+                    <td class="analytics-heat-cell" style="--heat: {{ (r.d7 or 0) / 100 }}">
+                      {% if r.d7 is not none %}{{ r.d7 }}%<div class="muted analytics-heat-sub">{{ r.d7_avg }} 次/活跃人</div>{% else %}-{% endif %}
+                    </td>
+                    <td class="analytics-heat-cell" style="--heat: {{ (r.d14 or 0) / 100 }}">
+                      {% if r.d14 is not none %}{{ r.d14 }}%<div class="muted analytics-heat-sub">{{ r.d14_avg }} 次/活跃人</div>{% else %}-{% endif %}
+                    </td>
+                    <td class="analytics-heat-cell" style="--heat: {{ (r.d30 or 0) / 100 }}">
+                      {% if r.d30 is not none %}{{ r.d30 }}%<div class="muted analytics-heat-sub">{{ r.d30_avg }} 次/活跃人</div>{% else %}-{% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            <div class="muted analytics-retention-note">单元格：留存% · 次/活跃人（当天人均使用次数）</div>
+            <div class="analytics-chart small" data-chart="retention"></div>
+          </div>
+        {% else %}
+          <div class="muted analytics-empty">仅管理员可见</div>
+        {% endif %}
+      </section>
+
+      <section class="analytics-panel">
+        <header class="analytics-panel-h">📊 页面热度</header>
+        <div class="analytics-chart small" data-chart="pages"></div>
+      </section>
+    </div>
+
+    <div class="analytics-grid two">
+      <section class="analytics-panel">
+        <header class="analytics-panel-h">⚡ 性能监控</header>
+        <div class="analytics-chart" data-chart="perf"></div>
+        <div class="muted analytics-perf-kpi" data-analytics-perf-kpi>
+          P50: {{ dashboard.performance.p50_ms }}ms · P95: {{ dashboard.performance.p95_ms }}ms · P99: {{ dashboard.performance.p99_ms }}ms
+        </div>
+        <div class="analytics-subpanel">
+          <div class="muted analytics-subpanel-h">慢请求</div>
+          <div class="analytics-list" data-analytics-slow data-analytics-scroll="slow">
+            {% for s in dashboard.performance.slow %}
+              <div class="analytics-slow-item">
+                <div class="mono analytics-slow-path">{{ s.path }}</div>
+                <div class="muted analytics-slow-meta">avg {{ s.avg_ms }}ms · p95 {{ s.p95_ms }}ms · {{ s.count }} 次</div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+
+      <section class="analytics-panel">
+        <header class="analytics-panel-h">🐛 错误追踪</header>
+        <div class="analytics-list" data-analytics-errors data-analytics-scroll="errors">
+          {% for e in dashboard.errors %}
+            <div class="analytics-error-item">
+              <div class="analytics-error-top">
+                <div class="analytics-error-msg">⚠ {{ e.msg }}</div>
+                <div class="muted analytics-error-when">{{ e.when }}</div>
+              </div>
+              {% if e.where %}
+                <div class="muted analytics-error-where">{{ e.where }}</div>
+              {% endif %}
+            </div>
+          {% endfor %}
+          {% if not dashboard.errors or not (dashboard.errors|length) %}
+            <div class="muted analytics-empty">最近没有错误事件</div>
+          {% endif %}
+        </div>
+      </section>
+    </div>
+
+    <section class="analytics-panel">
+      <header class="analytics-panel-h">🔍 设备 & 环境</header>
+      <div class="analytics-grid four">
+        <div class="analytics-panel analytics-panel-inset">
+          <header class="analytics-panel-h small">屏幕尺寸</header>
+          <div class="analytics-mini" data-analytics-env="screens"></div>
+        </div>
+        <div class="analytics-panel analytics-panel-inset">
+          <header class="analytics-panel-h small">时区</header>
+          <div class="analytics-mini" data-analytics-env="tz"></div>
+        </div>
+        <div class="analytics-panel analytics-panel-inset">
+          <header class="analytics-panel-h small">语言</header>
+          <div class="analytics-mini" data-analytics-env="lang"></div>
+        </div>
+        <div class="analytics-panel analytics-panel-inset">
+          <header class="analytics-panel-h small">设备像素比</header>
+          <div class="analytics-mini" data-analytics-env="dpr"></div>
+        </div>
+      </div>
+    </section>
+
+    <script id="analyticsBoot" type="application/json">{{ dashboard_json }}</script>
   </div>
 
   <div class="fullbleed divider-tail"></div>
 {% endblock %}
-
