@@ -49,7 +49,8 @@ def _static_v() -> str:
     try:
         css_v = (BASE_DIR / "static" / "app.css").stat().st_mtime_ns
         js_v = (BASE_DIR / "static" / "htmx.min.js").stat().st_mtime_ns
-        return str(max(css_v, js_v))
+        dash_v = (BASE_DIR / "static" / "analytics_dashboard.js").stat().st_mtime_ns
+        return str(max(css_v, js_v, dash_v))
     except Exception:
         return "0"
 
@@ -867,6 +868,657 @@ def update_plan_settings(
     return _redirect("/settings?" + urlencode(msg))
 
 
+def _norm_days_param(days: Any) -> int:
+    try:
+        v = int(days)
+    except Exception:
+        v = 7
+    return max(1, min(v, 90))
+
+
+def _analytics_admin_set() -> set[str]:
+    raw = os.getenv("APP_ANALYTICS_ADMIN_USERS", "") or os.getenv("APP_ANALYTICS_ADMIN_USER", "")
+    return {u.strip().lower() for u in raw.replace(";", ",").split(",") if u.strip()}
+
+
+def _analytics_is_admin(username_norm: str) -> tuple[bool, bool]:
+    aset = _analytics_admin_set()
+    return (bool(aset) and username_norm in aset, bool(aset))
+
+
+def _safe_json_dict(s: str | None) -> dict[str, Any]:
+    try:
+        obj = json.loads(s or "{}")
+        return obj if isinstance(obj, dict) else {}
+    except Exception:
+        return {}
+
+
+def _analytics_time_ago(ts: datetime | None, now: datetime) -> str:
+    if not ts:
+        return "-"
+    dt = int(max(0, (now - ts).total_seconds()))
+    if dt < 10:
+        return "刚刚"
+    if dt < 60:
+        return f"{dt}秒前"
+    m = dt // 60
+    if m < 60:
+        return f"{m}分钟前"
+    h = m // 60
+    if h < 24:
+        return f"{h}小时前"
+    d = h // 24
+    return f"{d}天前"
+
+
+def _analytics_online_dot(last_seen: datetime | None, now: datetime) -> str:
+    if not last_seen:
+        return "⚫"
+    delta = now - last_seen
+    if delta < timedelta(minutes=5):
+        return "🟢"
+    if delta < timedelta(minutes=30):
+        return "🟡"
+    return "⚫"
+
+
+def _pct_value(values: list[int], p: float) -> int:
+    if not values:
+        return 0
+    xs = sorted(int(v) for v in values if v is not None)
+    if not xs:
+        return 0
+    if p <= 0:
+        return xs[0]
+    if p >= 1:
+        return xs[-1]
+    k = (len(xs) - 1) * p
+    f = int(k)
+    c = min(len(xs) - 1, f + 1)
+    if f == c:
+        return xs[f]
+    frac = k - f
+    return int(round(xs[f] * (1 - frac) + xs[c] * frac))
+
+
+def _build_analytics_dashboard(*, days: int, username_norm: str, is_admin: bool) -> dict[str, Any]:
+    now = _utcnow()
+    cutoff = now - timedelta(days=days)
+
+    # Auth DB: web/app/client events
+    with get_auth_session() as session:
+        users = session.query(AuthUser).order_by(AuthUser.id.asc()).all()
+        user_map = {u.username_norm: u.username for u in users}
+
+        q = session.query(AuthEvent).filter(AuthEvent.created_at >= cutoff)
+        if (not is_admin) and username_norm:
+            q = q.filter(AuthEvent.username_norm == username_norm)
+        events = q.order_by(AuthEvent.created_at.desc()).all()
+
+        q_last = session.query(AuthEvent.username_norm, func.max(AuthEvent.created_at)).group_by(AuthEvent.username_norm)
+        if (not is_admin) and username_norm:
+            q_last = q_last.filter(AuthEvent.username_norm == username_norm)
+        last_seen_rows = q_last.all()
+
+        # Retention (admin only): cohorts for the last 14 days.
+        retention_table: list[dict[str, Any]] = []
+        retention_curve: list[dict[str, Any]] = []
+        if is_admin:
+            cohort_start = (now - timedelta(days=14)).date()
+            cohort_users = (
+                session.query(AuthUser.username_norm, AuthUser.created_at)
+                .filter(AuthUser.created_at >= datetime(cohort_start.year, cohort_start.month, cohort_start.day))
+                .all()
+            )
+            cohorts: dict[str, list[str]] = {}
+            for un, created_at in cohort_users:
+                if not un or not created_at:
+                    continue
+                d0 = created_at.date().isoformat()
+                cohorts.setdefault(d0, []).append(str(un))
+
+            cohort_keys = sorted(cohorts.keys())[-10:]
+            all_users_norm = sorted({u for d0 in cohort_keys for u in cohorts.get(d0, [])})
+            event_day_counts: dict[tuple[str, str], int] = {}
+            if all_users_norm:
+                ev_rows = (
+                    session.query(
+                        AuthEvent.username_norm,
+                        func.strftime("%Y-%m-%d", AuthEvent.created_at),
+                        func.count(AuthEvent.id),
+                    )
+                    .filter(AuthEvent.username_norm.in_(all_users_norm))
+                    .filter(AuthEvent.kind.in_(["page_view", "action"]))
+                    .filter(AuthEvent.created_at >= datetime(cohort_start.year, cohort_start.month, cohort_start.day))
+                    .group_by(AuthEvent.username_norm, func.strftime("%Y-%m-%d", AuthEvent.created_at))
+                    .all()
+                )
+                for un, day_s, cnt in ev_rows:
+                    if un and day_s:
+                        event_day_counts[(str(un), str(day_s))] = int(cnt or 0)
+
+            def _ret_stats(d0: str, un_list: list[str], n: int) -> dict[str, Any] | None:
+                try:
+                    y, m, d = [int(x) for x in d0.split("-")]
+                    target = datetime(y, m, d).date() + timedelta(days=n)
+                except Exception:
+                    return None
+                if now.date() < target:
+                    return None
+                target_s = target.isoformat()
+                returned_users = [un for un in un_list if (un, target_s) in event_day_counts]
+                returned = len(returned_users)
+                total = len(un_list)
+                pct = int(round(100 * (returned / max(1, total))))
+                events_total = sum(int(event_day_counts.get((un, target_s), 0)) for un in returned_users)
+                avg_events = (events_total / returned) if returned else 0.0
+                return {
+                    "pct": pct,
+                    "returned": returned,
+                    "total": total,
+                    "events": events_total,
+                    "avg_events": avg_events,
+                }
+
+            for d0 in reversed(cohort_keys):
+                un_list = cohorts.get(d0, [])
+                if not un_list:
+                    continue
+                d1 = _ret_stats(d0, un_list, 1)
+                d3 = _ret_stats(d0, un_list, 3)
+                d7 = _ret_stats(d0, un_list, 7)
+                d14 = _ret_stats(d0, un_list, 14)
+                d30 = _ret_stats(d0, un_list, 30)
+                retention_table.append(
+                    {
+                        "date": d0[5:],
+                        "size": len(un_list),
+                        "d1": (d1["pct"] if d1 else None),
+                        "d1_avg": (round(float(d1["avg_events"]), 1) if d1 else None),
+                        "d3": (d3["pct"] if d3 else None),
+                        "d3_avg": (round(float(d3["avg_events"]), 1) if d3 else None),
+                        "d7": (d7["pct"] if d7 else None),
+                        "d7_avg": (round(float(d7["avg_events"]), 1) if d7 else None),
+                        "d14": (d14["pct"] if d14 else None),
+                        "d14_avg": (round(float(d14["avg_events"]), 1) if d14 else None),
+                        "d30": (d30["pct"] if d30 else None),
+                        "d30_avg": (round(float(d30["avg_events"]), 1) if d30 else None),
+                    }
+                )
+
+            curve_days = [1, 3, 7, 14, 30]
+            for n in curve_days:
+                total_u = 0
+                total_ret = 0
+                total_events = 0
+                for d0 in cohort_keys:
+                    un_list = cohorts.get(d0, [])
+                    if not un_list:
+                        continue
+                    st = _ret_stats(d0, un_list, n)
+                    if st is None:
+                        continue
+                    total_u += int(st["total"])
+                    total_ret += int(st["returned"])
+                    total_events += int(st["events"])
+                retention_curve.append(
+                    {
+                        "day": f"D{n}",
+                        "pct": (total_ret / total_u) if total_u else 0.0,
+                        "avg_events": (total_events / total_ret) if total_ret else 0.0,
+                    }
+                )
+
+    last_seen_map: dict[str, datetime] = {str(un): ts for un, ts in last_seen_rows if un and ts}
+
+    # Main DB: study/review data (single shared DB in this MVP)
+    with get_session() as session:
+        rating_rows = (
+            session.query(SrsReviewLog.rating, func.count(SrsReviewLog.id))
+            .filter(SrsReviewLog.reviewed_at >= cutoff)
+            .group_by(SrsReviewLog.rating)
+            .all()
+        )
+        rating_counts: dict[int, int] = {int(r): int(c) for r, c in rating_rows}
+
+        time_buckets = {"lt2": 0, "2to5": 0, "5to10": 0, "gt10": 0}
+        for (ms,) in session.query(SrsReviewLog.duration_ms).filter(SrsReviewLog.reviewed_at >= cutoff).all():
+            if ms is None:
+                continue
+            s = float(ms) / 1000.0
+            if s < 2:
+                time_buckets["lt2"] += 1
+            elif s < 5:
+                time_buckets["2to5"] += 1
+            elif s < 10:
+                time_buckets["5to10"] += 1
+            else:
+                time_buckets["gt10"] += 1
+
+        diff_rows = (
+            session.query(
+                Word.term,
+                func.count(SrsReviewLog.id).label("total"),
+                func.sum(case((SrsReviewLog.rating == Rating.Again.value, 1), else_=0)).label("again"),
+            )
+            .join(Word, Word.id == SrsReviewLog.word_id)
+            .filter(SrsReviewLog.reviewed_at >= cutoff)
+            .group_by(Word.id)
+            .order_by(
+                func.sum(case((SrsReviewLog.rating == Rating.Again.value, 1), else_=0)).desc(),
+                func.count(SrsReviewLog.id).desc(),
+            )
+            .limit(10)
+            .all()
+        )
+        difficult: list[dict[str, Any]] = []
+        for term, total, again in diff_rows:
+            total_i = int(total or 0)
+            again_i = int(again or 0)
+            score = (again_i / total_i) if total_i else 0.0
+            stars = 1
+            if score >= 0.8:
+                stars = 5
+            elif score >= 0.6:
+                stars = 4
+            elif score >= 0.4:
+                stars = 3
+            elif score >= 0.2:
+                stars = 2
+            difficult.append({"term": str(term), "dots": ("●" * stars) + ("○" * (5 - stars)), "again_pct": f"{score * 100:.0f}%"})
+
+        # Word terms for recent review_rate activities
+        review_word_ids: set[int] = set()
+        for ev in events[:40]:
+            if ev.kind != "action":
+                continue
+            meta = _safe_json_dict(ev.meta_json)
+            if (meta.get("action") or "") == "review_rate":
+                try:
+                    wid = int(meta.get("word_id") or 0)
+                except Exception:
+                    wid = 0
+                if wid > 0:
+                    review_word_ids.add(wid)
+        word_term_map: dict[int, str] = {}
+        if review_word_ids:
+            for wid, term in session.query(Word.id, Word.term).filter(Word.id.in_(sorted(review_word_ids))).all():
+                word_term_map[int(wid)] = str(term)
+
+    def _format_activity(ev: AuthEvent) -> dict[str, Any]:
+        u = user_map.get(str(ev.username_norm or "")) or str(ev.username_norm or "")
+        when = _analytics_time_ago(ev.created_at, now)
+        line = ""
+        sub = ""
+        if ev.kind == "action":
+            meta = _safe_json_dict(ev.meta_json)
+            act = str(meta.get("action") or "action")
+            if act == "review_rate":
+                try:
+                    wid = int(meta.get("word_id") or 0)
+                except Exception:
+                    wid = 0
+                term = word_term_map.get(wid, "")
+                rating = str(meta.get("rating") or "").strip()
+                term_s = f"“{term}”" if term else ""
+                line = f"复习单词 {term_s} → {rating}".strip()
+            else:
+                line = f"动作 → {act}"
+        elif ev.kind == "client":
+            meta = _safe_json_dict(ev.meta_json)
+            evp = meta.get("ev") if isinstance(meta.get("ev"), dict) else {}
+            t = str(evp.get("t") or "client")
+            if t == "click":
+                el = evp.get("el") if isinstance(evp.get("el"), dict) else {}
+                txt = str((el.get("text") or "")).strip()[:50]
+                line = f"点击 “{txt}”" if txt else "点击"
+            elif t in {"error", "rejection"}:
+                msg = str(evp.get("msg") or "").strip()[:80]
+                line = f"前端错误 → {msg}".strip()
+            elif t == "page":
+                line = "打开页面"
+                v = evp.get("v") if isinstance(evp.get("v"), dict) else {}
+                w = v.get("w")
+                h = v.get("h")
+                lang = v.get("lang")
+                sub = f"{w}×{h} · {lang}".strip(" ·")
+            else:
+                line = f"客户端 → {t}"
+        elif ev.kind == "page_view":
+            line = f"访问 {ev.path}"
+        elif ev.kind == "api":
+            line = f"请求 {ev.path}"
+            sub = f"{ev.method} · {ev.status_code} · {ev.duration_ms}ms".strip()
+        elif ev.kind == "error":
+            line = "服务端错误"
+            sub = f"{ev.method} {ev.path} · {ev.status_code} · {ev.duration_ms}ms"
+        else:
+            line = f"{ev.kind} {ev.path}"
+        return {"username": u, "when": when, "line": line, "sub": sub, "ts": (ev.created_at.isoformat() if ev.created_at else "")}
+
+    total_events = len(events)
+    active_users = len({str(e.username_norm or "") for e in events if e.username_norm})
+    err_count = sum(1 for e in events if e.kind == "error")
+
+    api_durations = [int(e.duration_ms or 0) for e in events if e.kind == "api" and e.duration_ms is not None]
+    avg_api_ms = int(round(sum(api_durations) / len(api_durations))) if api_durations else 0
+
+    review_count = 0
+    for e in events:
+        if e.kind != "action":
+            continue
+        meta = _safe_json_dict(e.meta_json)
+        if (meta.get("action") or "") == "review_rate":
+            review_count += 1
+
+    error_rate = (err_count / total_events) if total_events else 0.0
+
+    curr_start = now - timedelta(hours=24)
+    prev_start = now - timedelta(hours=48)
+    curr = [e for e in events if e.created_at and e.created_at >= curr_start]
+    prev = [e for e in events if e.created_at and prev_start <= e.created_at < curr_start]
+
+    def _metrics(window: list[AuthEvent]) -> dict[str, Any]:
+        t = len(window)
+        au = len({str(e.username_norm or "") for e in window if e.username_norm})
+        er = sum(1 for e in window if e.kind == "error")
+        rr = 0
+        ad = [int(e.duration_ms or 0) for e in window if e.kind == "api" and e.duration_ms is not None]
+        for e in window:
+            if e.kind == "action":
+                meta = _safe_json_dict(e.meta_json)
+                if (meta.get("action") or "") == "review_rate":
+                    rr += 1
+        return {"total": t, "active_users": au, "review": rr, "error_rate": (er / t) if t else 0.0, "avg_api_ms": (sum(ad) / len(ad)) if ad else 0.0}
+
+    m_cur = _metrics(curr)
+    m_prev = _metrics(prev)
+
+    def _delta_str(value: float, unit: str = "", *, is_rate: bool = False) -> tuple[str, str]:
+        if is_rate:
+            s = f"{value * 100:.1f}%"
+        else:
+            if unit == "ms":
+                s = f"{int(round(value))}ms"
+            else:
+                try:
+                    s = f"{int(round(value)):,}"
+                except Exception:
+                    s = str(value)
+        if value > 0:
+            return ("up", f"↑{s} 今日")
+        if value < 0:
+            return ("down", f"↓{s.lstrip('-')} 今日")
+        return ("flat", f"—{s} 今日")
+
+    delta_active = _delta_str(m_cur["active_users"] - m_prev["active_users"])
+    delta_total = _delta_str(m_cur["total"] - m_prev["total"])
+    delta_review = _delta_str(m_cur["review"] - m_prev["review"])
+    delta_err_rate = _delta_str(m_cur["error_rate"] - m_prev["error_rate"], is_rate=True)
+    delta_avg_ms = _delta_str(m_cur["avg_api_ms"] - m_prev["avg_api_ms"], unit="ms")
+
+    daily_counts: dict[str, int] = {}
+    for e in events:
+        if not e.created_at:
+            continue
+        k = e.created_at.date().isoformat()
+        daily_counts[k] = daily_counts.get(k, 0) + 1
+
+    labels: list[str] = []
+    values: list[int] = []
+    for i in range(days - 1, -1, -1):
+        d = (now - timedelta(days=i)).date().isoformat()
+        labels.append(d[5:])
+        values.append(int(daily_counts.get(d, 0)))
+
+    hourly = [0] * 24
+    for e in events:
+        if not e.created_at or e.created_at < curr_start:
+            continue
+        hourly[int(e.created_at.hour)] += 1
+
+    top_paths: dict[str, int] = {}
+    for e in events:
+        if e.kind != "page_view":
+            continue
+        p = str(e.path or "/")
+        top_paths[p] = top_paths.get(p, 0) + 1
+    top_pages = [{"path": p, "count": c} for p, c in sorted(top_paths.items(), key=lambda kv: kv[1], reverse=True)[:10]]
+
+    per_user_counts: dict[str, int] = {}
+    for e in events:
+        un = str(e.username_norm or "")
+        if not un:
+            continue
+        per_user_counts[un] = per_user_counts.get(un, 0) + 1
+    ranked = sorted(per_user_counts.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:5]
+    max_cnt = max([c for _u, c in ranked] or [1])
+    ranking = []
+    for i, (un, c) in enumerate(ranked, start=1):
+        disp = user_map.get(un) or un
+        ls = last_seen_map.get(un)
+        ranking.append(
+            {
+                "rank": i,
+                "username": disp,
+                "count": int(c),
+                "bar": int(round(100 * (c / max_cnt))) if max_cnt else 0,
+                "status": _analytics_online_dot(ls, now),
+                "last_seen": _analytics_time_ago(ls, now) if ls else "-",
+            }
+        )
+
+    online_items = []
+    for un, ts in sorted(last_seen_map.items(), key=lambda kv: kv[1], reverse=True)[:6]:
+        online_items.append({"username": user_map.get(un) or un, "status": _analytics_online_dot(ts, now), "last_seen": _analytics_time_ago(ts, now)})
+
+    recent_errors: list[dict[str, Any]] = []
+    for e in events[:200]:
+        if e.kind == "error":
+            recent_errors.append({"msg": "服务端错误", "where": f"{e.path}", "when": _analytics_time_ago(e.created_at, now)})
+        elif e.kind == "client":
+            meta = _safe_json_dict(e.meta_json)
+            evp = meta.get("ev") if isinstance(meta.get("ev"), dict) else {}
+            if str(evp.get("t") or "") in {"error", "rejection"}:
+                msg = str(evp.get("msg") or "前端错误").strip()[:120]
+                src = str(evp.get("src") or "").strip()[:120]
+                recent_errors.append({"msg": msg, "where": src, "when": _analytics_time_ago(e.created_at, now)})
+        if len(recent_errors) >= 12:
+            break
+
+    api_events = [e for e in events if e.kind == "api" and e.created_at]
+    api_events_12h = [e for e in api_events if e.created_at >= (now - timedelta(hours=12))]
+    buckets: dict[str, list[int]] = {}
+    for e in api_events_12h:
+        t = e.created_at
+        key = t.replace(minute=0, second=0, microsecond=0).isoformat()
+        buckets.setdefault(key, []).append(int(e.duration_ms or 0))
+    series_labels = []
+    series_values = []
+    for k in sorted(buckets.keys()):
+        xs = buckets[k]
+        series_labels.append(k[11:16])
+        series_values.append(int(round(sum(xs) / len(xs))) if xs else 0)
+
+    p50 = _pct_value(api_durations, 0.50)
+    p95 = _pct_value(api_durations, 0.95)
+    p99 = _pct_value(api_durations, 0.99)
+
+    slow_by_path: dict[str, list[int]] = {}
+    for e in api_events:
+        p = str(e.path or "")
+        if not p.startswith("/api"):
+            continue
+        slow_by_path.setdefault(p, []).append(int(e.duration_ms or 0))
+    slow_items = []
+    for p, xs in sorted(slow_by_path.items(), key=lambda kv: (sum(kv[1]) / max(1, len(kv[1])), len(kv[1])), reverse=True)[:8]:
+        slow_items.append({"path": p, "avg_ms": int(round(sum(xs) / len(xs))) if xs else 0, "p95_ms": _pct_value(xs, 0.95), "count": len(xs)})
+
+    funnel: dict[str, Any] = {"enabled": False, "steps": [], "users": [], "events": [], "mode_default": "users"}
+    if is_admin:
+        funnel["enabled"] = True
+        step_defs = [
+            ("home", "首页"),
+            ("decks", "词书"),
+            ("practice", "练习"),
+            ("completed", "完成复习"),
+        ]
+        funnel["steps"] = [{"key": k, "name": name} for k, name in step_defs]
+
+        user_sets: dict[str, set[str]] = {k: set() for k, _name in step_defs}
+        event_counts: dict[str, int] = {k: 0 for k, _name in step_defs}
+
+        def _is_home(ev: AuthEvent) -> bool:
+            return ev.kind == "page_view" and (ev.path or "") == "/"
+
+        def _is_decks(ev: AuthEvent) -> bool:
+            p = str(ev.path or "")
+            return ev.kind == "page_view" and (p == "/decks" or p.startswith("/decks/"))
+
+        def _is_practice(ev: AuthEvent) -> bool:
+            p = str(ev.path or "")
+            return ev.kind == "page_view" and (p == "/practice" or p.startswith("/practice/"))
+
+        def _is_completed(ev: AuthEvent) -> bool:
+            if ev.kind != "action":
+                return False
+            meta = _safe_json_dict(ev.meta_json)
+            return (meta.get("action") or "") in {"review_rate", "retest_rate"}
+
+        matchers = {
+            "home": _is_home,
+            "decks": _is_decks,
+            "practice": _is_practice,
+            "completed": _is_completed,
+        }
+
+        for e in events:
+            un = str(e.username_norm or "")
+            for k, _name in step_defs:
+                try:
+                    ok = bool(matchers[k](e))
+                except Exception:
+                    ok = False
+                if not ok:
+                    continue
+                if un:
+                    user_sets[k].add(un)
+                event_counts[k] += 1
+
+        user_counts = {k: len(user_sets[k]) for k, _name in step_defs}
+        base_users = max(1, user_counts.get(step_defs[0][0], 0))
+        base_events = max(1, event_counts.get(step_defs[0][0], 0))
+
+        def _build_series(counts: dict[str, int], base: int) -> list[dict[str, Any]]:
+            out = []
+            prev = None
+            for idx, (k, name) in enumerate(step_defs):
+                c = int(counts.get(k, 0))
+                width = (c / base) if base else 0.0
+                conv = (c / prev) if (prev and prev > 0) else (1.0 if idx == 0 else 0.0)
+                drop = max(0.0, 1.0 - conv) if idx > 0 else 0.0
+                out.append(
+                    {
+                        "key": k,
+                        "name": name,
+                        "count": c,
+                        "width": width,
+                        "conv": conv,
+                        "drop": drop,
+                    }
+                )
+                prev = c
+            return out
+
+        funnel["users"] = _build_series(user_counts, base_users)
+        funnel["events"] = _build_series(event_counts, base_events)
+
+    screens: dict[str, int] = {}
+    tzs: dict[str, int] = {}
+    langs: dict[str, int] = {}
+    dprs: dict[str, int] = {}
+    for e in events:
+        if e.kind != "client":
+            continue
+        meta = _safe_json_dict(e.meta_json)
+        evp = meta.get("ev") if isinstance(meta.get("ev"), dict) else {}
+        if str(evp.get("t") or "") != "page":
+            continue
+        v = evp.get("v") if isinstance(evp.get("v"), dict) else {}
+        try:
+            w = int(v.get("w") or 0)
+        except Exception:
+            w = 0
+        if w:
+            screens[f"{w}px"] = screens.get(f"{w}px", 0) + 1
+        tz = str(v.get("tz") or "").strip()
+        if tz:
+            tzs[tz] = tzs.get(tz, 0) + 1
+        lang = str(v.get("lang") or "").strip()
+        if lang:
+            langs[lang] = langs.get(lang, 0) + 1
+        dpr = v.get("dpr")
+        try:
+            dpr_i = int(round(float(dpr)))
+        except Exception:
+            dpr_i = 0
+        if dpr_i:
+            dprs[f"{dpr_i}x"] = dprs.get(f"{dpr_i}x", 0) + 1
+
+    def _top_k(d: dict[str, int], k: int) -> list[dict[str, Any]]:
+        total = sum(d.values()) or 0
+        out = []
+        for name, c in sorted(d.items(), key=lambda kv: kv[1], reverse=True)[:k]:
+            out.append({"name": name, "count": c, "pct": (c / total) if total else 0.0})
+        return out
+
+    rating_map = {
+        Rating.Again.value: ("again", "Again"),
+        Rating.Hard.value: ("hard", "Hard"),
+        Rating.Good.value: ("good", "Good"),
+        Rating.Easy.value: ("easy", "Easy"),
+    }
+    rating_items = []
+    total_r = sum(rating_counts.values()) or 0
+    for rv in [Rating.Again.value, Rating.Hard.value, Rating.Good.value, Rating.Easy.value]:
+        key, label = rating_map[rv]
+        cnt = int(rating_counts.get(rv, 0))
+        rating_items.append({"key": key, "label": label, "count": cnt, "pct": (cnt / total_r) if total_r else 0.0})
+
+    time_total = sum(time_buckets.values()) or 0
+    time_items = [
+        {"label": "<2s", "count": time_buckets["lt2"], "pct": (time_buckets["lt2"] / time_total) if time_total else 0.0},
+        {"label": "2-5s", "count": time_buckets["2to5"], "pct": (time_buckets["2to5"] / time_total) if time_total else 0.0},
+        {"label": "5-10s", "count": time_buckets["5to10"], "pct": (time_buckets["5to10"] / time_total) if time_total else 0.0},
+        {"label": ">10s", "count": time_buckets["gt10"], "pct": (time_buckets["gt10"] / time_total) if time_total else 0.0},
+    ]
+
+    dashboard: dict[str, Any] = {
+        "meta": {"now": now.isoformat(), "days": days, "cutoff": cutoff.isoformat(), "is_admin": bool(is_admin)},
+        "overview": {
+            "active_users": {"label": "活跃用户", "icon": "👥", "value": active_users, "delta": delta_active[1], "trend": delta_active[0]},
+            "total_events": {"label": "总事件", "icon": "📱", "value": total_events, "delta": delta_total[1], "trend": delta_total[0]},
+            "review_count": {"label": "复习次数", "icon": "📖", "value": review_count, "delta": delta_review[1], "trend": delta_review[0]},
+            "error_rate": {"label": "错误率", "icon": "❌", "value": error_rate, "delta": delta_err_rate[1], "trend": delta_err_rate[0]},
+            "avg_response": {"label": "平均响应", "icon": "⏱", "value": avg_api_ms, "delta": delta_avg_ms[1], "trend": delta_avg_ms[0]},
+        },
+        "trend": {"labels": labels, "values": values},
+        "hours": {"labels": [str(i) for i in range(24)], "values": hourly},
+        "activity": [_format_activity(e) for e in events[:12]],
+        "ranking": ranking,
+        "online": online_items,
+        "learning": {"ratings": rating_items, "difficulty": difficult, "time": time_items},
+        "funnel": funnel,
+        "retention": {"table": retention_table, "curve": retention_curve} if is_admin else {"table": [], "curve": []},
+        "pages": top_pages,
+        "performance": {"series": {"labels": series_labels, "values": series_values}, "p50_ms": p50, "p95_ms": p95, "p99_ms": p99, "slow": slow_items},
+        "errors": recent_errors,
+        "env": {"screens": _top_k(screens, 3), "tz": _top_k(tzs, 1), "lang": _top_k(langs, 2), "dpr": _top_k(dprs, 3)},
+    }
+    return dashboard
+
+
 @app.get("/analytics", response_class=HTMLResponse)
 def analytics_page(request: Request, days: int = 7):
     try:
@@ -882,99 +1534,36 @@ def analytics_page(request: Request, days: int = 7):
     admin_set = {u.strip().lower() for u in admin_raw.replace(";", ",").split(",") if u.strip()}
     is_admin = bool(admin_set) and (username_norm in admin_set)
 
-    cutoff = _utcnow() - timedelta(days=days)
-
-    with get_auth_session() as session:
-        users = session.query(AuthUser).order_by(AuthUser.id.asc()).all()
-        q = session.query(AuthEvent).filter(AuthEvent.created_at >= cutoff)
-        if not is_admin and username_norm:
-            q = q.filter(AuthEvent.username_norm == username_norm)
-        events = q.order_by(AuthEvent.created_at.asc()).all()
-
-    # Aggregate (keep it simple; this is MVP-sized data).
-    per_user: dict[str, dict[str, Any]] = {}
-    for u in users:
-        per_user[u.username_norm] = {
-            "username": u.username,
-            "username_norm": u.username_norm,
-            "page_views": 0,
-            "actions": 0,
-            "errors": 0,
-            "last_seen": None,
-        }
-
-    daily: dict[str, int] = {}
-    top_paths: dict[str, int] = {}
-    actions: dict[str, int] = {}
-
-    for ev in events:
-        un = str(ev.username_norm or "")
-        row = per_user.setdefault(
-            un,
-            {
-                "username": un,
-                "username_norm": un,
-                "page_views": 0,
-                "actions": 0,
-                "errors": 0,
-                "last_seen": None,
-            },
-        )
-        row["last_seen"] = ev.created_at
-        if ev.kind == "page_view":
-            row["page_views"] += 1
-            top_paths[ev.path] = top_paths.get(ev.path, 0) + 1
-        elif ev.kind in {"action", "client", "api"}:
-            row["actions"] += 1
-            act = "action"
-            try:
-                meta = json.loads(ev.meta_json or "{}")
-                if ev.kind == "action":
-                    act = str(meta.get("action") or "action")
-                elif ev.kind == "client":
-                    evp = meta.get("ev") if isinstance(meta, dict) else None
-                    t = (evp.get("t") if isinstance(evp, dict) else None) or "client"
-                    act = f"client:{t}"
-                else:
-                    act = f"api:{ev.path}"
-            except Exception:
-                act = "action"
-            actions[act] = actions.get(act, 0) + 1
-        elif ev.kind == "error":
-            row["errors"] += 1
-
-        d = (ev.created_at.date().isoformat() if ev.created_at else "")
-        if d:
-            daily[d] = daily.get(d, 0) + 1
-
-    max_views = max([v["page_views"] for v in per_user.values()] + [1])
-    max_actions = max([v["actions"] for v in per_user.values()] + [1])
-
-    user_rows = list(per_user.values())
-    user_rows.sort(key=lambda r: (r["page_views"] + r["actions"], r["username_norm"]), reverse=True)
-
-    daily_rows = [{"day": d, "count": daily[d]} for d in sorted(daily.keys())]
-    top_path_rows = [{"path": p, "count": c} for p, c in sorted(top_paths.items(), key=lambda kv: kv[1], reverse=True)[:12]]
-    action_rows = [{"action": a, "count": c} for a, c in sorted(actions.items(), key=lambda kv: kv[1], reverse=True)[:12]]
-
+    dashboard = _build_analytics_dashboard(days=days, username_norm=username_norm, is_admin=is_admin)
+    cutoff = datetime.fromisoformat(str(dashboard.get("meta", {}).get("cutoff") or _utcnow().isoformat()))
+    dashboard_json = json.dumps(dashboard, ensure_ascii=False).replace("<", "\\u003c")
     return templates.TemplateResponse(
         request,
         "analytics.html",
         {
-            "title": "交互报表",
+            "title": "数据中心",
             "days": days,
             "cutoff": cutoff,
             "is_admin": is_admin,
             "admin_hint_set": bool(admin_set),
             "current_user": username,
-            "users": user_rows,
-            "daily": daily_rows,
-            "top_paths": top_path_rows,
-            "actions": action_rows,
-            "max_views": max_views,
-            "max_actions": max_actions,
+            "dashboard": dashboard,
+            "dashboard_json": Markup(dashboard_json),
         },
     )
+
+
+@app.get("/api/analytics/dashboard", response_class=JSONResponse)
+def api_analytics_dashboard(request: Request, days: int = 7):
+    username = getattr(request.state, "user_username", None)
+    user_id = getattr(request.state, "user_id", None)
+    if not username or user_id is None:
+        raise HTTPException(status_code=401, detail="not logged in")
+
+    days = _norm_days_param(days)
+    username_norm = (username or "").strip().lower()
+    is_admin, _admin_hint_set = _analytics_is_admin(username_norm)
+    return _build_analytics_dashboard(days=days, username_norm=username_norm, is_admin=is_admin)
 
 
 @app.get("/decks", response_class=HTMLResponse)
