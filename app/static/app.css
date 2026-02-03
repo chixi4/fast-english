@@ -1293,7 +1293,14 @@ label.check input { margin: 0; }
 .worksheet-break { height: 0; margin: 14px 0; }
 
 @media print {
-  html, body { background: #ffffff !important; color: #000000 !important; }
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  body { display: block !important; }
+  main#content { overflow: visible !important; }
   .topbar, .nav, .divider-bar, .divider-tail, .no-print, #loading { display: none !important; }
   main#content .container { max-width: none; padding: 0; }
   .worksheet-sheet { border: none; border-radius: 0; padding: 10mm 10mm; margin: 0; }

@@ -904,7 +904,17 @@ def _short_definition(defn: str) -> str:
     s = (defn or "").strip()
     if not s:
         return ""
+    # Some sources store line breaks as literal "\n" in a single CSV cell.
+    # Normalize those first so we can reliably cut at the first meaning line.
+    s = s.replace("\\r\\n", "\n").replace("\\n", "\n")
+    if "\n" in s:
+        s = s.split("\n", 1)[0].strip()
     s = re.sub(r"\s+", " ", s)
+    # ECDICT-like defs often start with phonetic wrapped by slashes: "/kæmp/ n. 露营..."
+    # If we split by "/" too early, we end up with empty "short defs" and show "（无释义）".
+    s = re.sub(r"^/[^/]{1,64}/\s*", "", s)
+    # Drop the first part-of-speech marker ("n." / "vt." / "adj." ...) if present.
+    s = re.sub(r"^(?:[a-z]{1,4}\.)\s*", "", s, flags=re.IGNORECASE)
     # Common separators in ecdict-like defs: "/" ";" "；"
     for sep in ["；", ";", "/", "｜", "|"]:
         if sep in s:
@@ -1548,6 +1558,26 @@ def worksheet_detail(
     view: str | None = None,
     layout: str | None = None,
 ):
+    def _is_missing_short_def(s: str) -> bool:
+        t = (s or "").strip()
+        return (not t) or t in {"（无释义）", "(无释义)", "无释义"}
+
+    def _mcq_has_placeholders(mcq_items: list[dict[str, Any]]) -> bool:
+        fillers = {
+            "（无释义）",
+            "(无释义)",
+            "（以上都不对）",
+            "（无法判断）",
+            "（先跳过）",
+            "（都不是）",
+            "（不确定）",
+        }
+        for q in mcq_items or []:
+            for c in (q.get("choices") or []):
+                if str(c or "").strip() in fillers:
+                    return True
+        return False
+
     with get_session() as session:
         row = session.get(Worksheet, int(worksheet_id))
         if not row:
@@ -1555,12 +1585,41 @@ def worksheet_detail(
         sheet = _safe_json_dict(row.sheet_json)
         meta = _safe_json_dict(row.meta_json)
 
-    words = list(sheet.get("words") or [])
-    mcq = list(sheet.get("mcq") or [])
-    cloze = list(sheet.get("cloze") or [])
-    answers = sheet.get("answers") or {}
-    mcq_answers = list(answers.get("mcq") or [])
-    cloze_answers = list(answers.get("cloze") or [])
+        words = list(sheet.get("words") or [])
+        # Hydrate missing short defs/examples from the DB so older worksheets remain usable.
+        word_ids = [int(w.get("word_id") or 0) for w in words if int(w.get("word_id") or 0) > 0]
+        if word_ids:
+            fetched = session.query(Word).filter(Word.id.in_(word_ids)).all()
+            by_id = {int(w.id): w for w in fetched}
+            for it in words:
+                wid = int(it.get("word_id") or 0)
+                if wid <= 0:
+                    continue
+                w = by_id.get(wid)
+                if not w:
+                    continue
+                if not str(it.get("term") or "").strip():
+                    it["term"] = str(w.term or "")
+                if _is_missing_short_def(str(it.get("definition_short") or "")):
+                    d = _short_definition(str(w.definition or ""))
+                    if d:
+                        it["definition_short"] = d
+                if not str(it.get("example") or "").strip() and str(w.example or "").strip():
+                    it["example"] = str(w.example or "").strip()
+
+        mcq = list(sheet.get("mcq") or [])
+        cloze = list(sheet.get("cloze") or [])
+        answers = sheet.get("answers") or {}
+
+        if _mcq_has_placeholders(mcq) and not any(_is_missing_short_def(str(w.get("definition_short") or "")) for w in words):
+            mcq, mcq_answers = _build_mcq(words)
+            answers = dict(answers or {})
+            answers["mcq"] = mcq_answers
+        else:
+            mcq_answers = list((answers.get("mcq") or []))
+
+        cloze_answers = list((answers.get("cloze") or []))
+
     word_bank = [str(w.get("term") or "") for w in words]
     spelling_answers = [str(w.get("term") or "") for w in words]
 
