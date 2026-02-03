@@ -1541,7 +1541,13 @@ def worksheets_generate(
 
 
 @app.get("/worksheets/{worksheet_id}", response_class=HTMLResponse)
-def worksheet_detail(request: Request, worksheet_id: int, toast: str | None = None):
+def worksheet_detail(
+    request: Request,
+    worksheet_id: int,
+    toast: str | None = None,
+    view: str | None = None,
+    layout: str | None = None,
+):
     with get_session() as session:
         row = session.get(Worksheet, int(worksheet_id))
         if not row:
@@ -1556,6 +1562,10 @@ def worksheet_detail(request: Request, worksheet_id: int, toast: str | None = No
     mcq_answers = list(answers.get("mcq") or [])
     cloze_answers = list(answers.get("cloze") or [])
     word_bank = [str(w.get("term") or "") for w in words]
+    spelling_answers = [str(w.get("term") or "") for w in words]
+
+    view2 = "grading" if str(view or "").strip().lower() == "grading" else "sheet"
+    layout2 = "standard" if str(layout or "").strip().lower() == "standard" else "economy"
 
     return templates.TemplateResponse(
         request,
@@ -1572,14 +1582,23 @@ def worksheet_detail(request: Request, worksheet_id: int, toast: str | None = No
             "word_bank": word_bank,
             "mcq_answers": mcq_answers,
             "cloze_answers": cloze_answers,
+            "spelling_answers": spelling_answers,
             "already_graded": bool(meta.get("graded_at")),
             "toast": (toast or "").strip(),
+            "view": view2,
+            "layout": layout2,
         },
     )
 
 
 @app.post("/worksheets/{worksheet_id}/grade")
-def worksheet_grade(request: Request, worksheet_id: int, wrong_word_ids: list[int] = Form([])):
+def worksheet_grade(
+    request: Request,
+    worksheet_id: int,
+    wrong_word_ids: list[int] = Form([]),
+    view: str | None = None,
+    layout: str | None = None,
+):
     cleaned_wrong: set[int] = set()
     for raw in wrong_word_ids or []:
         try:
@@ -1594,7 +1613,12 @@ def worksheet_grade(request: Request, worksheet_id: int, wrong_word_ids: list[in
 
         meta = _safe_json_dict(row.meta_json)
         if meta.get("graded_at"):
-            return _redirect(f"/worksheets/{worksheet_id}?" + urlencode({"toast": "此作业已提交过"}))
+            params = {"toast": "此作业已提交过"}
+            if str(view or "").strip().lower() == "grading":
+                params["view"] = "grading"
+            if str(layout or "").strip().lower() == "standard":
+                params["layout"] = "standard"
+            return _redirect(f"/worksheets/{worksheet_id}?" + urlencode(params))
 
         sheet = _safe_json_dict(row.sheet_json)
         words = list(sheet.get("words") or [])
@@ -1627,7 +1651,12 @@ def worksheet_grade(request: Request, worksheet_id: int, wrong_word_ids: list[in
         meta["wrong_word_ids"] = sorted(list(cleaned_wrong))
         row.meta_json = json.dumps(meta, ensure_ascii=False)
 
-    return _redirect(f"/worksheets/{worksheet_id}?" + urlencode({"toast": "已记录错题并安排复习"}))
+    params = {"toast": "已记录错题并安排复习"}
+    if str(view or "").strip().lower() == "grading":
+        params["view"] = "grading"
+    if str(layout or "").strip().lower() == "standard":
+        params["layout"] = "standard"
+    return _redirect(f"/worksheets/{worksheet_id}?" + urlencode(params))
 
 
 @app.get("/settings", response_class=HTMLResponse)
