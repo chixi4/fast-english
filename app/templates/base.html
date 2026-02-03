@@ -25,11 +25,18 @@
         </div>
 
         <nav class="nav">
-          <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">今日</a>
-          <a href="/decks" class="{% if request.url.path.startswith('/decks') %}active{% endif %}">词书</a>
-          <a href="/worksheets" class="{% if request.url.path.startswith('/worksheets') %}active{% endif %}">作业</a>
-          <a href="/practice" class="{% if request.url.path == '/practice' %}active{% endif %}">应语</a>
-          <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">我的</a>
+          {% set is_parent_mode = request.state.ui_mode == 'parent' %}
+          {% if is_parent_mode %}
+            <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">今日作业</a>
+            <a href="/decks" class="{% if request.url.path.startswith('/decks') %}active{% endif %}">词书</a>
+            <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">设置</a>
+          {% else %}
+            <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">今日</a>
+            <a href="/decks" class="{% if request.url.path.startswith('/decks') %}active{% endif %}">词书</a>
+            <a href="/worksheets" class="{% if request.url.path.startswith('/worksheets') %}active{% endif %}">作业</a>
+            <a href="/practice" class="{% if request.url.path == '/practice' %}active{% endif %}">应语</a>
+            <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">我的</a>
+          {% endif %}
         </nav>
       </div>
     </header>
