@@ -1,0 +1,21 @@
+# CLIProxyAPI minimal config (OpenAI-compatible).
+# Copy to: deploy/cli-proxy-api/config.yaml
+#
+# Notes:
+# - Keep `api-keys` private. Treat it like a password.
+# - If your server cannot access Google (Gemini/Antigravity), set `proxy-url` to an outbound
+#   http/https/socks5 proxy (example below).
+
+host: ""
+port: 8317
+
+api-keys:
+  - "your-api-key-1"
+
+# Optional: outbound proxy for Google/Antigravity access
+# proxy-url: "socks5://user:pass@127.0.0.1:1080"
+
+remote-management:
+  allow-remote: false
+  secret-key: ""
+

@@ -1,0 +1,11 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+
+data
+.env
+
+tools/ui_checks
+

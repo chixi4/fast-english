@@ -1,0 +1,32 @@
+services:
+  fast-english:
+    build: .
+    container_name: fast-english
+    env_file:
+      - .env
+    environment:
+      # In Docker, reach CLIProxyAPI by service name.
+      AI_BASE_URL: ${AI_BASE_URL:-http://cli-proxy-api:8317/v1}
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - cli-proxy-api
+    restart: unless-stopped
+
+  cli-proxy-api:
+    image: ${CLI_PROXY_IMAGE:-eceasy/cli-proxy-api:latest}
+    container_name: cli-proxy-api
+    # Public API port (OpenAI-compatible): you may restrict this to localhost if you only
+    # call it from fast-english.
+    ports:
+      - "8317:8317"
+      # Optional: management UI (keep local by default, use SSH port-forwarding).
+      - "127.0.0.1:8085:8085"
+    volumes:
+      - ${CLI_PROXY_CONFIG_PATH:-./deploy/cli-proxy-api/config.yaml}:/CLIProxyAPI/config.yaml
+      - ${CLI_PROXY_AUTH_PATH:-./deploy/cli-proxy-api/auths}:/root/.cli-proxy-api
+      - ${CLI_PROXY_LOG_PATH:-./deploy/cli-proxy-api/logs}:/CLIProxyAPI/logs
+    restart: unless-stopped
+
