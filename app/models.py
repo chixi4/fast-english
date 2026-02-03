@@ -156,3 +156,55 @@ class PlanWord(Base):
     plan: Mapped[Plan] = relationship(back_populates="word_links")
     word: Mapped[Word] = relationship()
     source_deck: Mapped[Deck | None] = relationship(foreign_keys=[source_deck_id])
+
+
+class ParentSettings(Base):
+    __tablename__ = "parent_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+
+    # "primary" | "junior"
+    stage: Mapped[str] = mapped_column(String(16), default="primary")
+
+    # Per-day recommended words when extracting from text.
+    daily_words: Mapped[int] = mapped_column(Integer, default=10)
+
+    # Optional: which deck represents "课本内"
+    textbook_deck_id: Mapped[int | None] = mapped_column(ForeignKey("decks.id"), nullable=True)
+
+    # Optional: decks that represent "应该学/常考/目标词库" (JSON list[int])
+    target_deck_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+
+    # Optional: deck that provides frequency rank (DeckWord.position). (e.g. 高频 10k)
+    frequency_deck_id: Mapped[int | None] = mapped_column(ForeignKey("decks.id"), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    textbook_deck: Mapped[Deck | None] = relationship(foreign_keys=[textbook_deck_id])
+    frequency_deck: Mapped[Deck | None] = relationship(foreign_keys=[frequency_deck_id])
+
+
+class Worksheet(Base):
+    __tablename__ = "worksheets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(128), default="")
+
+    # "extract" | "today" | "deck"
+    mode: Mapped[str] = mapped_column(String(16), default="extract")
+
+    # "primary" | "junior"
+    stage: Mapped[str] = mapped_column(String(16), default="primary")
+
+    # JSON list[int] (Word.id)
+    word_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+
+    # JSON payload for rendering & answer key
+    sheet_json: Mapped[str] = mapped_column(Text, default="{}")
+
+    # Extra debug/meta fields
+    meta_json: Mapped[str] = mapped_column(Text, default="{}")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

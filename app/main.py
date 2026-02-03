@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import hmac
 import html
 import json
+import httpx
 import os
 import time
 from pathlib import Path
@@ -32,7 +33,20 @@ from app.auth_db import get_auth_session, init_auth_db
 from app.auth_models import AuthEvent, AuthUser
 from app.config import get_settings
 from app.db import get_session, init_db
-from app.models import Deck, DeckWord, Mistake, Plan, PlanDeck, PlanWord, Simulation, SrsCard, SrsReviewLog, Word
+from app.models import (
+    Deck,
+    DeckWord,
+    Mistake,
+    ParentSettings,
+    Plan,
+    PlanDeck,
+    PlanWord,
+    Simulation,
+    SrsCard,
+    SrsReviewLog,
+    Word,
+    Worksheet,
+)
 from app.request_context import pop_current_user_identity, push_current_user_identity
 from app.srs import apply_fsrs_to_db, db_card_to_fsrs, get_scheduler, parse_rating
 from app.wordbooks import get_source, list_sources, load_rows
@@ -526,6 +540,43 @@ def _ensure_default_plan(session) -> Plan:
     return plan
 
 
+def _ensure_parent_settings(session) -> ParentSettings:
+    row = session.query(ParentSettings).filter(ParentSettings.name == "默认").first()
+    if row:
+        return row
+
+    decks = session.query(Deck).order_by(Deck.id.asc()).all()
+
+    def _pick_deck_id(pred) -> int | None:
+        for d in decks:
+            try:
+                if pred(d):
+                    return int(d.id)
+            except Exception:
+                continue
+        return None
+
+    textbook_id = _pick_deck_id(lambda d: ("课本" in (d.name or "")) or ("教材" in (d.name or "")))
+    freq_id = _pick_deck_id(lambda d: ("高频 10k" in (d.name or "")) or ("高频10k" in (d.name or "")))
+
+    target_ids: list[int] = []
+    zk_id = _pick_deck_id(lambda d: "中考" in (d.name or ""))
+    if zk_id is not None:
+        target_ids.append(int(zk_id))
+
+    row = ParentSettings(
+        name="默认",
+        stage="junior",
+        daily_words=10,
+        textbook_deck_id=textbook_id,
+        target_deck_ids_json=json.dumps(target_ids, ensure_ascii=False),
+        frequency_deck_id=freq_id,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
 def _ensure_plan_deck(session, plan: Plan, deck_id: int) -> PlanDeck:
     link = session.query(PlanDeck).filter(PlanDeck.plan_id == plan.id, PlanDeck.deck_id == deck_id).first()
     if link:
@@ -754,27 +805,772 @@ def practice(request: Request):
     )
 
 
+_WORD_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z'-]*")
+
+
+def _extract_terms_from_text(text: str) -> list[str]:
+    raw = (text or "").strip()
+    if not raw:
+        return []
+
+    tokens = _WORD_TOKEN_RE.findall(raw)
+    cleaned: list[str] = []
+    for t in tokens:
+        w = (t or "").strip().strip("'-").lower()
+        if w.endswith("'s") and len(w) > 3:
+            w = w[:-2]
+        w = w.strip("'-")
+        if len(w) < 2:
+            continue
+        cleaned.append(w)
+
+    # Dedupe, keep order
+    seen: set[str] = set()
+    out: list[str] = []
+    for w in cleaned:
+        if w in seen:
+            continue
+        seen.add(w)
+        out.append(w)
+    return out
+
+
+def _short_definition(defn: str) -> str:
+    s = (defn or "").strip()
+    if not s:
+        return ""
+    s = re.sub(r"\s+", " ", s)
+    # Common separators in ecdict-like defs: "/" ";" "；"
+    for sep in ["；", ";", "/", "｜", "|"]:
+        if sep in s:
+            s = s.split(sep, 1)[0].strip()
+    if len(s) > 28:
+        s = s[:28].rstrip() + "…"
+    return s
+
+
+def _stage_label(stage: str) -> str:
+    return "小学" if (stage or "").strip().lower() == "primary" else "初中"
+
+
+def _ai_generate_sentences_for_terms(*, stage: str, terms: list[str], term_notes: dict[str, str]) -> dict[str, str]:
+    """
+    Best-effort: ask the writer model for one short sentence per term.
+    Output: {term: "I ... [[term]] ..."}
+    """
+    settings = get_settings()
+    if settings.ai_mock or not settings.ai_api_key:
+        return {}
+
+    stage = (stage or "junior").strip().lower()
+    stage_hint = "小学" if stage == "primary" else "初中"
+    max_words = 10 if stage == "primary" else 14
+
+    vocab_lines: list[str] = []
+    for t in terms:
+        note = (term_notes.get(t) or "").strip()
+        if note:
+            vocab_lines.append(f"- {t}: {note}")
+        else:
+            vocab_lines.append(f"- {t}")
+    vocab_block = "\n".join(vocab_lines)
+
+    schema_hint = {"sentences": [{"term": "string", "sentence": "string"}]}
+    system = "你是英语老师。你只输出严格 JSON，不要输出 Markdown，不要输出多余文本。"
+    user = (
+        f"请为下面每个单词各写 1 句英文例句，适合{stage_hint}学生，尽量简单自然。\n"
+        f"硬性要求：\n"
+        f"1) 每句不超过 {max_words} 个英文单词（不含标点）。\n"
+        "2) 每句必须包含该目标词一次，并且用 [[目标词]] 标记，例如 [[apple]]。\n"
+        "3) 不要使用目标词变形（复数/过去式/ing），只允许大小写不同。\n"
+        "4) 只输出 JSON，结构如下：\n"
+        f"{json.dumps(schema_hint, ensure_ascii=False)}\n\n"
+        "单词（含释义/备注）：\n"
+        f"{vocab_block}\n"
+    ).strip()
+
+    url = f"{settings.ai_base_url}/chat/completions"
+    payload: dict[str, Any] = {
+        "model": settings.ai_writer_model or settings.ai_model,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "temperature": 0.4,
+    }
+
+    def _en_word_count(s: str) -> int:
+        return len(re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", s or ""))
+
+    def _ok(term: str, sent: str) -> bool:
+        if not term or not sent:
+            return False
+        if _en_word_count(sent) > max_words:
+            return False
+        # Must contain [[term]] marker (case-insensitive).
+        return re.search(rf"\[\[{re.escape(term)}\]\]", sent, flags=re.IGNORECASE) is not None
+
+    last_err: Exception | None = None
+    for _attempt in range(2):
+        try:
+            with httpx.Client(timeout=90.0) as client:
+                resp = client.post(url, headers={"Authorization": f"Bearer {settings.ai_api_key}"}, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+            text = (((data.get("choices") or [{}])[0]).get("message") or {}).get("content") or ""
+            json_text = _safe_json_extract(str(text))
+            obj = json.loads(json_text)
+            out: dict[str, str] = {}
+            for it in (obj.get("sentences") or []):
+                if not isinstance(it, dict):
+                    continue
+                term = str(it.get("term") or "").strip()
+                sent = str(it.get("sentence") or "").strip()
+                if not term or not sent:
+                    continue
+                out[term] = sent
+
+            bad_terms = [t for t in terms if not _ok(t, out.get(t, ""))]
+            if not bad_terms:
+                return out
+
+            if settings.ai_checker_model:
+                checker_schema = {"sentences": [{"term": "string", "sentence": "string"}]}
+                checker_user_lines: list[str] = []
+                checker_user_lines.append(f"请修复下面这些例句，使其满足全部硬性要求。只输出 JSON：{json.dumps(checker_schema, ensure_ascii=False)}")
+                checker_user_lines.append("硬性要求：")
+                checker_user_lines.append(f"1) 每句不超过 {max_words} 个英文单词（不含标点）。")
+                checker_user_lines.append("2) 每句必须包含该目标词一次，并且用 [[目标词]] 标记。")
+                checker_user_lines.append("3) 不要使用目标词变形（复数/过去式/ing），只允许大小写不同。")
+                checker_user_lines.append("需要修复的条目：")
+                for t in bad_terms:
+                    note = (term_notes.get(t) or "").strip()
+                    prev = (out.get(t) or "").strip()
+                    checker_user_lines.append(f"- {t}: {note} | draft={prev}")
+
+                checker_payload: dict[str, Any] = {
+                    "model": settings.ai_checker_model,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": "\n".join(checker_user_lines).strip()},
+                    ],
+                    "temperature": 0.2,
+                }
+
+                try:
+                    with httpx.Client(timeout=90.0) as client:
+                        resp2 = client.post(
+                            url,
+                            headers={"Authorization": f"Bearer {settings.ai_api_key}"},
+                            json=checker_payload,
+                        )
+                        resp2.raise_for_status()
+                        data2 = resp2.json()
+                    text2 = (((data2.get("choices") or [{}])[0]).get("message") or {}).get("content") or ""
+                    json_text2 = _safe_json_extract(str(text2))
+                    obj2 = json.loads(json_text2)
+                    for it2 in (obj2.get("sentences") or []):
+                        if not isinstance(it2, dict):
+                            continue
+                        term2 = str(it2.get("term") or "").strip()
+                        sent2 = str(it2.get("sentence") or "").strip()
+                        if term2 in out and _ok(term2, sent2):
+                            out[term2] = sent2
+                except Exception:
+                    pass
+
+            return out
+        except Exception as e:
+            last_err = e
+            payload = {**payload, "temperature": 0.2}
+            continue
+
+    _ = last_err
+    return {}
+
+
+@app.get("/worksheets", response_class=HTMLResponse)
+def worksheets_page(request: Request, toast: str | None = None):
+    with get_session() as session:
+        parent = _ensure_parent_settings(session)
+        stage = (parent.stage or "junior").strip().lower()
+        daily_words = int(parent.daily_words or 10)
+        worksheets = session.query(Worksheet).order_by(Worksheet.id.desc()).limit(30).all()
+    return templates.TemplateResponse(
+        request,
+        "worksheets.html",
+        {
+            "toast": (toast or "").strip(),
+            "worksheets": worksheets,
+            "stage": stage,
+            "stage_label": _stage_label(stage),
+            "daily_words": daily_words,
+            "source_text": "",
+            "extract": None,
+        },
+    )
+
+
+@app.post("/worksheets/extract", response_class=HTMLResponse)
+def worksheets_extract(request: Request, source_text: str = Form("")):
+    source_text = (source_text or "").strip()
+    if len(source_text) < 5:
+        return worksheets_page(request, toast="请粘贴一段英文文本（至少 5 个字符）。")
+
+    terms = _extract_terms_from_text(source_text)
+    if not terms:
+        return worksheets_page(request, toast="没有提取到英文单词。请检查文本内容。")
+    if len(terms) > 300:
+        terms = terms[:300]
+
+    with get_session() as session:
+        parent = _ensure_parent_settings(session)
+        stage = (parent.stage or "junior").strip().lower()
+        daily_words = int(parent.daily_words or 10)
+        plan = _ensure_default_plan(session)
+
+        rows = session.query(Word).filter(func.lower(Word.term).in_(terms)).all()
+        by_term = {str(w.term or "").strip().lower(): w for w in rows}
+
+        found: list[Word] = []
+        seen_ids: set[int] = set()
+        for t in terms:
+            w = by_term.get(t)
+            if not w:
+                continue
+            if int(w.id) in seen_ids:
+                continue
+            seen_ids.add(int(w.id))
+            found.append(w)
+
+        missing_count = max(0, len(terms) - len(found))
+        word_ids = [int(w.id) for w in found]
+
+        textbook_set: set[int] = set()
+        if parent.textbook_deck_id and word_ids:
+            rows = (
+                session.query(DeckWord.word_id)
+                .filter(DeckWord.deck_id == int(parent.textbook_deck_id), DeckWord.word_id.in_(word_ids))
+                .all()
+            )
+            textbook_set = {int(wid) for (wid,) in rows}
+
+        target_deck_ids: list[int] = []
+        try:
+            obj = json.loads(parent.target_deck_ids_json or "[]")
+            if isinstance(obj, list):
+                for x in obj:
+                    if isinstance(x, int) and x > 0:
+                        target_deck_ids.append(int(x))
+        except Exception:
+            target_deck_ids = []
+
+        deck_name_by_id: dict[int, str] = {}
+        if target_deck_ids:
+            for d in session.query(Deck).filter(Deck.id.in_(target_deck_ids)).all():
+                deck_name_by_id[int(d.id)] = str(d.name or "").strip()
+
+        in_target_map: dict[int, list[int]] = {}
+        if target_deck_ids and word_ids:
+            rows = (
+                session.query(DeckWord.deck_id, DeckWord.word_id)
+                .filter(DeckWord.deck_id.in_(target_deck_ids), DeckWord.word_id.in_(word_ids))
+                .all()
+            )
+            for did, wid in rows:
+                in_target_map.setdefault(int(wid), []).append(int(did))
+
+        freq_rank: dict[int, int] = {}
+        if parent.frequency_deck_id and word_ids:
+            rows = (
+                session.query(DeckWord.word_id, DeckWord.position)
+                .filter(DeckWord.deck_id == int(parent.frequency_deck_id), DeckWord.word_id.in_(word_ids))
+                .all()
+            )
+            for wid, pos in rows:
+                try:
+                    freq_rank[int(wid)] = int(pos or 0)
+                except Exception:
+                    continue
+
+        in_plan_set: set[int] = set()
+        if word_ids:
+            rows = (
+                session.query(PlanWord.word_id)
+                .filter(PlanWord.plan_id == plan.id, PlanWord.word_id.in_(word_ids))
+                .all()
+            )
+            in_plan_set = {int(wid) for (wid,) in rows}
+
+        threshold = 2500 if stage == "primary" else 5000
+
+        scored: list[tuple[int, int]] = []
+        for w in found:
+            wid = int(w.id)
+            score = 0
+            if wid in textbook_set:
+                score -= 100
+            if wid in in_target_map:
+                score += 100
+            r = freq_rank.get(wid)
+            if r and r > 0 and r <= threshold:
+                score += 50 + int((threshold - r) / max(1, threshold) * 20)
+            if wid in in_plan_set:
+                score -= 20
+            scored.append((wid, score))
+
+        scored.sort(key=lambda t: (t[1], t[0]), reverse=True)
+        recommended_set = {wid for (wid, _s) in scored[: max(1, daily_words)]}
+
+        items: list[dict[str, Any]] = []
+        for w in found:
+            wid = int(w.id)
+            target_names = [deck_name_by_id.get(did, f"deck#{did}") for did in in_target_map.get(wid, [])]
+            items.append(
+                {
+                    "word_id": wid,
+                    "term": str(w.term or ""),
+                    "definition_short": _short_definition(w.definition) or "（无释义）",
+                    "textbook": wid in textbook_set,
+                    "in_targets": target_names,
+                    "freq_rank": freq_rank.get(wid) or 0,
+                    "recommended": wid in recommended_set,
+                }
+            )
+
+        # Reduce parent cognitive load: show recommended items first.
+        items.sort(
+            key=lambda it: (
+                0 if it.get("recommended") else 1,
+                0 if (it.get("in_targets") or []) else 1,
+                int(it.get("freq_rank") or 999999),
+                1 if it.get("textbook") else 0,
+                str(it.get("term") or ""),
+            )
+        )
+
+        worksheets = session.query(Worksheet).order_by(Worksheet.id.desc()).limit(30).all()
+
+    extract = {
+        "found_count": len(items),
+        "missing_count": int(missing_count),
+        "items": items,
+        "error": "",
+    }
+
+    return templates.TemplateResponse(
+        request,
+        "worksheets.html",
+        {
+            "toast": "",
+            "worksheets": worksheets,
+            "stage": stage,
+            "stage_label": _stage_label(stage),
+            "daily_words": daily_words,
+            "source_text": source_text,
+            "extract": extract,
+        },
+    )
+
+
+@app.post("/worksheets/generate_today")
+def worksheets_generate_today(request: Request):
+    with get_session() as session:
+        parent = _ensure_parent_settings(session)
+        stage = (parent.stage or "junior").strip().lower()
+        if stage not in {"primary", "junior"}:
+            stage = "junior"
+        desired = max(1, min(60, int(parent.daily_words or 10)))
+
+        now = _utcnow()
+        due_rows = (
+            session.query(SrsCard.word_id)
+            .filter(SrsCard.due_at <= now)
+            .order_by(SrsCard.due_at.asc(), SrsCard.word_id.asc())
+            .limit(desired)
+            .all()
+        )
+        due_ids = [int(wid) for (wid,) in due_rows]
+
+        if len(due_ids) < desired:
+            need = desired - len(due_ids)
+
+            target_deck_ids: list[int] = []
+            try:
+                obj = json.loads(parent.target_deck_ids_json or "[]")
+                if isinstance(obj, list):
+                    for x in obj:
+                        if isinstance(x, int) and x > 0:
+                            target_deck_ids.append(int(x))
+            except Exception:
+                target_deck_ids = []
+
+            if not target_deck_ids:
+                plan = _ensure_default_plan(session)
+                target_deck_ids = [
+                    int(did)
+                    for (did,) in session.query(PlanDeck.deck_id)
+                    .filter(PlanDeck.plan_id == plan.id)
+                    .order_by(PlanDeck.priority.asc(), PlanDeck.id.asc())
+                    .all()
+                ]
+
+            # Last fallback: any decks.
+            if not target_deck_ids:
+                target_deck_ids = [int(d.id) for d in session.query(Deck).order_by(Deck.id.asc()).limit(10).all()]
+
+            for did in target_deck_ids:
+                if need <= 0:
+                    break
+                try:
+                    _name, added, _remaining = _add_next_words_to_plan(session, deck_id=int(did), count=need)
+                except Exception:
+                    continue
+                need -= int(added)
+
+            due_rows = (
+                session.query(SrsCard.word_id)
+                .filter(SrsCard.due_at <= now)
+                .order_by(SrsCard.due_at.asc(), SrsCard.word_id.asc())
+                .limit(desired)
+                .all()
+            )
+            due_ids = [int(wid) for (wid,) in due_rows]
+
+        if not due_ids:
+            return _redirect("/worksheets?" + urlencode({"toast": "没有到期单词可生成作业。先导入词书并加入学习计划。"}))
+
+        fetched = session.query(Word).filter(Word.id.in_(due_ids)).all()
+        by_id = {int(w.id): w for w in fetched}
+        words: list[dict[str, Any]] = []
+        for wid in due_ids:
+            w = by_id.get(int(wid))
+            if not w:
+                continue
+            words.append(
+                {
+                    "word_id": int(w.id),
+                    "term": str(w.term or ""),
+                    "definition_short": _short_definition(w.definition) or "（无释义）",
+                    "example": str(w.example or "").strip(),
+                }
+            )
+
+        mcq, mcq_answers = _build_mcq(words)
+        cloze, cloze_answers = _build_cloze(words, stage=stage)
+        sheet = {
+            "version": 1,
+            "stage": stage,
+            "words": words,
+            "mcq": mcq,
+            "cloze": cloze,
+            "answers": {"mcq": mcq_answers, "cloze": cloze_answers},
+        }
+
+        row = Worksheet(
+            title=f"作业（今日）{now.strftime('%Y-%m-%d')}",
+            mode="today",
+            stage=stage,
+            word_ids_json=json.dumps([int(w["word_id"]) for w in words], ensure_ascii=False),
+            sheet_json=json.dumps(sheet, ensure_ascii=False),
+            meta_json=json.dumps({}, ensure_ascii=False),
+        )
+        session.add(row)
+        session.flush()
+        ws_id = int(row.id)
+
+    return _redirect(f"/worksheets/{ws_id}")
+
+
+def _build_mcq(words: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    defs = [str(w.get("definition_short") or "").strip() for w in words]
+    fillers = ["（以上都不对）", "（无法判断）", "（先跳过）", "（都不是）", "（不确定）"]
+
+    questions: list[dict[str, Any]] = []
+    answers: list[str] = []
+    n = len(words)
+    for i, w in enumerate(words):
+        correct = defs[i] or "（无释义）"
+        distractors: list[str] = []
+        j = 1
+        while len(distractors) < 3 and j <= max(5, n):
+            cand = defs[(i + j) % n] if n else ""
+            if cand and cand != correct and cand not in distractors:
+                distractors.append(cand)
+            j += 1
+        for f in fillers:
+            if len(distractors) >= 3:
+                break
+            if f != correct and f not in distractors:
+                distractors.append(f)
+
+        choices = [correct] + distractors[:3]
+        # Deterministic shuffle: rotate by i (keeps stable but avoids always-A)
+        rot = i % 4
+        choices = choices[rot:] + choices[:rot]
+        answer_index = choices.index(correct)
+        answers.append(["A", "B", "C", "D"][answer_index])
+        questions.append(
+            {
+                "word_id": int(w["word_id"]),
+                "stem": str(w.get("term") or ""),
+                "choices": choices,
+                "answer_index": answer_index,
+            }
+        )
+
+    return questions, answers
+
+
+def _build_cloze(words: list[dict[str, Any]], *, stage: str) -> tuple[list[dict[str, Any]], list[str]]:
+    need_ai_terms: list[str] = []
+    term_notes: dict[str, str] = {}
+    for w in words:
+        term = str(w.get("term") or "").strip()
+        ex = str(w.get("example") or "").strip()
+        if term and (not ex or term.lower() not in ex.lower()):
+            need_ai_terms.append(term)
+            term_notes[term] = str(w.get("definition_short") or "").strip()
+
+    ai_sentences: dict[str, str] = {}
+    if need_ai_terms:
+        ai_sentences = _ai_generate_sentences_for_terms(stage=stage, terms=need_ai_terms[:20], term_notes=term_notes)
+
+    items: list[dict[str, Any]] = []
+    answers: list[str] = []
+    for w in words:
+        term = str(w.get("term") or "").strip()
+        ex = str(w.get("example") or "").strip()
+        sent = ex
+        # Prefer AI sentence when example is missing or doesn't contain term.
+        if term and term in ai_sentences:
+            sent = ai_sentences[term]
+        if not sent:
+            sent = f"This is [[{term}]]." if term else "This is ____."
+        # Normalize marker to blank
+        blank = sent
+        if term:
+            blank = re.sub(rf"\[\[{re.escape(term)}\]\]", "____", blank, flags=re.IGNORECASE)
+            blank = re.sub(rf"\b{re.escape(term)}\b", "____", blank, flags=re.IGNORECASE)
+        items.append({"word_id": int(w["word_id"]), "sentence_blank": blank})
+        answers.append(term or "")
+
+    return items, answers
+
+
+@app.post("/worksheets/generate")
+def worksheets_generate(
+    request: Request,
+    mode: str = Form("extract"),
+    stage: str = Form("junior"),
+    word_ids: list[int] = Form([]),
+):
+    stage = (stage or "junior").strip().lower()
+    if stage not in {"primary", "junior"}:
+        stage = "junior"
+
+    cleaned: list[int] = []
+    for raw in word_ids or []:
+        try:
+            wid = int(raw)
+        except Exception:
+            continue
+        if wid > 0 and wid not in cleaned:
+            cleaned.append(wid)
+    if not cleaned:
+        return _redirect("/worksheets?" + urlencode({"toast": "请至少勾选 1 个单词"}))
+
+    now = _utcnow()
+    with get_session() as session:
+        plan = _ensure_default_plan(session)
+        fetched = session.query(Word).filter(Word.id.in_(cleaned)).all()
+        by_id = {int(w.id): w for w in fetched}
+        words: list[dict[str, Any]] = []
+        for wid in cleaned:
+            w = by_id.get(wid)
+            if not w:
+                continue
+            words.append(
+                {
+                    "word_id": int(w.id),
+                    "term": str(w.term or ""),
+                    "definition_short": _short_definition(w.definition) or "（无释义）",
+                    "example": str(w.example or "").strip(),
+                }
+            )
+
+        if not words:
+            return _redirect("/worksheets?" + urlencode({"toast": "勾选的单词已不存在（可能被删除）。"}))
+
+        mcq, mcq_answers = _build_mcq(words)
+        cloze, cloze_answers = _build_cloze(words, stage=stage)
+        word_bank = [str(w.get("term") or "") for w in words]
+
+        sheet = {
+            "version": 1,
+            "stage": stage,
+            "words": words,
+            "mcq": mcq,
+            "cloze": cloze,
+            "answers": {"mcq": mcq_answers, "cloze": cloze_answers},
+        }
+
+        # Ensure plan + cards exist so grading can feed FSRS.
+        for w in words:
+            wid = int(w["word_id"])
+            _ensure_plan_word(session, plan, wid, None)
+            if session.get(SrsCard, wid) is None:
+                session.add(SrsCard(word_id=wid, due_at=now))
+
+        title = f"作业（{_stage_label(stage)}）{now.strftime('%Y-%m-%d')}"
+        row = Worksheet(
+            title=title,
+            mode=(mode or "extract").strip().lower(),
+            stage=stage,
+            word_ids_json=json.dumps([int(w["word_id"]) for w in words], ensure_ascii=False),
+            sheet_json=json.dumps(sheet, ensure_ascii=False),
+            meta_json=json.dumps({}, ensure_ascii=False),
+        )
+        session.add(row)
+        session.flush()
+        wid = int(row.id)
+
+    return _redirect(f"/worksheets/{wid}")
+
+
+@app.get("/worksheets/{worksheet_id}", response_class=HTMLResponse)
+def worksheet_detail(request: Request, worksheet_id: int, toast: str | None = None):
+    with get_session() as session:
+        row = session.get(Worksheet, int(worksheet_id))
+        if not row:
+            raise HTTPException(status_code=404, detail="not found")
+        sheet = _safe_json_dict(row.sheet_json)
+        meta = _safe_json_dict(row.meta_json)
+
+    words = list(sheet.get("words") or [])
+    mcq = list(sheet.get("mcq") or [])
+    cloze = list(sheet.get("cloze") or [])
+    answers = sheet.get("answers") or {}
+    mcq_answers = list(answers.get("mcq") or [])
+    cloze_answers = list(answers.get("cloze") or [])
+    word_bank = [str(w.get("term") or "") for w in words]
+
+    return templates.TemplateResponse(
+        request,
+        "worksheet.html",
+        {
+            "worksheet_id": int(row.id),
+            "title": (row.title or f"作业 #{row.id}").strip(),
+            "created_at": row.created_at,
+            "stage": str(row.stage or "junior"),
+            "stage_label": _stage_label(str(row.stage or "junior")),
+            "words": words,
+            "mcq": mcq,
+            "cloze": cloze,
+            "word_bank": word_bank,
+            "mcq_answers": mcq_answers,
+            "cloze_answers": cloze_answers,
+            "already_graded": bool(meta.get("graded_at")),
+            "toast": (toast or "").strip(),
+        },
+    )
+
+
+@app.post("/worksheets/{worksheet_id}/grade")
+def worksheet_grade(request: Request, worksheet_id: int, wrong_word_ids: list[int] = Form([])):
+    cleaned_wrong: set[int] = set()
+    for raw in wrong_word_ids or []:
+        try:
+            cleaned_wrong.add(int(raw))
+        except Exception:
+            continue
+
+    with get_session() as session:
+        row = session.get(Worksheet, int(worksheet_id))
+        if not row:
+            raise HTTPException(status_code=404, detail="not found")
+
+        meta = _safe_json_dict(row.meta_json)
+        if meta.get("graded_at"):
+            return _redirect(f"/worksheets/{worksheet_id}?" + urlencode({"toast": "此作业已提交过"}))
+
+        sheet = _safe_json_dict(row.sheet_json)
+        words = list(sheet.get("words") or [])
+        word_ids = [int(w.get("word_id") or 0) for w in words if int(w.get("word_id") or 0) > 0]
+
+        scheduler = get_scheduler()
+        now = _utcnow()
+
+        for wid in word_ids:
+            word = session.get(Word, wid)
+            if not word:
+                continue
+
+            card_row = _ensure_srs_card(session, wid)
+            fsrs_card = db_card_to_fsrs(card_row)
+            r = Rating.Again if wid in cleaned_wrong else Rating.Good
+            updated_card, _log = scheduler.review_card(fsrs_card, r)
+            apply_fsrs_to_db(card_row, updated_card)
+
+            word.last_reviewed_at = now
+            if r == Rating.Again:
+                word.wrong_count += 1
+                session.add(Mistake(word_id=wid))
+            else:
+                word.correct_count += 1
+
+            session.add(SrsReviewLog(word_id=wid, rating=int(r.value), reviewed_at=now, duration_ms=None))
+
+        meta["graded_at"] = now.isoformat()
+        meta["wrong_word_ids"] = sorted(list(cleaned_wrong))
+        row.meta_json = json.dumps(meta, ensure_ascii=False)
+
+    return _redirect(f"/worksheets/{worksheet_id}?" + urlencode({"toast": "已记录错题并安排复习"}))
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, toast: str | None = None):
     s = get_settings()
     ai_status = "Mock（离线演示）" if s.ai_mock else ("已配置" if s.ai_api_key else "未配置")
     with get_session() as session:
         plan = _ensure_default_plan(session)
+        parent = _ensure_parent_settings(session)
+        decks = session.query(Deck).order_by(Deck.name.asc()).all()
         word_count = int(session.query(Word).count())
         deck_count = int(session.query(Deck).count())
+
+    target_ids = json.loads(parent.target_deck_ids_json or "[]")
+    if not isinstance(target_ids, list):
+        target_ids = []
+    target_id_set = {int(x) for x in target_ids if isinstance(x, int) or (isinstance(x, str) and str(x).isdigit())}
+
+    target_candidates: list[Deck] = []
+    freq_candidates: list[Deck] = []
+    for d in decks:
+        name = (d.name or "").strip()
+        if any(k in name for k in ["中考", "小升初", "KET", "PET", "高频", "词频"]):
+            target_candidates.append(d)
+        if any(k in name for k in ["高频", "10k", "30k", "词频"]):
+            freq_candidates.append(d)
     return templates.TemplateResponse(
         request,
         "settings.html",
         {
             "ai_status": ai_status,
             "ai_base_url": s.ai_base_url,
-            "ai_model": s.ai_model,
+            "ai_model": s.ai_writer_model or s.ai_model,
+            "ai_checker_model": s.ai_checker_model or "",
             "db_path": str(s.db_path),
             "word_count": word_count,
             "deck_count": deck_count,
             "plan_daily_new_limit": int(plan.daily_new_limit),
             "plan_daily_review_limit": int(plan.daily_review_limit),
             "plan_suspend_new_when_due_over": int(plan.suspend_new_when_due_over),
+            "parent_stage": (parent.stage or "junior"),
+            "parent_daily_words": int(parent.daily_words or 10),
+            "parent_textbook_deck_id": int(parent.textbook_deck_id) if parent.textbook_deck_id else 0,
+            "parent_target_deck_ids": sorted(target_id_set),
+            "parent_frequency_deck_id": int(parent.frequency_deck_id) if parent.frequency_deck_id else 0,
+            "decks": decks,
+            "parent_target_deck_candidates": target_candidates,
+            "parent_frequency_deck_candidates": freq_candidates,
             "toast": (toast or "").strip(),
         },
     )
@@ -866,6 +1662,47 @@ def update_plan_settings(
     if (return_to or "").strip().lower() in {"home", "today", "/"}:
         return _redirect("/?" + urlencode(msg))
     return _redirect("/settings?" + urlencode(msg))
+
+
+@app.post("/settings/parent")
+def update_parent_settings(
+    stage: str = Form("junior"),
+    daily_words: int = Form(10),
+    textbook_deck_id: int = Form(0),
+    frequency_deck_id: int = Form(0),
+    target_deck_ids: list[int] = Form([]),
+):
+    stage = (stage or "").strip().lower()
+    if stage not in {"primary", "junior"}:
+        stage = "junior"
+
+    try:
+        daily_n = int(daily_words)
+    except Exception:
+        daily_n = 10
+    daily_n = max(1, min(60, daily_n))
+
+    tb_id = int(textbook_deck_id or 0) or None
+    freq_id = int(frequency_deck_id or 0) or None
+
+    cleaned_target_ids: list[int] = []
+    for raw in target_deck_ids or []:
+        try:
+            did = int(raw)
+        except Exception:
+            continue
+        if did > 0 and did not in cleaned_target_ids:
+            cleaned_target_ids.append(did)
+
+    with get_session() as session:
+        row = _ensure_parent_settings(session)
+        row.stage = stage
+        row.daily_words = daily_n
+        row.textbook_deck_id = tb_id
+        row.frequency_deck_id = freq_id
+        row.target_deck_ids_json = json.dumps(cleaned_target_ids, ensure_ascii=False)
+
+    return _redirect("/settings?" + urlencode({"toast": "已保存家长模式设置"}))
 
 
 def _norm_days_param(days: Any) -> int:

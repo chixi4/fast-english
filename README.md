@@ -9,6 +9,7 @@
 - 学习计划：导入词书只入库；按词书分批“加入学习计划”后才会出现在“今日学习”
 - 复习：FSRS 间隔重复（Again/Hard/Good/Easy 评分 → 自动排程），Again 会进入错词篮
 - 错词篮：选择错词 + 难度，一键生成“短文 + 题目”，并支持判分
+- 作业（家长模式）：粘贴文本提取生词 → 一键生成可打印作业（3题型）→ 勾选错题回流到复习
 - 支持 OpenAI-Compatible（`/chat/completions`）以及 `AI_MOCK=1` 的离线演示
 
 ## 本地运行（Windows）
@@ -57,3 +58,4 @@
 
 ## 文档
 - `docs/IMPLEMENTATION.md`：完整实现文档（PRD/架构/数据模型/Prompt/迭代路线）
+- `docs/PARENT_MODE_MVP.md`：家长模式（纸质作业）使用说明

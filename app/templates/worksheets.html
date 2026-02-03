@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>作业</h1>
+
+  {% if toast %}
+    <div class="card">{{ toast }}</div>
+  {% endif %}
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-k">推荐流程</div>
+      <div class="card-v">粘贴文本 → 提取生词 → 一键生成作业 → 打印 → 勾错题</div>
+      <div class="muted">孩子不接触屏幕，家长用网页操作即可。</div>
+      <div class="actions" style="margin-top: 10px;">
+        <a class="btn" href="/settings">家长模式设置</a>
+        <a class="btn" href="/library">导入词书</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-k">从文本提取（推荐）</div>
+      <form class="stack" method="post" action="/worksheets/extract" style="margin-top: 10px;">
+        <label>粘贴英文文本
+          <textarea name="source_text" rows="7" placeholder="粘贴绘本/阅读材料/台词...">{{ source_text or '' }}</textarea>
+        </label>
+        <button class="btn primary" type="submit">提取生词</button>
+      </form>
+      <div class="muted" style="margin-top: 10px;">
+        阶段：{{ stage_label }} · 每日推荐词量：{{ daily_words }}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-k">今日作业（按复习安排）</div>
+      <div class="muted">不粘贴文本：系统按到期复习 + 自动补充新词生成一张作业。</div>
+      <form method="post" action="/worksheets/generate_today" style="margin-top: 10px;">
+        <button class="btn" type="submit">一键生成今日作业</button>
+      </form>
+    </div>
+  </div>
+
+  {% if extract %}
+    <div class="fullbleed divider-bar"></div>
+    <h2 class="today-section-title">提取结果</h2>
+
+    <div class="card">
+      <div class="muted">
+        找到词条：<span class="mono">{{ extract.found_count }}</span>，
+        未收录：<span class="mono">{{ extract.missing_count }}</span>
+      </div>
+
+      {% if extract.error %}
+        <div class="muted" style="margin-top: 10px;">{{ extract.error }}</div>
+      {% endif %}
+
+      {% if extract["items"] and extract["items"]|length > 0 %}
+        <form class="stack" method="post" action="/worksheets/generate" style="margin-top: 12px;">
+          <input type="hidden" name="stage" value="{{ stage }}" />
+          <input type="hidden" name="mode" value="extract" />
+
+          <div class="check-grid" style="margin-top: 8px;">
+            {% for it in extract["items"] %}
+              <label class="check">
+                <input type="checkbox" name="word_ids" value="{{ it.word_id }}" {% if it.recommended %}checked{% endif %} />
+                <span>
+                  <span class="mono">{{ it.term }}</span>
+                  {% if it.textbook %}<span class="pill">课本内</span>{% endif %}
+                  {% if it.in_targets and it.in_targets|length > 0 %}
+                    <span class="pill ok">目标</span>
+                  {% endif %}
+                  {% if it.freq_rank %}
+                    <span class="pill">高频#{{ it.freq_rank }}</span>
+                  {% endif %}
+                  <div class="muted" style="margin-top: 4px;">
+                    {{ it.definition_short }}
+                    {% if it.in_targets and it.in_targets|length > 0 %}
+                      · {{ it.in_targets|join(' / ') }}
+                    {% endif %}
+                  </div>
+                </span>
+              </label>
+            {% endfor %}
+          </div>
+
+          <div class="actions" style="margin-top: 12px;">
+            <button class="btn primary" type="submit">生成可打印作业（3题型）</button>
+            <a class="btn" href="/worksheets">清空本次结果</a>
+          </div>
+          <div class="muted" style="margin-top: 10px;">默认已按“更值得学/常考/高频”预勾选，可手动增减。</div>
+        </form>
+      {% else %}
+        <div class="muted" style="margin-top: 10px;">没有可用的词条（建议先导入词书，如“中考词汇/高频 10k”）。</div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <div class="fullbleed divider-bar"></div>
+  <h2 class="today-section-title">历史作业</h2>
+  {% if worksheets and worksheets|length > 0 %}
+    <div class="cards">
+      {% for w in worksheets %}
+        <a class="card link-card" href="/worksheets/{{ w.id }}">
+          <div class="card-k">{{ w.title or ("作业 #" ~ w.id) }}</div>
+          {% set mode_label = "文本" if w.mode == "extract" else ("今日" if w.mode == "today" else w.mode) %}
+          {% set stage_label2 = "小学" if w.stage == "primary" else "初中" %}
+          <div class="muted">{{ w.created_at.strftime("%Y-%m-%d %H:%M") if w.created_at else "" }} · {{ mode_label }} · {{ stage_label2 }}</div>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card">
+      <div class="muted">还没有作业记录。</div>
+    </div>
+  {% endif %}
+
+  <div class="fullbleed divider-tail"></div>
+{% endblock %}
