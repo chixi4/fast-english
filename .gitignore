@@ -13,3 +13,8 @@ nul
 
 # Local UI verification artifacts (screenshots, PDFs, renders)
 tools/ui_checks/
+
+# Deployment local secrets/state
+deploy/cli-proxy-api/config.yaml
+deploy/cli-proxy-api/auths/
+deploy/cli-proxy-api/logs/
