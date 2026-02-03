@@ -27,6 +27,7 @@
         <nav class="nav">
           <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">今日</a>
           <a href="/decks" class="{% if request.url.path.startswith('/decks') %}active{% endif %}">词书</a>
+          <a href="/worksheets" class="{% if request.url.path.startswith('/worksheets') %}active{% endif %}">作业</a>
           <a href="/practice" class="{% if request.url.path == '/practice' %}active{% endif %}">应语</a>
           <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">我的</a>
         </nav>

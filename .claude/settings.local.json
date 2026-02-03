@@ -12,7 +12,8 @@
       "Bash(python:*)",
       "Bash(cmd /c \"chcp 65001 >nul && python -c \"\"import sqlite3; conn = sqlite3.connect\\(''data/auth.db''\\); c = conn.cursor\\(\\); c.execute\\(''SELECT id, username, created_at FROM auth_users ORDER BY id''\\); users = c.fetchall\\(\\); print\\(''用户总数:'', len\\(users\\)\\); [print\\(f''  ID={u[0]}, 用户名={u[1]}, 注册时间={u[2]}''\\) for u in users]; c.execute\\(''SELECT COUNT\\(*\\) FROM auth_events''\\); print\\(''事件总数:'', c.fetchone\\(\\)[0]\\); c.execute\\(''SELECT username_norm, COUNT\\(*\\) FROM auth_events GROUP BY username_norm ORDER BY COUNT\\(*\\) DESC''\\); [print\\(f''  {r[0]}: {r[1]} 条''\\) for r in c.fetchall\\(\\)]; c.execute\\(''SELECT kind, COUNT\\(*\\) FROM auth_events GROUP BY kind ORDER BY COUNT\\(*\\) DESC''\\); print\\(''按类型:''\\); [print\\(f''  {r[0]}: {r[1]}''\\) for r in c.fetchall\\(\\)]\"\"\")",
       "Bash(netstat:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(tree:*)"
     ]
   }
 }

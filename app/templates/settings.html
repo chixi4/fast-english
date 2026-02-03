@@ -21,6 +21,9 @@
       <div class="card-k">AI 状态</div>
       <div class="card-v">{{ ai_status }}</div>
       <div class="muted">{{ ai_model }}</div>
+      {% if ai_checker_model %}
+        <div class="muted">checker：{{ ai_checker_model }}</div>
+      {% endif %}
     </div>
 
     <div class="card">
@@ -34,6 +37,64 @@
           <input type="number" name="daily_review_limit" min="0" max="5000" value="{{ plan_daily_review_limit }}" />
         </label>
         <button class="btn primary" type="submit">保存</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-k">家长模式</div>
+      <div class="card-v">纸质作业（孩子不接触屏幕）</div>
+      <form class="stack" method="post" action="/settings/parent" style="margin-top: 10px;">
+        <div class="muted">默认尽量少选项：粘贴文本 → 提取生词 → 生成作业 → 打印 → 勾错题</div>
+        <label>孩子阶段
+          <div class="radio-row" style="margin-top: 6px;">
+            <label class="radio"><input type="radio" name="stage" value="primary" {% if parent_stage == 'primary' %}checked{% endif %}/>小学</label>
+            <label class="radio"><input type="radio" name="stage" value="junior" {% if parent_stage != 'primary' %}checked{% endif %}/>初中</label>
+          </div>
+        </label>
+        <label>从文本提取时：每日推荐词量
+          <input type="number" name="daily_words" min="1" max="60" value="{{ parent_daily_words }}" />
+        </label>
+
+        <details class="deck-picker" style="margin-top: 8px;">
+          <summary class="deck-picker-summary">课本/目标词库（可选，建议一次设置好）</summary>
+          <div class="card" style="margin-top: 10px;">
+            <label>课本词表（可选，用于标注“课本内/外”）
+              <select name="textbook_deck_id">
+                <option value="0" {% if not parent_textbook_deck_id %}selected{% endif %}>不设置</option>
+                {% for d in decks %}
+                  <option value="{{ d.id }}" {% if parent_textbook_deck_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+                {% endfor %}
+              </select>
+            </label>
+
+            <label style="margin-top: 10px;">词频词表（可选，用于“高频优先”）
+              <select name="frequency_deck_id">
+                <option value="0" {% if not parent_frequency_deck_id %}selected{% endif %}>不设置</option>
+                {% for d in parent_frequency_deck_candidates %}
+                  <option value="{{ d.id }}" {% if parent_frequency_deck_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+                {% endfor %}
+              </select>
+            </label>
+
+            <div style="margin-top: 12px;">
+              <div class="muted">目标词库（可选）：用于判断“更值得学/常考”</div>
+              {% if parent_target_deck_candidates and parent_target_deck_candidates|length > 0 %}
+                <div class="check-grid" style="margin-top: 8px;">
+                  {% for d in parent_target_deck_candidates %}
+                    <label class="check">
+                      <input type="checkbox" name="target_deck_ids" value="{{ d.id }}" {% if d.id in parent_target_deck_ids %}checked{% endif %} />
+                      <span>{{ d.name }}</span>
+                    </label>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <div class="muted" style="margin-top: 8px;">暂无可选目标词库：先去“词书”或“词书库”导入（如 中考词汇 / 高频 10k）。</div>
+              {% endif %}
+            </div>
+          </div>
+        </details>
+
+        <button class="btn primary" type="submit">保存家长模式设置</button>
       </form>
     </div>
 

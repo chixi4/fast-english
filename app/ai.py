@@ -182,7 +182,7 @@ class AiClient:
         ]
 
         payload: dict[str, Any] = {
-            "model": self.settings.ai_model,
+            "model": self.settings.ai_writer_model or self.settings.ai_model,
             "messages": messages,
             "temperature": 0.6,
         }

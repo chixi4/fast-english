@@ -19,6 +19,8 @@ class Settings:
     ai_api_key: str | None
     ai_base_url: str
     ai_model: str
+    ai_writer_model: str
+    ai_checker_model: str | None
     ai_mock: bool
     basic_auth_user: str | None
     basic_auth_pass: str | None
@@ -48,6 +50,8 @@ def get_settings() -> Settings:
     ai_api_key = os.getenv("AI_API_KEY") or None
     ai_base_url = os.getenv("AI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     ai_model = os.getenv("AI_MODEL", "gpt-4o-mini")
+    ai_writer_model = os.getenv("AI_WRITER_MODEL") or ai_model
+    ai_checker_model = os.getenv("AI_CHECKER_MODEL") or None
     ai_mock = _env_bool("AI_MOCK", False)
     basic_auth_user = os.getenv("APP_BASIC_AUTH_USER") or None
     basic_auth_pass = os.getenv("APP_BASIC_AUTH_PASS") or None
@@ -65,6 +69,8 @@ def get_settings() -> Settings:
         ai_api_key=ai_api_key,
         ai_base_url=ai_base_url,
         ai_model=ai_model,
+        ai_writer_model=ai_writer_model,
+        ai_checker_model=ai_checker_model,
         ai_mock=ai_mock,
         basic_auth_user=basic_auth_user,
         basic_auth_pass=basic_auth_pass,
