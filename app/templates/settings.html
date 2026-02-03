@@ -30,7 +30,7 @@
       <div class="card-k">使用模式</div>
       {% set is_parent_mode = request.state.ui_mode == 'parent' %}
       <div class="card-v">{% if is_parent_mode %}纸质作业（家长）{% else %}屏幕自学（本人）{% endif %}</div>
-      <div class="muted">切到纸质作业模式后，会隐藏“开始学习/应语”等屏幕入口。</div>
+      <div class="muted">纸质作业模式更适合家长打印给孩子做（只保留“作业/词书/设置”入口）。</div>
       <form class="stack" method="post" action="/settings/mode" style="margin-top: 10px;">
         <div class="radio-row">
           <label class="radio"><input type="radio" name="mode" value="parent" {% if is_parent_mode %}checked{% endif %}/>纸质作业（家长）</label>
@@ -57,9 +57,9 @@
 
     <div class="card">
       <div class="card-k">家长模式</div>
-      <div class="card-v">纸质作业（孩子不接触屏幕）</div>
+      <div class="card-v">打印作业给孩子做</div>
       <form class="stack" method="post" action="/settings/parent" style="margin-top: 10px;">
-        <div class="muted">默认尽量少选项：粘贴文本 → 提取生词 → 生成作业 → 打印 → 勾错题</div>
+        <div class="muted">流程：粘贴 → 识别生词 → 生成作业 → 打印 → 勾错题</div>
         <label>孩子阶段
           <div class="radio-row" style="margin-top: 6px;">
             <label class="radio"><input type="radio" name="stage" value="primary" {% if parent_stage == 'primary' %}checked{% endif %}/>小学</label>
@@ -82,7 +82,7 @@
               </select>
             </label>
 
-            <label style="margin-top: 10px;">词频词表（可选，用于“高频优先”）
+            <label style="margin-top: 10px;">词频词表（可选，用于标注“高频”）
               <select name="frequency_deck_id">
                 <option value="0" {% if not parent_frequency_deck_id %}selected{% endif %}>不设置</option>
                 {% for d in parent_frequency_deck_candidates %}
@@ -92,7 +92,7 @@
             </label>
 
             <div style="margin-top: 12px;">
-              <div class="muted">目标词库（可选）：用于判断“更值得学/常考”</div>
+              <div class="muted">目标词库（可选）：用于标注“目标内 / 常考”</div>
               {% if parent_target_deck_candidates and parent_target_deck_candidates|length > 0 %}
                 <div class="check-grid" style="margin-top: 8px;">
                   {% for d in parent_target_deck_candidates %}

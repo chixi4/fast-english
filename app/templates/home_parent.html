@@ -20,7 +20,7 @@
       <div class="card">
         <div class="card-k">今日目标</div>
         <div class="card-v">{{ daily_words }} 词</div>
-        <div class="muted">阶段：{{ stage_label }} · 错题优先 · 到期复习优先</div>
+        <div class="muted">阶段：{{ stage_label }} · 先练错题 · 再复习到期</div>
       </div>
       <div class="card">
         <div class="card-k">今天该练</div>
@@ -42,10 +42,10 @@
         <div class="card-v">{{ pending_ws.title or ("作业 #" ~ pending_ws.id) }}</div>
         <div class="muted">
           {% if pending_ws.created_at %}{{ pending_ws.created_at.strftime("%Y-%m-%d %H:%M") }}{% endif %}
-          · 点击进入后在底部勾选错题
+          · 进入后勾选错题并提交
         </div>
         <div class="actions" style="margin-top: 10px;">
-          <a class="btn primary" href="/worksheets/{{ pending_ws.id }}">去批改</a>
+          <a class="btn primary" href="/worksheets/{{ pending_ws.id }}?view=grading">去批改</a>
           <a class="btn" href="/worksheets">查看历史</a>
         </div>
       </div>
@@ -63,4 +63,3 @@
 
   <div class="fullbleed divider-tail"></div>
 {% endblock %}
-

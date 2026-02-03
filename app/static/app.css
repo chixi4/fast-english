@@ -438,7 +438,11 @@ html.js select:not([data-native="1"]):not([data-vs-picker="1"]) {
   border: 1px solid var(--border);
   border-top: 1px solid var(--border);
   border-radius: 0 0 4px 4px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: 50vh;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   z-index: 200;
 }
 .deck-picker-item {
@@ -880,6 +884,40 @@ mark.kw {
 
   .review-rating-grid { gap: 8px; }
   .review-rating-grid .btn { min-height: 56px; }
+
+  /* 文本输入：避免键盘弹起后只剩 1-2 行可见 */
+  textarea.paste-area { min-height: 30vh; }
+
+  /* Worksheet：手机预览不应出现横向滚动 */
+  .worksheet-sheet { padding: 14px 12px; border-radius: 12px; }
+  .worksheet-meta { gap: 10px; }
+
+  /* Worksheet 表格在小屏转为卡片列表 */
+  .worksheet-table { display: block; width: 100%; }
+  .worksheet-table thead { display: none; }
+  .worksheet-table tbody { display: block; }
+  .worksheet-table tr {
+    display: block;
+    border: 1px solid rgba(0, 0, 0, 0.14);
+    border-radius: 12px;
+    padding: 10px 10px;
+    margin: 10px 0;
+  }
+  .worksheet-table th,
+  .worksheet-table td {
+    display: block;
+    width: 100%;
+    border: none;
+    padding: 4px 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .worksheet-table td:first-child { color: rgba(0, 0, 0, 0.60); font-weight: 700; }
+  .worksheet-table td:nth-child(2) { font-weight: 800; }
+
+  .worksheet-q-choices { grid-template-columns: 1fr; gap: 8px; }
+  .worksheet-ol { padding-left: 16px; }
+  .worksheet-answers { font-size: 15px; }
 }
 
 /* 小手机 */
@@ -1203,6 +1241,27 @@ label.check input { margin: 0; }
 }
 .worksheet-sheet h1,
 .worksheet-sheet h2 { color: #111111; }
+.worksheet-title { letter-spacing: 0.2px; }
+.worksheet-fields {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.80);
+}
+.worksheet-field { display: flex; align-items: baseline; gap: 6px; }
+.worksheet-line {
+  display: inline-block;
+  min-width: 110px;
+  height: 0.95em;
+  border-bottom: 1.5px solid rgba(0, 0, 0, 0.75);
+}
+.worksheet-line.short { min-width: 70px; }
+.worksheet-word-bank { overflow-wrap: anywhere; word-break: break-word; }
+.worksheet-word-bank .mono { overflow-wrap: anywhere; word-break: break-word; }
+.worksheet-questions { margin-top: 10px; }
+@media screen { .worksheet-sheet.grading-view .worksheet-questions { display: none; } }
 .worksheet-meta {
   margin-top: 10px;
   display: flex;
@@ -1237,8 +1296,18 @@ label.check input { margin: 0; }
   html, body { background: #ffffff !important; color: #000000 !important; }
   .topbar, .nav, .divider-bar, .divider-tail, .no-print, #loading { display: none !important; }
   main#content .container { max-width: none; padding: 0; }
-  .worksheet-sheet { border: none; border-radius: 0; padding: 0; margin: 0; }
+  .worksheet-sheet { border: none; border-radius: 0; padding: 10mm 10mm; margin: 0; }
+  .worksheet-fields { color: #000000; }
+  .worksheet-line { border-bottom: 1.5pt solid #000000; }
+  .worksheet-table { table-layout: fixed; }
+  .worksheet-table td { overflow-wrap: anywhere; word-break: break-word; }
   .worksheet-q { border-color: rgba(0, 0, 0, 0.25); }
-  .worksheet-break { break-before: page; page-break-before: always; margin: 0; }
+  .worksheet-break { break-before: auto; page-break-before: auto; margin: 10px 0; }
+  .worksheet-sheet.layout-standard .worksheet-break { break-before: page; page-break-before: always; margin: 0; }
+  .worksheet-q, .worksheet-table tr, .worksheet-ol li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .worksheet-blank { border-bottom: 1.5pt solid #000000; }
   a { color: #000000; text-decoration: none; }
 }
