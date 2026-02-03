@@ -27,6 +27,21 @@
     </div>
 
     <div class="card">
+      <div class="card-k">使用模式</div>
+      {% set is_parent_mode = request.state.ui_mode == 'parent' %}
+      <div class="card-v">{% if is_parent_mode %}纸质作业（家长）{% else %}屏幕自学（本人）{% endif %}</div>
+      <div class="muted">切到纸质作业模式后，会隐藏“开始学习/应语”等屏幕入口。</div>
+      <form class="stack" method="post" action="/settings/mode" style="margin-top: 10px;">
+        <div class="radio-row">
+          <label class="radio"><input type="radio" name="mode" value="parent" {% if is_parent_mode %}checked{% endif %}/>纸质作业（家长）</label>
+          <label class="radio"><input type="radio" name="mode" value="self" {% if not is_parent_mode %}checked{% endif %}/>屏幕自学（本人）</label>
+        </div>
+        <input type="hidden" name="return_to" value="/settings" />
+        <button class="btn primary" type="submit">保存模式</button>
+      </form>
+    </div>
+
+    <div class="card">
       <div class="card-k">学习计划</div>
       <div class="card-v">{{ plan_daily_new_limit }}/天</div>
       <form class="stack" method="post" action="/settings/plan" style="margin-top: 10px;">

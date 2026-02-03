@@ -75,6 +75,17 @@ app = FastAPI(title="Vocabulary Study MVP")
 app.add_middleware(GZipMiddleware, minimum_size=500)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
+_UI_MODE_COOKIE = "vs_mode"
+_UI_MODE_PARENT = "parent"
+_UI_MODE_SELF = "self"
+
+
+def _read_ui_mode(request: Request) -> str:
+    raw = (request.cookies.get(_UI_MODE_COOKIE) or "").strip().lower()
+    if raw in {_UI_MODE_PARENT, _UI_MODE_SELF}:
+        return raw
+    return _UI_MODE_SELF
+
 
 @app.middleware("http")
 async def _static_cache_headers(request: Request, call_next):
@@ -127,6 +138,7 @@ async def _auth_session_middleware(request: Request, call_next):
 
     request.state.user_username = username
     request.state.user_id = user_id
+    request.state.ui_mode = _read_ui_mode(request)
 
     if settings.require_login and (not username) and (not is_public):
         qs = urlencode({"next": str(request.url.path)})
@@ -292,6 +304,22 @@ def _set_session_cookie(resp: Response, request: Request, token: str) -> None:
         token,
         max_age=max_age,
         httponly=True,
+        secure=_cookie_is_secure(request),
+        samesite="lax",
+        path="/",
+    )
+
+
+def _set_ui_mode_cookie(resp: Response, request: Request, mode: str) -> None:
+    m = (mode or "").strip().lower()
+    if m not in {_UI_MODE_PARENT, _UI_MODE_SELF}:
+        m = _UI_MODE_SELF
+    # Not sensitive; allow templates/JS to read if needed.
+    resp.set_cookie(
+        _UI_MODE_COOKIE,
+        m,
+        max_age=180 * 86400,
+        httponly=False,
         secure=_cookie_is_secure(request),
         samesite="lax",
         path="/",
@@ -689,6 +717,43 @@ def unhandled_exception_handler(request: Request, exc: Exception):
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, deck_id: int | None = None, toast: str | None = None):
+    if getattr(request.state, "ui_mode", _UI_MODE_SELF) == _UI_MODE_PARENT:
+        now = _utcnow()
+        with get_session() as session:
+            parent = _ensure_parent_settings(session)
+            stage = (parent.stage or "junior").strip().lower()
+            daily_words = int(parent.daily_words or 10)
+
+            word_count = int(session.query(Word).count())
+            deck_count = int(session.query(Deck).count())
+
+            due_count = int(session.query(func.count(SrsCard.word_id)).filter(SrsCard.due_at <= now).scalar() or 0)
+            mistake_words = int(session.query(func.count(func.distinct(Mistake.word_id))).scalar() or 0)
+
+            pending_ws: Worksheet | None = None
+            for w in session.query(Worksheet).order_by(Worksheet.id.desc()).limit(30).all():
+                meta = _safe_json_dict(w.meta_json)
+                if not meta.get("graded_at"):
+                    pending_ws = w
+                    break
+
+        return templates.TemplateResponse(
+            request,
+            "home_parent.html",
+            {
+                "title": "今日作业",
+                "toast": (toast or "").strip(),
+                "stage": stage,
+                "stage_label": _stage_label(stage),
+                "daily_words": daily_words,
+                "word_count": word_count,
+                "deck_count": deck_count,
+                "due_count": due_count,
+                "mistake_words": mistake_words,
+                "pending_ws": pending_ws,
+            },
+        )
+
     if deck_id == 0:
         deck_id = None
     now = _utcnow()
@@ -1180,6 +1245,18 @@ def worksheets_generate_today(request: Request):
         desired = max(1, min(60, int(parent.daily_words or 10)))
 
         now = _utcnow()
+
+        # 1) Always prioritize recent mistakes (even if FSRS schedules them slightly in the future).
+        mistake_rows = (
+            session.query(Mistake.word_id, func.max(Mistake.created_at))
+            .group_by(Mistake.word_id)
+            .order_by(func.max(Mistake.created_at).desc(), Mistake.word_id.desc())
+            .limit(desired)
+            .all()
+        )
+        mistake_ids = [int(wid) for (wid, _ts) in mistake_rows]
+
+        # 2) Then fill with due cards.
         due_rows = (
             session.query(SrsCard.word_id)
             .filter(SrsCard.due_at <= now)
@@ -1189,8 +1266,18 @@ def worksheets_generate_today(request: Request):
         )
         due_ids = [int(wid) for (wid,) in due_rows]
 
-        if len(due_ids) < desired:
-            need = desired - len(due_ids)
+        picked: list[int] = []
+        seen: set[int] = set()
+        for wid in mistake_ids + due_ids:
+            if wid in seen:
+                continue
+            seen.add(wid)
+            picked.append(wid)
+            if len(picked) >= desired:
+                break
+
+        if len(picked) < desired:
+            need = desired - len(picked)
 
             target_deck_ids: list[int] = []
             try:
@@ -1225,25 +1312,39 @@ def worksheets_generate_today(request: Request):
                     continue
                 need -= int(added)
 
-            due_rows = (
+            # Refresh "now": _add_next_words_to_plan sets due_at to its own _utcnow(), which might be slightly later.
+            now = _utcnow()
+            more_rows = (
                 session.query(SrsCard.word_id)
                 .filter(SrsCard.due_at <= now)
                 .order_by(SrsCard.due_at.asc(), SrsCard.word_id.asc())
                 .limit(desired)
                 .all()
             )
-            due_ids = [int(wid) for (wid,) in due_rows]
+            for (wid,) in more_rows:
+                iw = int(wid)
+                if iw in seen:
+                    continue
+                seen.add(iw)
+                picked.append(iw)
+                if len(picked) >= desired:
+                    break
 
-        if not due_ids:
-            return _redirect("/worksheets?" + urlencode({"toast": "没有到期单词可生成作业。先导入词书并加入学习计划。"}))
+        if not picked:
+            msg = "今天没有可生成作业的单词。先去“词书库”导入词书，或在“作业”粘贴文本提取生词。"
+            return _redirect("/?" + urlencode({"toast": msg}))
 
-        fetched = session.query(Word).filter(Word.id.in_(due_ids)).all()
+        plan = _ensure_default_plan(session)
+        fetched = session.query(Word).filter(Word.id.in_(picked)).all()
         by_id = {int(w.id): w for w in fetched}
         words: list[dict[str, Any]] = []
-        for wid in due_ids:
+        for wid in picked:
             w = by_id.get(int(wid))
             if not w:
                 continue
+            _ensure_plan_word(session, plan, int(w.id), None)
+            if session.get(SrsCard, int(w.id)) is None:
+                session.add(SrsCard(word_id=int(w.id), due_at=now))
             words.append(
                 {
                     "word_id": int(w.id),
@@ -1252,6 +1353,10 @@ def worksheets_generate_today(request: Request):
                     "example": str(w.example or "").strip(),
                 }
             )
+
+        if not words:
+            msg = "今天没有可生成作业的单词（选中的词条不存在或已被删除）。"
+            return _redirect("/?" + urlencode({"toast": msg}))
 
         mcq, mcq_answers = _build_mcq(words)
         cloze, cloze_answers = _build_cloze(words, stage=stage)
@@ -1574,6 +1679,19 @@ def settings_page(request: Request, toast: str | None = None):
             "toast": (toast or "").strip(),
         },
     )
+
+
+@app.post("/settings/mode")
+def update_ui_mode(request: Request, mode: str = Form("self"), return_to: str = Form("/settings")):
+    mode = (mode or "").strip().lower()
+    if mode not in {_UI_MODE_PARENT, _UI_MODE_SELF}:
+        mode = _UI_MODE_SELF
+
+    label = "纸质作业（家长）" if mode == _UI_MODE_PARENT else "屏幕自学（本人）"
+    dest = _safe_next(return_to or "/settings")
+    resp = _redirect(dest + "?" + urlencode({"toast": f"已切换到：{label}"}))
+    _set_ui_mode_cookie(resp, request, mode)
+    return resp
 
 
 @app.post("/settings/plan")
@@ -2569,6 +2687,9 @@ def _add_next_words_to_plan(session, *, deck_id: int, count: int) -> tuple[str, 
         _ensure_plan_word(session, plan, wid, deck_id)
         if session.get(SrsCard, wid) is None:
             session.add(SrsCard(word_id=wid, due_at=now))
+
+    # Important: this app runs with autoflush=False. Flush so subsequent queries can see new cards.
+    session.flush()
 
     total_words = int(session.query(func.count(DeckWord.word_id)).filter(DeckWord.deck_id == deck_id).scalar() or 0)
     planned_count = int(
