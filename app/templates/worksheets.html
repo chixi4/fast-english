@@ -33,8 +33,8 @@
     <div class="card">
       <div class="card-k">打印今日作业</div>
       <div class="muted">不粘贴文本：系统按“到期复习 + 补新词”自动生成一张作业。</div>
-      <form method="post" action="/worksheets/generate_today" style="margin-top: 10px;">
-        <button class="btn" type="submit">生成今日作业</button>
+      <form id="generateTodayForm" method="post" action="/worksheets/generate_today" style="margin-top: 10px;" hx-boost="false">
+        <button class="btn" id="generateTodayBtn" type="submit">生成今日作业</button>
       </form>
     </div>
   </div>
@@ -54,7 +54,7 @@
       {% endif %}
 
       {% if extract["items"] and extract["items"]|length > 0 %}
-        <form class="stack" method="post" action="/worksheets/generate" style="margin-top: 12px;">
+        <form class="stack" id="generateWorksheetForm" method="post" action="/worksheets/generate" style="margin-top: 12px;" hx-boost="false">
           <input type="hidden" name="stage" value="{{ stage }}" />
           <input type="hidden" name="mode" value="extract" />
 
@@ -83,7 +83,7 @@
           </div>
 
           <div class="actions" style="margin-top: 12px;">
-            <button class="btn primary" type="submit">生成作业（可打印）</button>
+            <button class="btn primary" id="generateWorksheetBtn" type="submit">生成作业（可打印）</button>
             <a class="btn" href="/worksheets">清空本次结果</a>
           </div>
           <div class="muted" style="margin-top: 10px;">已按推荐自动勾选，可手动增减。</div>
@@ -93,6 +93,106 @@
       {% endif %}
     </div>
   {% endif %}
+
+  <div id="worksheetLoadingOverlay" class="overlay hidden" aria-live="polite" aria-busy="true">
+    <div class="ai-river" aria-hidden="true">
+      <pre id="worksheetAiRiver" class="ai-river-text"></pre>
+    </div>
+    <div class="card overlay-card overlay-foreground">
+      <div class="row" style="margin: 0;">
+        <div class="spinner" aria-hidden="true"></div>
+        <div>
+          <div class="big" style="font-size: 26px;">生成中...</div>
+          <div id="worksheetLoadingNote" class="muted">请稍候</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const overlay = document.getElementById("worksheetLoadingOverlay");
+      const note = document.getElementById("worksheetLoadingNote");
+      const riverEl = document.getElementById("worksheetAiRiver");
+      let riverTimer = null;
+
+      const escapeHtml = (s) => (s || "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+      const startRiver = () => {
+        if (!riverEl || riverTimer) return;
+        const hints = [
+          "[解析] 读取词书与复习计划…",
+          "[选词] 到期复习 + 补新词…",
+          "[排版] 生成拼写/选择/填空…",
+          "[检查] 去重 + 生成答案…",
+          "[完成] 即将打开可打印作业…",
+        ];
+        const vocab = [
+          "tokenize",
+          "dedupe",
+          "fsrs",
+          "wordbank",
+          "mcq",
+          "cloze",
+          "render",
+          "layout",
+          "print",
+          "cache",
+          "commit",
+        ];
+        const lines = [];
+        const rand = (a) => a[Math.floor(Math.random() * a.length)];
+        const tick = () => {
+          const t = Date.now().toString(16).slice(-6);
+          const line =
+            Math.random() < 0.4
+              ? rand(hints)
+              : `[${t}] ${rand(vocab)} ${rand(vocab)} ${rand(vocab)} ${Math.random().toString(16).slice(2, 10)}`;
+          lines.push(line);
+          if (lines.length > 90) lines.splice(0, lines.length - 90);
+          riverEl.innerHTML = escapeHtml(lines.join("\n")).replace(/\[[^\]]+\]/g, (m) => `<span class="ai-river-dim">${m}</span>`);
+        };
+        tick();
+        riverTimer = setInterval(tick, 110);
+      };
+
+      const stopRiver = () => {
+        if (riverTimer) {
+          clearInterval(riverTimer);
+          riverTimer = null;
+        }
+        if (riverEl) riverEl.textContent = "";
+      };
+
+      const bind = (formId, btnId, msg) => {
+        const form = document.getElementById(formId);
+        const btn = document.getElementById(btnId);
+        if (!form) return;
+        form.addEventListener("submit", () => {
+          try {
+            if (note) note.textContent = msg || "请稍候";
+            if (btn) btn.disabled = true;
+            if (overlay) overlay.classList.remove("hidden");
+            startRiver();
+          } catch {}
+        });
+      };
+
+      bind("generateTodayForm", "generateTodayBtn", "正在生成今日作业…");
+      bind("generateWorksheetForm", "generateWorksheetBtn", "正在生成作业…");
+
+      // If the page is restored from bfcache, ensure the overlay is hidden and buttons are usable.
+      window.addEventListener("pageshow", () => {
+        try {
+          if (overlay) overlay.classList.add("hidden");
+          stopRiver();
+          const b1 = document.getElementById("generateTodayBtn");
+          const b2 = document.getElementById("generateWorksheetBtn");
+          if (b1) b1.disabled = false;
+          if (b2) b2.disabled = false;
+        } catch {}
+      });
+    })();
+  </script>
 
   <div class="fullbleed divider-bar"></div>
   <h2 class="today-section-title">历史作业</h2>

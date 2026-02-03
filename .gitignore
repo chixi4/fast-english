@@ -10,3 +10,6 @@ data/
 
 .claude/settings.local.json
 nul
+
+# Local UI verification artifacts (screenshots, PDFs, renders)
+tools/ui_checks/

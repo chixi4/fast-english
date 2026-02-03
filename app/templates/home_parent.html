@@ -30,8 +30,8 @@
     </div>
 
     <div class="actions actions-full">
-      <form method="post" action="/worksheets/generate_today" style="margin:0;">
-        <button class="btn primary" type="submit">生成今日作业并打印</button>
+      <form id="parentGenerateTodayForm" method="post" action="/worksheets/generate_today" style="margin:0;" hx-boost="false">
+        <button class="btn primary" id="parentGenerateTodayBtn" type="submit">生成今日作业并打印</button>
       </form>
       <a class="btn" href="/worksheets">从文本生成</a>
     </div>
@@ -60,6 +60,80 @@
       </div>
     </div>
   {% endif %}
+
+  <div id="parentWorksheetLoadingOverlay" class="overlay hidden" aria-live="polite" aria-busy="true">
+    <div class="ai-river" aria-hidden="true">
+      <pre id="parentWorksheetAiRiver" class="ai-river-text"></pre>
+    </div>
+    <div class="card overlay-card overlay-foreground">
+      <div class="row" style="margin: 0;">
+        <div class="spinner" aria-hidden="true"></div>
+        <div>
+          <div class="big" style="font-size: 26px;">生成中...</div>
+          <div class="muted">正在生成今日作业…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const form = document.getElementById("parentGenerateTodayForm");
+      const btn = document.getElementById("parentGenerateTodayBtn");
+      const overlay = document.getElementById("parentWorksheetLoadingOverlay");
+      const riverEl = document.getElementById("parentWorksheetAiRiver");
+      let riverTimer = null;
+      if (!form) return;
+
+      const escapeHtml = (s) => (s || "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+      const startRiver = () => {
+        if (!riverEl || riverTimer) return;
+        const hints = [
+          "[选词] 到期复习 + 补新词…",
+          "[排版] 生成作业…",
+          "[完成] 即将打开打印页…",
+        ];
+        const vocab = ["fsrs", "due", "new", "mcq", "cloze", "layout", "print", "render"];
+        const lines = [];
+        const rand = (a) => a[Math.floor(Math.random() * a.length)];
+        const tick = () => {
+          const t = Date.now().toString(16).slice(-6);
+          const line =
+            Math.random() < 0.45
+              ? rand(hints)
+              : `[${t}] ${rand(vocab)} ${rand(vocab)} ${Math.random().toString(16).slice(2, 10)}`;
+          lines.push(line);
+          if (lines.length > 80) lines.splice(0, lines.length - 80);
+          riverEl.innerHTML = escapeHtml(lines.join("\n")).replace(/\[[^\]]+\]/g, (m) => `<span class="ai-river-dim">${m}</span>`);
+        };
+        tick();
+        riverTimer = setInterval(tick, 120);
+      };
+
+      const stopRiver = () => {
+        if (riverTimer) {
+          clearInterval(riverTimer);
+          riverTimer = null;
+        }
+        if (riverEl) riverEl.textContent = "";
+      };
+
+      form.addEventListener("submit", () => {
+        try {
+          if (btn) btn.disabled = true;
+          if (overlay) overlay.classList.remove("hidden");
+          startRiver();
+        } catch {}
+      });
+      window.addEventListener("pageshow", () => {
+        try {
+          if (overlay) overlay.classList.add("hidden");
+          stopRiver();
+          if (btn) btn.disabled = false;
+        } catch {}
+      });
+    })();
+  </script>
 
   <div class="fullbleed divider-tail"></div>
 {% endblock %}
