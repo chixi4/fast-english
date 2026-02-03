@@ -1,0 +1,424 @@
+{
+  "generated_at_utc": "2026-02-03T12:49:44.551116+00:00",
+  "base_url": "http://127.0.0.1:8317/v1",
+  "models": [
+    "gemini-3-pro-preview",
+    "gemini-claude-opus-4-5-thinking"
+  ],
+  "section": {
+    "round": 2,
+    "title": "Round 2：逐页移动端 Bug 清单 + 试卷重排版",
+    "answers": [
+      {
+        "model": "gemini-3-pro-preview",
+        "raw": "{\n  \"page_issues\": [\n    {\n      \"page\": \"A) 今日作业页 (/)\",\n      \"issues\": [\n        {\n          \"title\": \"核心功能入口文案冗余\",\n          \"symptom\": \"按钮文案“生成今日作业并打印（孩子不接触屏幕）”在手机屏占两行，且强调过多。\",\n          \"fix\": \"改为“生成今日默写纸”或“打印今日作业”。副标题用小字提示“含新词+复习”。\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"待录入错题入口不明显\",\n          \"symptom\": \"如果“待录入错题”是文本链接，家长手指粗大容易误触或忽略。\",\n          \"fix\": \"改为卡片式设计或底部悬浮栏：“您有 N 个错题待录入”，点击直接进入录入模式。\",\n          \"priority\": 1\n        }\n      ]\n    },\n    {\n      \"page\": \"B) 作业列表/提取页 (/worksheets)\",\n      \"issues\": [\n        {\n          \"title\": \"文本粘贴区高度不足\",\n          \"symptom\": \"手机软键盘弹出后，textarea 仅剩 1-2 行可见，无法检查粘贴内容全貌。\",\n          \"fix\": \"设置 textarea `min-height: 30vh`，或在键盘弹出时自动滚动页面至输入区顶部。\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"生词勾选列表点击热区过小\",\n          \"symptom\": \"提取出的单词列表，复选框太小，家长单手操作容易点错。\",\n          \"fix\": \"扩大点击热区：点击整行（单词+释义）均可触发勾选/取消勾选。增加选中态背景色高亮。\",\n          \"priority\": 1\n        }\n      ]\n    },\n    {\n      \"page\": \"C) 试卷详情页 (/worksheets/{id})\",\n      \"issues\": [\n        {\n          \"title\": \"题型一（表格）手机端横向溢出\",\n          \"symptom\": \"中译英表格在竖屏下必定超出屏幕，导致页面出现双向滚动条，体验极差。\",\n          \"fix\": \"移动端视图下（非打印态），将表格改为“卡片列表”：中文在上，英文（答案）在下（默认隐藏，点击显示）。打印态保持表格。\",\n          \"priority\": 0\n        },\n        {\n          \"title\": \"题型二（选择）两列布局拥挤\",\n          \"symptom\": \"长单词（如 'encyclopedia'）会导致两列布局错位或文字折行严重。\",\n          \"fix\": \"移动端视图强制单列 (`grid-template-columns: 1fr`)；打印态保持双列但缩小字号。\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"打印分页逻辑浪费纸张\",\n          \"symptom\": \"`.worksheet-break` 强制每个大区分页，若题型三只有 2 句话，也会独占一张 A4 纸。\",\n          \"fix\": \"移除强制分页。改用 CSS `break-inside: avoid` 作用于每个“题块（Question Block）”，仅在页面空间不足时自动换页。\",\n          \"priority\": 0\n        },\n        {\n          \"title\": \"缺乏“批改模式”视图\",\n          \"symptom\": \"家长拿着纸质作业核对时，手机屏幕上同时显示题目和答案，视线跳跃累。\",\n          \"fix\": \"增加顶部开关“批改模式”：开启后，隐藏题目描述，仅高亮显示“序号 + 英文答案 + 中文核心义”，方便快速对答案。\",\n          \"priority\": 2\n        }\n      ]\n    },\n    {\n      \"page\": \"E) 词书库与组件 (/decks)\",\n      \"issues\": [\n        {\n          \"title\": \"Deck Picker 下拉菜单被遮挡\",\n          \"symptom\": \"在弹窗或底部操作栏中选择词书时，下拉列表被父容器 `overflow: hidden` 裁切或被键盘顶出屏幕。\",\n          \"fix\": \"移动端禁用自定义下拉模拟，改用原生 `<select>` 标签（iOS/Android 原生体验最好），或使用全屏 Modal/Bottom Sheet 选择器。\",\n          \"priority\": 1\n        }\n      ]\n    }\n  ],\n  \"worksheet_layout_options\": {\n    \"economy\": {\n      \"sections\": [\n        \"紧凑模式：标题与姓名栏并排\",\n        \"题型一：仅保留【中文】与【拼写格】，去除序号列，行高压缩\",\n        \"题型二：选项由卡片改为纯文本紧凑排列（a. xxx b. xxx）\",\n        \"题型三：填空题接排，不换行\"\n      ],\n      \"page_break_rules\": [\n        \"禁止大区强制分页\",\n        \"允许题目在页面底部截断（最大化利用纸张）\",\n        \"字体：10pt / 行高 1.2\"\n      ],\n      \"typography\": [\n        \"无衬线字体 (Arial/Heiti)\",\n        \"减少页边距至 10mm\"\n      ]\n    },\n    \"standard\": {\n      \"sections\": [\n        \"标准试卷头（学校风格）：包含 班级/姓名/学号/日期/得分 栏\",\n        \"题型一：标准三列表格（序号/中文/四线三格拼写区）\",\n        \"题型二：带边框的选项卡片，双列对齐\",\n        \"题型三：独立段落\"\n      ],\n      \"page_break_rules\": [\n        \"大题之间尽量不分页（除非空间极小）\",\n        \"单个小题（Question Item）内部绝对禁止分页 (`break-inside: avoid`)\",\n        \"字体：12pt / 行高 1.5\"\n      ],\n      \"typography\": [\n        \"衬线字体 (Times New Roman/Songti) 增加正式感\",\n        \"标准页边距 25.4mm\"\n      ]\n    }\n  },\n  \"mobile_css_changes\": [\n    \"@media screen and (max-width: 600px) { .worksheet-table { display: block; } .worksheet-table tr { display: flex; flex-direction: column; border-bottom: 1px solid #eee; padding: 8px 0; } }\",\n    \"@media screen and (max-width: 600px) { .worksheet-table td, .worksheet-table th { display: block; width: 100%; border: none; padding: 2px 0; } }\",\n    \"@media screen and (max-width: 600px) { .worksheet-q-choices { grid-template-columns: 1fr !important; gap: 8px; } }\",\n    \"@media print { nav, .btn-float, .grading-tools, .footer { display: none !important; } }\",\n    \"@media print { body { background: white; color: black; font-size: 12pt; } .worksheet-container { box-shadow: none; margin: 0; width: 100%; } }\",\n    \"@media print { .worksheet-section { page-break-inside: avoid; margin-bottom: 20px; } }\",\n    \".deck-picker-mobile { appearance: none; background-color: transparent; width: 100%; height: 44px; position: absolute; opacity: 0; z-index: 10; }\",\n    \".checkbox-row { display: flex; align-items: center; padding: 12px 0; min-height: 44px; } /* 增大点击热区 */\",\n    \".worksheet-preview { overflow-x: hidden; padding: 10px; } /* 防止整体横向滚动 */\"\n  ],\n  \"acceptance_tests\": [\n    \"iPhone SE 尺寸下，首页“生成作业”按钮是否完整显示且易点击。\",\n    \"粘贴 500 字文本后，软键盘弹出时，是否仍能看到光标和至少 2 行文本。\",\n    \"在手机端查看试卷详情，表格题是否不再出现横向滚动条（已转为列表/卡片视图）。\",\n    \"点击“打印”按钮调用系统打印预览，确认 3 种题型是否混排在同一页（省纸），而非强制分 3 页。\",\n    \"打印预览中，长单词（如 congratulations）在选择题选项中是否被截断。\",\n    \"点击单词提取列表的文字部分（非 checkbox），确认能否触发勾选。\",\n    \"在底部导航栏快速切换 Tab，确认不会出现页面闪烁或布局错位。\",\n    \"模拟录入错题：在输入框输入时，确认“保存”按钮没有被键盘遮挡。\",\n    \"检查“批改模式”下，是否能一眼看清所有答案，无需频繁滑动屏幕。\"\n  ]\n}",
+        "json_text": "{\n  \"page_issues\": [\n    {\n      \"page\": \"A) 今日作业页 (/)\",\n      \"issues\": [\n        {\n          \"title\": \"核心功能入口文案冗余\",\n          \"symptom\": \"按钮文案“生成今日作业并打印（孩子不接触屏幕）”在手机屏占两行，且强调过多。\",\n          \"fix\": \"改为“生成今日默写纸”或“打印今日作业”。副标题用小字提示“含新词+复习”。\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"待录入错题入口不明显\",\n          \"symptom\": \"如果“待录入错题”是文本链接，家长手指粗大容易误触或忽略。\",\n          \"fix\": \"改为卡片式设计或底部悬浮栏：“您有 N 个错题待录入”，点击直接进入录入模式。\",\n          \"priority\": 1\n        }\n      ]\n    },\n    {\n      \"page\": \"B) 作业列表/提取页 (/worksheets)\",\n      \"issues\": [\n        {\n          \"title\": \"文本粘贴区高度不足\",\n          \"symptom\": \"手机软键盘弹出后，textarea 仅剩 1-2 行可见，无法检查粘贴内容全貌。\",\n          \"fix\": \"设置 textarea `min-height: 30vh`，或在键盘弹出时自动滚动页面至输入区顶部。\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"生词勾选列表点击热区过小\",\n          \"symptom\": \"提取出的单词列表，复选框太小，家长单手操作容易点错。\",\n          \"fix\": \"扩大点击热区：点击整行（单词+释义）均可触发勾选/取消勾选。增加选中态背景色高亮。\",\n          \"priority\": 1\n        }\n      ]\n    },\n    {\n      \"page\": \"C) 试卷详情页 (/worksheets/{id})\",\n      \"issues\": [\n        {\n          \"title\": \"题型一（表格）手机端横向溢出\",\n          \"symptom\": \"中译英表格在竖屏下必定超出屏幕，导致页面出现双向滚动条，体验极差。\",\n          \"fix\": \"移动端视图下（非打印态），将表格改为“卡片列表”：中文在上，英文（答案）在下（默认隐藏，点击显示）。打印态保持表格。\",\n          \"priority\": 0\n        },\n        {\n          \"title\": \"题型二（选择）两列布局拥挤\",\n          \"symptom\": \"长单词（如 'encyclopedia'）会导致两列布局错位或文字折行严重。\",\n          \"fix\": \"移动端视图强制单列 (`grid-template-columns: 1fr`)；打印态保持双列但缩小字号。\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"打印分页逻辑浪费纸张\",\n          \"symptom\": \"`.worksheet-break` 强制每个大区分页，若题型三只有 2 句话，也会独占一张 A4 纸。\",\n          \"fix\": \"移除强制分页。改用 CSS `break-inside: avoid` 作用于每个“题块（Question Block）”，仅在页面空间不足时自动换页。\",\n          \"priority\": 0\n        },\n        {\n          \"title\": \"缺乏“批改模式”视图\",\n          \"symptom\": \"家长拿着纸质作业核对时，手机屏幕上同时显示题目和答案，视线跳跃累。\",\n          \"fix\": \"增加顶部开关“批改模式”：开启后，隐藏题目描述，仅高亮显示“序号 + 英文答案 + 中文核心义”，方便快速对答案。\",\n          \"priority\": 2\n        }\n      ]\n    },\n    {\n      \"page\": \"E) 词书库与组件 (/decks)\",\n      \"issues\": [\n        {\n          \"title\": \"Deck Picker 下拉菜单被遮挡\",\n          \"symptom\": \"在弹窗或底部操作栏中选择词书时，下拉列表被父容器 `overflow: hidden` 裁切或被键盘顶出屏幕。\",\n          \"fix\": \"移动端禁用自定义下拉模拟，改用原生 `<select>` 标签（iOS/Android 原生体验最好），或使用全屏 Modal/Bottom Sheet 选择器。\",\n          \"priority\": 1\n        }\n      ]\n    }\n  ],\n  \"worksheet_layout_options\": {\n    \"economy\": {\n      \"sections\": [\n        \"紧凑模式：标题与姓名栏并排\",\n        \"题型一：仅保留【中文】与【拼写格】，去除序号列，行高压缩\",\n        \"题型二：选项由卡片改为纯文本紧凑排列（a. xxx b. xxx）\",\n        \"题型三：填空题接排，不换行\"\n      ],\n      \"page_break_rules\": [\n        \"禁止大区强制分页\",\n        \"允许题目在页面底部截断（最大化利用纸张）\",\n        \"字体：10pt / 行高 1.2\"\n      ],\n      \"typography\": [\n        \"无衬线字体 (Arial/Heiti)\",\n        \"减少页边距至 10mm\"\n      ]\n    },\n    \"standard\": {\n      \"sections\": [\n        \"标准试卷头（学校风格）：包含 班级/姓名/学号/日期/得分 栏\",\n        \"题型一：标准三列表格（序号/中文/四线三格拼写区）\",\n        \"题型二：带边框的选项卡片，双列对齐\",\n        \"题型三：独立段落\"\n      ],\n      \"page_break_rules\": [\n        \"大题之间尽量不分页（除非空间极小）\",\n        \"单个小题（Question Item）内部绝对禁止分页 (`break-inside: avoid`)\",\n        \"字体：12pt / 行高 1.5\"\n      ],\n      \"typography\": [\n        \"衬线字体 (Times New Roman/Songti) 增加正式感\",\n        \"标准页边距 25.4mm\"\n      ]\n    }\n  },\n  \"mobile_css_changes\": [\n    \"@media screen and (max-width: 600px) { .worksheet-table { display: block; } .worksheet-table tr { display: flex; flex-direction: column; border-bottom: 1px solid #eee; padding: 8px 0; } }\",\n    \"@media screen and (max-width: 600px) { .worksheet-table td, .worksheet-table th { display: block; width: 100%; border: none; padding: 2px 0; } }\",\n    \"@media screen and (max-width: 600px) { .worksheet-q-choices { grid-template-columns: 1fr !important; gap: 8px; } }\",\n    \"@media print { nav, .btn-float, .grading-tools, .footer { display: none !important; } }\",\n    \"@media print { body { background: white; color: black; font-size: 12pt; } .worksheet-container { box-shadow: none; margin: 0; width: 100%; } }\",\n    \"@media print { .worksheet-section { page-break-inside: avoid; margin-bottom: 20px; } }\",\n    \".deck-picker-mobile { appearance: none; background-color: transparent; width: 100%; height: 44px; position: absolute; opacity: 0; z-index: 10; }\",\n    \".checkbox-row { display: flex; align-items: center; padding: 12px 0; min-height: 44px; } /* 增大点击热区 */\",\n    \".worksheet-preview { overflow-x: hidden; padding: 10px; } /* 防止整体横向滚动 */\"\n  ],\n  \"acceptance_tests\": [\n    \"iPhone SE 尺寸下，首页“生成作业”按钮是否完整显示且易点击。\",\n    \"粘贴 500 字文本后，软键盘弹出时，是否仍能看到光标和至少 2 行文本。\",\n    \"在手机端查看试卷详情，表格题是否不再出现横向滚动条（已转为列表/卡片视图）。\",\n    \"点击“打印”按钮调用系统打印预览，确认 3 种题型是否混排在同一页（省纸），而非强制分 3 页。\",\n    \"打印预览中，长单词（如 congratulations）在选择题选项中是否被截断。\",\n    \"点击单词提取列表的文字部分（非 checkbox），确认能否触发勾选。\",\n    \"在底部导航栏快速切换 Tab，确认不会出现页面闪烁或布局错位。\",\n    \"模拟录入错题：在输入框输入时，确认“保存”按钮没有被键盘遮挡。\",\n    \"检查“批改模式”下，是否能一眼看清所有答案，无需频繁滑动屏幕。\"\n  ]\n}",
+        "parsed_ok": true,
+        "parsed": {
+          "page_issues": [
+            {
+              "page": "A) 今日作业页 (/)",
+              "issues": [
+                {
+                  "title": "核心功能入口文案冗余",
+                  "symptom": "按钮文案“生成今日作业并打印（孩子不接触屏幕）”在手机屏占两行，且强调过多。",
+                  "fix": "改为“生成今日默写纸”或“打印今日作业”。副标题用小字提示“含新词+复习”。",
+                  "priority": 2
+                },
+                {
+                  "title": "待录入错题入口不明显",
+                  "symptom": "如果“待录入错题”是文本链接，家长手指粗大容易误触或忽略。",
+                  "fix": "改为卡片式设计或底部悬浮栏：“您有 N 个错题待录入”，点击直接进入录入模式。",
+                  "priority": 1
+                }
+              ]
+            },
+            {
+              "page": "B) 作业列表/提取页 (/worksheets)",
+              "issues": [
+                {
+                  "title": "文本粘贴区高度不足",
+                  "symptom": "手机软键盘弹出后，textarea 仅剩 1-2 行可见，无法检查粘贴内容全貌。",
+                  "fix": "设置 textarea `min-height: 30vh`，或在键盘弹出时自动滚动页面至输入区顶部。",
+                  "priority": 2
+                },
+                {
+                  "title": "生词勾选列表点击热区过小",
+                  "symptom": "提取出的单词列表，复选框太小，家长单手操作容易点错。",
+                  "fix": "扩大点击热区：点击整行（单词+释义）均可触发勾选/取消勾选。增加选中态背景色高亮。",
+                  "priority": 1
+                }
+              ]
+            },
+            {
+              "page": "C) 试卷详情页 (/worksheets/{id})",
+              "issues": [
+                {
+                  "title": "题型一（表格）手机端横向溢出",
+                  "symptom": "中译英表格在竖屏下必定超出屏幕，导致页面出现双向滚动条，体验极差。",
+                  "fix": "移动端视图下（非打印态），将表格改为“卡片列表”：中文在上，英文（答案）在下（默认隐藏，点击显示）。打印态保持表格。",
+                  "priority": 0
+                },
+                {
+                  "title": "题型二（选择）两列布局拥挤",
+                  "symptom": "长单词（如 'encyclopedia'）会导致两列布局错位或文字折行严重。",
+                  "fix": "移动端视图强制单列 (`grid-template-columns: 1fr`)；打印态保持双列但缩小字号。",
+                  "priority": 1
+                },
+                {
+                  "title": "打印分页逻辑浪费纸张",
+                  "symptom": "`.worksheet-break` 强制每个大区分页，若题型三只有 2 句话，也会独占一张 A4 纸。",
+                  "fix": "移除强制分页。改用 CSS `break-inside: avoid` 作用于每个“题块（Question Block）”，仅在页面空间不足时自动换页。",
+                  "priority": 0
+                },
+                {
+                  "title": "缺乏“批改模式”视图",
+                  "symptom": "家长拿着纸质作业核对时，手机屏幕上同时显示题目和答案，视线跳跃累。",
+                  "fix": "增加顶部开关“批改模式”：开启后，隐藏题目描述，仅高亮显示“序号 + 英文答案 + 中文核心义”，方便快速对答案。",
+                  "priority": 2
+                }
+              ]
+            },
+            {
+              "page": "E) 词书库与组件 (/decks)",
+              "issues": [
+                {
+                  "title": "Deck Picker 下拉菜单被遮挡",
+                  "symptom": "在弹窗或底部操作栏中选择词书时，下拉列表被父容器 `overflow: hidden` 裁切或被键盘顶出屏幕。",
+                  "fix": "移动端禁用自定义下拉模拟，改用原生 `<select>` 标签（iOS/Android 原生体验最好），或使用全屏 Modal/Bottom Sheet 选择器。",
+                  "priority": 1
+                }
+              ]
+            }
+          ],
+          "worksheet_layout_options": {
+            "economy": {
+              "sections": [
+                "紧凑模式：标题与姓名栏并排",
+                "题型一：仅保留【中文】与【拼写格】，去除序号列，行高压缩",
+                "题型二：选项由卡片改为纯文本紧凑排列（a. xxx b. xxx）",
+                "题型三：填空题接排，不换行"
+              ],
+              "page_break_rules": [
+                "禁止大区强制分页",
+                "允许题目在页面底部截断（最大化利用纸张）",
+                "字体：10pt / 行高 1.2"
+              ],
+              "typography": [
+                "无衬线字体 (Arial/Heiti)",
+                "减少页边距至 10mm"
+              ]
+            },
+            "standard": {
+              "sections": [
+                "标准试卷头（学校风格）：包含 班级/姓名/学号/日期/得分 栏",
+                "题型一：标准三列表格（序号/中文/四线三格拼写区）",
+                "题型二：带边框的选项卡片，双列对齐",
+                "题型三：独立段落"
+              ],
+              "page_break_rules": [
+                "大题之间尽量不分页（除非空间极小）",
+                "单个小题（Question Item）内部绝对禁止分页 (`break-inside: avoid`)",
+                "字体：12pt / 行高 1.5"
+              ],
+              "typography": [
+                "衬线字体 (Times New Roman/Songti) 增加正式感",
+                "标准页边距 25.4mm"
+              ]
+            }
+          },
+          "mobile_css_changes": [
+            "@media screen and (max-width: 600px) { .worksheet-table { display: block; } .worksheet-table tr { display: flex; flex-direction: column; border-bottom: 1px solid #eee; padding: 8px 0; } }",
+            "@media screen and (max-width: 600px) { .worksheet-table td, .worksheet-table th { display: block; width: 100%; border: none; padding: 2px 0; } }",
+            "@media screen and (max-width: 600px) { .worksheet-q-choices { grid-template-columns: 1fr !important; gap: 8px; } }",
+            "@media print { nav, .btn-float, .grading-tools, .footer { display: none !important; } }",
+            "@media print { body { background: white; color: black; font-size: 12pt; } .worksheet-container { box-shadow: none; margin: 0; width: 100%; } }",
+            "@media print { .worksheet-section { page-break-inside: avoid; margin-bottom: 20px; } }",
+            ".deck-picker-mobile { appearance: none; background-color: transparent; width: 100%; height: 44px; position: absolute; opacity: 0; z-index: 10; }",
+            ".checkbox-row { display: flex; align-items: center; padding: 12px 0; min-height: 44px; } /* 增大点击热区 */",
+            ".worksheet-preview { overflow-x: hidden; padding: 10px; } /* 防止整体横向滚动 */"
+          ],
+          "acceptance_tests": [
+            "iPhone SE 尺寸下，首页“生成作业”按钮是否完整显示且易点击。",
+            "粘贴 500 字文本后，软键盘弹出时，是否仍能看到光标和至少 2 行文本。",
+            "在手机端查看试卷详情，表格题是否不再出现横向滚动条（已转为列表/卡片视图）。",
+            "点击“打印”按钮调用系统打印预览，确认 3 种题型是否混排在同一页（省纸），而非强制分 3 页。",
+            "打印预览中，长单词（如 congratulations）在选择题选项中是否被截断。",
+            "点击单词提取列表的文字部分（非 checkbox），确认能否触发勾选。",
+            "在底部导航栏快速切换 Tab，确认不会出现页面闪烁或布局错位。",
+            "模拟录入错题：在输入框输入时，确认“保存”按钮没有被键盘遮挡。",
+            "检查“批改模式”下，是否能一眼看清所有答案，无需频繁滑动屏幕。"
+          ]
+        }
+      },
+      {
+        "model": "gemini-claude-opus-4-5-thinking",
+        "raw": "```json\n{\n  \"page_issues\": [\n    {\n      \"page\": \"今日作业页(/)\",\n      \"issues\": [\n        {\n          \"title\": \"主按钮文案过长导致换行\",\n          \"symptom\": \"「生成今日作业并打印」在 320px 宽屏幕上可能折成两行，按钮高度不一致\",\n          \"fix\": \"改为「生成并打印」或「打印今日作业」，控制在 6 个汉字内\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"待录入错题入口不够醒目\",\n          \"symptom\": \"家长批改后需要录入错题，但入口是次级链接，容易漏掉\",\n          \"fix\": \"若有待录入错题，显示红点徽章或独立卡片「3 道错题待录入」\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"空状态缺乏引导\",\n          \"symptom\": \"首次使用时页面空白，家长不知道从哪开始\",\n          \"fix\": \"显示引导卡片：「第一步：去词书添加单词」带箭头指向底部导航\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"今日复习数量无预览\",\n          \"symptom\": \"家长不知道今天要复习多少词，点了才知道\",\n          \"fix\": \"在按钮上方显示「今日待复习 12 词」\",\n          \"priority\": 2\n        }\n      ]\n    },\n    {\n      \"page\": \"作业列表/提取页(/worksheets)\",\n      \"issues\": [\n        {\n          \"title\": \"文本粘贴区高度不足\",\n          \"symptom\": \"textarea 默认 3 行，粘贴长文后看不全，需反复滚动\",\n          \"fix\": \"设置 min-height: 120px，并加 auto-grow 或「展开」按钮\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"提取结果勾选框太小\",\n          \"symptom\": \"checkbox 默认尺寸在手机上难点击，容易误触相邻项\",\n          \"fix\": \"checkbox 外包一层 44px 高的可点击行，或用 switch 组件\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"历史作业列表无分页/懒加载\",\n          \"symptom\": \"积累 50+ 作业后页面很长，滚动卡顿\",\n          \"fix\": \"默认只显示最近 10 份，底部「加载更多」或按周折叠\",\n          \"priority\": 3\n        },\n        {\n          \"title\": \"deck-picker 下拉溢出屏幕\",\n          \"symptom\": \"词书多时下拉菜单超出视口底部，无法滚动选择\",\n          \"fix\": \"加 max-height: 50vh; overflow-y: auto; 并用 position: fixed 或 portal 渲染\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"一键生成与从文本生成按钮层级混乱\",\n          \"symptom\": \"两个主操作并列，家长不知道该点哪个\",\n          \"fix\": \"主按钮「打印今日作业」，次按钮「从文章提取生词」用 ghost 样式\",\n          \"priority\": 2\n        }\n      ]\n    },\n    {\n      \"page\": \"试卷详情页(/worksheets/{id})\",\n      \"issues\": [\n        {\n          \"title\": \".worksheet-table 横向溢出\",\n          \"symptom\": \"中译英表格在 375px 屏幕上超出容器，出现横向滚动条，打印时右侧被裁切\",\n          \"fix\": \"移动端表格改为单列卡片布局；打印时恢复表格并设 table-layout: fixed; word-break: break-word\",\n          \"priority\": 0\n        },\n        {\n          \"title\": \"选择题两列在小屏拥挤\",\n          \"symptom\": \".worksheet-q-choices 两列时，选项文字被截断或换行丑陋\",\n          \"fix\": \"@media (max-width: 480px) 改为单列；打印时保持两列\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"语境填空词库横向溢出\",\n          \"symptom\": \"词库单词多时 flex-wrap 后仍可能超宽\",\n          \"fix\": \"词库容器加 overflow-x: auto 或限制每行最多 5 词后换行\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"每题型强制分页浪费纸\",\n          \"symptom\": \".worksheet-break 导致 3 题型至少 3 页，实际内容可能只占半页\",\n          \"fix\": \"省纸模式去掉 break-before；标准模式保留但加 orphans/widows 控制\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"批改录入区在移动端位置尴尬\",\n          \"symptom\": \"录入区在试卷下方，家长需要对照纸质卷反复滚动\",\n          \"fix\": \"改为浮动底部抽屉，点击题号快速定位；或提供「仅显示录入区」模式\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"答案区打印时未完全隐藏\",\n          \"symptom\": \"部分答案用 visibility:hidden 仍占空间，打印出空白块\",\n          \"fix\": \"@media print 对答案区用 display:none\",\n          \"priority\": 0\n        },\n        {\n          \"title\": \"打印按钮在移动端不明显\",\n          \"symptom\": \"家长找不到打印入口，或点击后无反馈\",\n          \"fix\": \"顶部固定工具栏：「打印」「录入错题」「返回」\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"填空题下划线在打印时太细\",\n          \"symptom\": \"激光打印后下划线几乎看不见\",\n          \"fix\": \"打印样式 border-bottom: 1.5pt solid #000\",\n          \"priority\": 2\n        }\n      ]\n    },\n    {\n      \"page\": \"设置页(/settings)\",\n      \"issues\": [\n        {\n          \"title\": \"模式切换说明文案冗长\",\n          \"symptom\": \"反复强调「孩子不接触屏幕」显得 AI 味重\",\n          \"fix\": \"简化为「纸质作业：家长打印、批改、录入」「屏幕自学：孩子自己操作」\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"切换模式后无确认/撤销\",\n          \"symptom\": \"误触后界面突变，家长困惑\",\n          \"fix\": \"切换后 toast 提示「已切换到纸质作业模式」并提供 3 秒撤销\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"家长设置项过少显得空\",\n          \"symptom\": \"只有模式切换，页面很空\",\n          \"fix\": \"补充：每日新词数、复习上限、打印字号、是否显示音标\",\n          \"priority\": 3\n        },\n        {\n          \"title\": \"设置项无分组\",\n          \"symptom\": \"未来设置多了会混乱\",\n          \"fix\": \"分组：学习设置 / 打印设置 / 账号\",\n          \"priority\": 3\n        }\n      ]\n    },\n    {\n      \"page\": \"词书库(/library) 与 词书页(/decks)\",\n      \"issues\": [\n        {\n          \"title\": \"词书卡片点击区域不明确\",\n          \"symptom\": \"不知道点哪里进入词书\",\n          \"fix\": \"整张卡片可点击，hover/active 有反馈\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"添加词书流程断裂\",\n          \"symptom\": \"从 library 添加后不自动跳转到 decks\",\n          \"fix\": \"添加成功后 toast + 跳转到词书页\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"词书进度条在小屏被挤压\",\n          \"symptom\": \"进度条宽度不足，百分比数字重叠\",\n          \"fix\": \"进度条最小宽度 80px，数字放在条外右侧\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"空词书无引导\",\n          \"symptom\": \"新用户看到空列表不知所措\",\n          \"fix\": \"显示「去词书库挑选课本词书」按钮\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"词书内单词列表无搜索\",\n          \"symptom\": \"词书 500 词时找某个词很难\",\n          \"fix\": \"顶部加搜索框，支持模糊匹配\",\n          \"priority\": 3\n        }\n      ]\n    }\n  ],\n  \"worksheet_layout_options\": {\n    \"economy\": {\n      \"sections\": [\n        \"页眉：日期 + 词书名（单行）\",\n        \"题型一 中译英：单列卡片，每卡含中文+填空格，4 题/行（flex-wrap）\",\n        \"题型二 英译中选择：题干+选项紧凑排列，选项用 A/B/C/D 前缀而非卡片\",\n        \"题型三 语境填空：词库横排 + 句子列表，句间距 0.5em\",\n        \"页脚：答案区（小字反色块，裁剪线提示家长撕掉）\"\n      ],\n      \"page_break_rules\": [\n        \"不强制分页，仅在内容自然溢出时分页\",\n        \"避免题目被拦腰截断：break-inside: avoid 应用于每道题容器\",\n        \"答案区始终在最后一页底部\"\n      ],\n      \"typography\": [\n        \"正文 12pt，行高 1.4\",\n        \"题号加粗 14pt\",\n        \"填空下划线 1pt\",\n        \"页边距 10mm\",\n        \"单词间距 0.3em\"\n      ]\n    },\n    \"standard\": {\n      \"sections\": [\n        \"封面页：标题「英语单词小测验」+ 日期 + 姓名填写栏 + 得分栏\",\n        \"题型一 中译英：标准表格，序号/中文/作答栏，每行一题\",\n        \"题型二 英译中选择：每题独立块，选项 2×2 网格卡片\",\n        \"题型三 语境填空：词库框 + 编号句子，句间距 1em\",\n        \"答题卡页（可选）：涂卡式选择题答案区\",\n        \"答案页：单独成页，标注「请沿此线裁剪」\"\n      ],\n      \"page_break_rules\": [\n        \"每大题型前 page-break-before: always\",\n        \"答案页 page-break-before: always\",\n        \"orphans: 3; widows: 3 防止单行落单\"\n      ],\n      \"typography\": [\n        \"正文 14pt，行高 1.6\",\n        \"题号加粗 16pt\",\n        \"填空下划线 1.5pt，长度固定 60mm\",\n        \"页边距 15mm\",\n        \"表格边框 0.5pt 实线\"\n      ]\n    }\n  },\n  \"mobile_css_changes\": [\n    \"@media (max-width: 480px) { .worksheet-table { display: block; } .worksheet-table tr { display: flex; flex-direction: column; border-bottom: 1px solid #eee; padding: 8px 0; } }\",\n    \"@media (max-width: 480px) { .worksheet-q-choices { grid-template-columns: 1fr; } }\",\n    \".deck-picker-dropdown { max-height: 50vh; overflow-y: auto; }\",\n    \"@media print { .answer-section, .grading-area, nav, .no-print { display: none !important; } }\",\n    \"@media print { .worksheet-table { table-layout: fixed; width: 100%; } .worksheet-table td { word-break: break-word; } }\",\n    \"@media print { .fill-blank { border-bottom: 1.5pt solid #000; } }\",\n    \".worksheet-break.economy-mode { break-before: auto; }\",\n    \"@media (max-width: 480px) { .primary-btn { font-size: 14px; padding: 12px 16px; white-space: nowrap; } }\",\n    \"@media (max-width: 480px) { textarea.paste-area { min-height: 120px; } }\",\n    \"@media (max-width: 480px) { .word-checkbox-row { min-height: 44px; display: flex; align-items: center; } }\",\n    \"@media (max-width: 480px) { .word-bank { overflow-x: auto; -webkit-overflow-scrolling: touch; } }\",\n    \"@media (max-width: 480px) { .deck-card { padding: 12px; } .deck-progress { min-width: 80px; } }\",\n    \".grading-drawer { position: fixed; bottom: 0; left: 0; right: 0; max-height: 60vh; overflow-y: auto; transform: translateY(100%); transition: transform 0.3s; }\",\n    \".grading-drawer.open { transform: translateY(0); }\",\n    \"@media (max-width: 480px) { .worksheet-header { position: sticky; top: 0; z-index: 10; background: #fff; padding: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); } }\",\n    \"@media (max-width: 480px) { .history-list { max-height: 400px; overflow-y: auto; } }\",\n    \"@media print { .worksheet-q-choices { grid-template-columns: 1fr 1fr; } }\",\n    \"body { -webkit-text-size-adjust: 100%; }\"\n  ],\n  \"acceptance_tests\": [\n    \"iPhone SE (375px)：打开试卷页，中译英表格无横向滚动条，所有内容可见\",\n    \"iPhone SE：选择题选项单列显示，文字不截断，每个选项可完整阅读\",\n    \"任意手机：词书下拉菜单打开后可滚动，选择第 20 个词书不超出屏幕\",\n    \"任意手机：点击「打印」后调起系统打印预览，答案区不出现在预览中\",\n    \"打印预览：省纸模式下 15 词试卷应在 1 页内；标准模式 3 页左右\",\n    \"任意手机：批改录入抽屉从底部滑出，可滚动查看所有题目，点击题号跳转\",\n    \"任意手机：粘贴 500 字文章到提取区，提取结果列表每行可点击勾选，无误触\",\n    \"任意手机：首次进入今日作业页，显示引导卡片指向词书\",\n    \"任意手机：切换使用模式后出现 toast，3 秒内可撤销\",\n    \"实际打印：填空下划线清晰可见，表格边框完整，无内容被裁切\"\n  ]\n}\n```",
+        "json_text": "{\n  \"page_issues\": [\n    {\n      \"page\": \"今日作业页(/)\",\n      \"issues\": [\n        {\n          \"title\": \"主按钮文案过长导致换行\",\n          \"symptom\": \"「生成今日作业并打印」在 320px 宽屏幕上可能折成两行，按钮高度不一致\",\n          \"fix\": \"改为「生成并打印」或「打印今日作业」，控制在 6 个汉字内\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"待录入错题入口不够醒目\",\n          \"symptom\": \"家长批改后需要录入错题，但入口是次级链接，容易漏掉\",\n          \"fix\": \"若有待录入错题，显示红点徽章或独立卡片「3 道错题待录入」\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"空状态缺乏引导\",\n          \"symptom\": \"首次使用时页面空白，家长不知道从哪开始\",\n          \"fix\": \"显示引导卡片：「第一步：去词书添加单词」带箭头指向底部导航\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"今日复习数量无预览\",\n          \"symptom\": \"家长不知道今天要复习多少词，点了才知道\",\n          \"fix\": \"在按钮上方显示「今日待复习 12 词」\",\n          \"priority\": 2\n        }\n      ]\n    },\n    {\n      \"page\": \"作业列表/提取页(/worksheets)\",\n      \"issues\": [\n        {\n          \"title\": \"文本粘贴区高度不足\",\n          \"symptom\": \"textarea 默认 3 行，粘贴长文后看不全，需反复滚动\",\n          \"fix\": \"设置 min-height: 120px，并加 auto-grow 或「展开」按钮\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"提取结果勾选框太小\",\n          \"symptom\": \"checkbox 默认尺寸在手机上难点击，容易误触相邻项\",\n          \"fix\": \"checkbox 外包一层 44px 高的可点击行，或用 switch 组件\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"历史作业列表无分页/懒加载\",\n          \"symptom\": \"积累 50+ 作业后页面很长，滚动卡顿\",\n          \"fix\": \"默认只显示最近 10 份，底部「加载更多」或按周折叠\",\n          \"priority\": 3\n        },\n        {\n          \"title\": \"deck-picker 下拉溢出屏幕\",\n          \"symptom\": \"词书多时下拉菜单超出视口底部，无法滚动选择\",\n          \"fix\": \"加 max-height: 50vh; overflow-y: auto; 并用 position: fixed 或 portal 渲染\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"一键生成与从文本生成按钮层级混乱\",\n          \"symptom\": \"两个主操作并列，家长不知道该点哪个\",\n          \"fix\": \"主按钮「打印今日作业」，次按钮「从文章提取生词」用 ghost 样式\",\n          \"priority\": 2\n        }\n      ]\n    },\n    {\n      \"page\": \"试卷详情页(/worksheets/{id})\",\n      \"issues\": [\n        {\n          \"title\": \".worksheet-table 横向溢出\",\n          \"symptom\": \"中译英表格在 375px 屏幕上超出容器，出现横向滚动条，打印时右侧被裁切\",\n          \"fix\": \"移动端表格改为单列卡片布局；打印时恢复表格并设 table-layout: fixed; word-break: break-word\",\n          \"priority\": 0\n        },\n        {\n          \"title\": \"选择题两列在小屏拥挤\",\n          \"symptom\": \".worksheet-q-choices 两列时，选项文字被截断或换行丑陋\",\n          \"fix\": \"@media (max-width: 480px) 改为单列；打印时保持两列\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"语境填空词库横向溢出\",\n          \"symptom\": \"词库单词多时 flex-wrap 后仍可能超宽\",\n          \"fix\": \"词库容器加 overflow-x: auto 或限制每行最多 5 词后换行\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"每题型强制分页浪费纸\",\n          \"symptom\": \".worksheet-break 导致 3 题型至少 3 页，实际内容可能只占半页\",\n          \"fix\": \"省纸模式去掉 break-before；标准模式保留但加 orphans/widows 控制\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"批改录入区在移动端位置尴尬\",\n          \"symptom\": \"录入区在试卷下方，家长需要对照纸质卷反复滚动\",\n          \"fix\": \"改为浮动底部抽屉，点击题号快速定位；或提供「仅显示录入区」模式\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"答案区打印时未完全隐藏\",\n          \"symptom\": \"部分答案用 visibility:hidden 仍占空间，打印出空白块\",\n          \"fix\": \"@media print 对答案区用 display:none\",\n          \"priority\": 0\n        },\n        {\n          \"title\": \"打印按钮在移动端不明显\",\n          \"symptom\": \"家长找不到打印入口，或点击后无反馈\",\n          \"fix\": \"顶部固定工具栏：「打印」「录入错题」「返回」\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"填空题下划线在打印时太细\",\n          \"symptom\": \"激光打印后下划线几乎看不见\",\n          \"fix\": \"打印样式 border-bottom: 1.5pt solid #000\",\n          \"priority\": 2\n        }\n      ]\n    },\n    {\n      \"page\": \"设置页(/settings)\",\n      \"issues\": [\n        {\n          \"title\": \"模式切换说明文案冗长\",\n          \"symptom\": \"反复强调「孩子不接触屏幕」显得 AI 味重\",\n          \"fix\": \"简化为「纸质作业：家长打印、批改、录入」「屏幕自学：孩子自己操作」\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"切换模式后无确认/撤销\",\n          \"symptom\": \"误触后界面突变，家长困惑\",\n          \"fix\": \"切换后 toast 提示「已切换到纸质作业模式」并提供 3 秒撤销\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"家长设置项过少显得空\",\n          \"symptom\": \"只有模式切换，页面很空\",\n          \"fix\": \"补充：每日新词数、复习上限、打印字号、是否显示音标\",\n          \"priority\": 3\n        },\n        {\n          \"title\": \"设置项无分组\",\n          \"symptom\": \"未来设置多了会混乱\",\n          \"fix\": \"分组：学习设置 / 打印设置 / 账号\",\n          \"priority\": 3\n        }\n      ]\n    },\n    {\n      \"page\": \"词书库(/library) 与 词书页(/decks)\",\n      \"issues\": [\n        {\n          \"title\": \"词书卡片点击区域不明确\",\n          \"symptom\": \"不知道点哪里进入词书\",\n          \"fix\": \"整张卡片可点击，hover/active 有反馈\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"添加词书流程断裂\",\n          \"symptom\": \"从 library 添加后不自动跳转到 decks\",\n          \"fix\": \"添加成功后 toast + 跳转到词书页\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"词书进度条在小屏被挤压\",\n          \"symptom\": \"进度条宽度不足，百分比数字重叠\",\n          \"fix\": \"进度条最小宽度 80px，数字放在条外右侧\",\n          \"priority\": 2\n        },\n        {\n          \"title\": \"空词书无引导\",\n          \"symptom\": \"新用户看到空列表不知所措\",\n          \"fix\": \"显示「去词书库挑选课本词书」按钮\",\n          \"priority\": 1\n        },\n        {\n          \"title\": \"词书内单词列表无搜索\",\n          \"symptom\": \"词书 500 词时找某个词很难\",\n          \"fix\": \"顶部加搜索框，支持模糊匹配\",\n          \"priority\": 3\n        }\n      ]\n    }\n  ],\n  \"worksheet_layout_options\": {\n    \"economy\": {\n      \"sections\": [\n        \"页眉：日期 + 词书名（单行）\",\n        \"题型一 中译英：单列卡片，每卡含中文+填空格，4 题/行（flex-wrap）\",\n        \"题型二 英译中选择：题干+选项紧凑排列，选项用 A/B/C/D 前缀而非卡片\",\n        \"题型三 语境填空：词库横排 + 句子列表，句间距 0.5em\",\n        \"页脚：答案区（小字反色块，裁剪线提示家长撕掉）\"\n      ],\n      \"page_break_rules\": [\n        \"不强制分页，仅在内容自然溢出时分页\",\n        \"避免题目被拦腰截断：break-inside: avoid 应用于每道题容器\",\n        \"答案区始终在最后一页底部\"\n      ],\n      \"typography\": [\n        \"正文 12pt，行高 1.4\",\n        \"题号加粗 14pt\",\n        \"填空下划线 1pt\",\n        \"页边距 10mm\",\n        \"单词间距 0.3em\"\n      ]\n    },\n    \"standard\": {\n      \"sections\": [\n        \"封面页：标题「英语单词小测验」+ 日期 + 姓名填写栏 + 得分栏\",\n        \"题型一 中译英：标准表格，序号/中文/作答栏，每行一题\",\n        \"题型二 英译中选择：每题独立块，选项 2×2 网格卡片\",\n        \"题型三 语境填空：词库框 + 编号句子，句间距 1em\",\n        \"答题卡页（可选）：涂卡式选择题答案区\",\n        \"答案页：单独成页，标注「请沿此线裁剪」\"\n      ],\n      \"page_break_rules\": [\n        \"每大题型前 page-break-before: always\",\n        \"答案页 page-break-before: always\",\n        \"orphans: 3; widows: 3 防止单行落单\"\n      ],\n      \"typography\": [\n        \"正文 14pt，行高 1.6\",\n        \"题号加粗 16pt\",\n        \"填空下划线 1.5pt，长度固定 60mm\",\n        \"页边距 15mm\",\n        \"表格边框 0.5pt 实线\"\n      ]\n    }\n  },\n  \"mobile_css_changes\": [\n    \"@media (max-width: 480px) { .worksheet-table { display: block; } .worksheet-table tr { display: flex; flex-direction: column; border-bottom: 1px solid #eee; padding: 8px 0; } }\",\n    \"@media (max-width: 480px) { .worksheet-q-choices { grid-template-columns: 1fr; } }\",\n    \".deck-picker-dropdown { max-height: 50vh; overflow-y: auto; }\",\n    \"@media print { .answer-section, .grading-area, nav, .no-print { display: none !important; } }\",\n    \"@media print { .worksheet-table { table-layout: fixed; width: 100%; } .worksheet-table td { word-break: break-word; } }\",\n    \"@media print { .fill-blank { border-bottom: 1.5pt solid #000; } }\",\n    \".worksheet-break.economy-mode { break-before: auto; }\",\n    \"@media (max-width: 480px) { .primary-btn { font-size: 14px; padding: 12px 16px; white-space: nowrap; } }\",\n    \"@media (max-width: 480px) { textarea.paste-area { min-height: 120px; } }\",\n    \"@media (max-width: 480px) { .word-checkbox-row { min-height: 44px; display: flex; align-items: center; } }\",\n    \"@media (max-width: 480px) { .word-bank { overflow-x: auto; -webkit-overflow-scrolling: touch; } }\",\n    \"@media (max-width: 480px) { .deck-card { padding: 12px; } .deck-progress { min-width: 80px; } }\",\n    \".grading-drawer { position: fixed; bottom: 0; left: 0; right: 0; max-height: 60vh; overflow-y: auto; transform: translateY(100%); transition: transform 0.3s; }\",\n    \".grading-drawer.open { transform: translateY(0); }\",\n    \"@media (max-width: 480px) { .worksheet-header { position: sticky; top: 0; z-index: 10; background: #fff; padding: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); } }\",\n    \"@media (max-width: 480px) { .history-list { max-height: 400px; overflow-y: auto; } }\",\n    \"@media print { .worksheet-q-choices { grid-template-columns: 1fr 1fr; } }\",\n    \"body { -webkit-text-size-adjust: 100%; }\"\n  ],\n  \"acceptance_tests\": [\n    \"iPhone SE (375px)：打开试卷页，中译英表格无横向滚动条，所有内容可见\",\n    \"iPhone SE：选择题选项单列显示，文字不截断，每个选项可完整阅读\",\n    \"任意手机：词书下拉菜单打开后可滚动，选择第 20 个词书不超出屏幕\",\n    \"任意手机：点击「打印」后调起系统打印预览，答案区不出现在预览中\",\n    \"打印预览：省纸模式下 15 词试卷应在 1 页内；标准模式 3 页左右\",\n    \"任意手机：批改录入抽屉从底部滑出，可滚动查看所有题目，点击题号跳转\",\n    \"任意手机：粘贴 500 字文章到提取区，提取结果列表每行可点击勾选，无误触\",\n    \"任意手机：首次进入今日作业页，显示引导卡片指向词书\",\n    \"任意手机：切换使用模式后出现 toast，3 秒内可撤销\",\n    \"实际打印：填空下划线清晰可见，表格边框完整，无内容被裁切\"\n  ]\n}",
+        "parsed_ok": true,
+        "parsed": {
+          "page_issues": [
+            {
+              "page": "今日作业页(/)",
+              "issues": [
+                {
+                  "title": "主按钮文案过长导致换行",
+                  "symptom": "「生成今日作业并打印」在 320px 宽屏幕上可能折成两行，按钮高度不一致",
+                  "fix": "改为「生成并打印」或「打印今日作业」，控制在 6 个汉字内",
+                  "priority": 2
+                },
+                {
+                  "title": "待录入错题入口不够醒目",
+                  "symptom": "家长批改后需要录入错题，但入口是次级链接，容易漏掉",
+                  "fix": "若有待录入错题，显示红点徽章或独立卡片「3 道错题待录入」",
+                  "priority": 1
+                },
+                {
+                  "title": "空状态缺乏引导",
+                  "symptom": "首次使用时页面空白，家长不知道从哪开始",
+                  "fix": "显示引导卡片：「第一步：去词书添加单词」带箭头指向底部导航",
+                  "priority": 1
+                },
+                {
+                  "title": "今日复习数量无预览",
+                  "symptom": "家长不知道今天要复习多少词，点了才知道",
+                  "fix": "在按钮上方显示「今日待复习 12 词」",
+                  "priority": 2
+                }
+              ]
+            },
+            {
+              "page": "作业列表/提取页(/worksheets)",
+              "issues": [
+                {
+                  "title": "文本粘贴区高度不足",
+                  "symptom": "textarea 默认 3 行，粘贴长文后看不全，需反复滚动",
+                  "fix": "设置 min-height: 120px，并加 auto-grow 或「展开」按钮",
+                  "priority": 2
+                },
+                {
+                  "title": "提取结果勾选框太小",
+                  "symptom": "checkbox 默认尺寸在手机上难点击，容易误触相邻项",
+                  "fix": "checkbox 外包一层 44px 高的可点击行，或用 switch 组件",
+                  "priority": 1
+                },
+                {
+                  "title": "历史作业列表无分页/懒加载",
+                  "symptom": "积累 50+ 作业后页面很长，滚动卡顿",
+                  "fix": "默认只显示最近 10 份，底部「加载更多」或按周折叠",
+                  "priority": 3
+                },
+                {
+                  "title": "deck-picker 下拉溢出屏幕",
+                  "symptom": "词书多时下拉菜单超出视口底部，无法滚动选择",
+                  "fix": "加 max-height: 50vh; overflow-y: auto; 并用 position: fixed 或 portal 渲染",
+                  "priority": 1
+                },
+                {
+                  "title": "一键生成与从文本生成按钮层级混乱",
+                  "symptom": "两个主操作并列，家长不知道该点哪个",
+                  "fix": "主按钮「打印今日作业」，次按钮「从文章提取生词」用 ghost 样式",
+                  "priority": 2
+                }
+              ]
+            },
+            {
+              "page": "试卷详情页(/worksheets/{id})",
+              "issues": [
+                {
+                  "title": ".worksheet-table 横向溢出",
+                  "symptom": "中译英表格在 375px 屏幕上超出容器，出现横向滚动条，打印时右侧被裁切",
+                  "fix": "移动端表格改为单列卡片布局；打印时恢复表格并设 table-layout: fixed; word-break: break-word",
+                  "priority": 0
+                },
+                {
+                  "title": "选择题两列在小屏拥挤",
+                  "symptom": ".worksheet-q-choices 两列时，选项文字被截断或换行丑陋",
+                  "fix": "@media (max-width: 480px) 改为单列；打印时保持两列",
+                  "priority": 1
+                },
+                {
+                  "title": "语境填空词库横向溢出",
+                  "symptom": "词库单词多时 flex-wrap 后仍可能超宽",
+                  "fix": "词库容器加 overflow-x: auto 或限制每行最多 5 词后换行",
+                  "priority": 2
+                },
+                {
+                  "title": "每题型强制分页浪费纸",
+                  "symptom": ".worksheet-break 导致 3 题型至少 3 页，实际内容可能只占半页",
+                  "fix": "省纸模式去掉 break-before；标准模式保留但加 orphans/widows 控制",
+                  "priority": 1
+                },
+                {
+                  "title": "批改录入区在移动端位置尴尬",
+                  "symptom": "录入区在试卷下方，家长需要对照纸质卷反复滚动",
+                  "fix": "改为浮动底部抽屉，点击题号快速定位；或提供「仅显示录入区」模式",
+                  "priority": 1
+                },
+                {
+                  "title": "答案区打印时未完全隐藏",
+                  "symptom": "部分答案用 visibility:hidden 仍占空间，打印出空白块",
+                  "fix": "@media print 对答案区用 display:none",
+                  "priority": 0
+                },
+                {
+                  "title": "打印按钮在移动端不明显",
+                  "symptom": "家长找不到打印入口，或点击后无反馈",
+                  "fix": "顶部固定工具栏：「打印」「录入错题」「返回」",
+                  "priority": 2
+                },
+                {
+                  "title": "填空题下划线在打印时太细",
+                  "symptom": "激光打印后下划线几乎看不见",
+                  "fix": "打印样式 border-bottom: 1.5pt solid #000",
+                  "priority": 2
+                }
+              ]
+            },
+            {
+              "page": "设置页(/settings)",
+              "issues": [
+                {
+                  "title": "模式切换说明文案冗长",
+                  "symptom": "反复强调「孩子不接触屏幕」显得 AI 味重",
+                  "fix": "简化为「纸质作业：家长打印、批改、录入」「屏幕自学：孩子自己操作」",
+                  "priority": 2
+                },
+                {
+                  "title": "切换模式后无确认/撤销",
+                  "symptom": "误触后界面突变，家长困惑",
+                  "fix": "切换后 toast 提示「已切换到纸质作业模式」并提供 3 秒撤销",
+                  "priority": 2
+                },
+                {
+                  "title": "家长设置项过少显得空",
+                  "symptom": "只有模式切换，页面很空",
+                  "fix": "补充：每日新词数、复习上限、打印字号、是否显示音标",
+                  "priority": 3
+                },
+                {
+                  "title": "设置项无分组",
+                  "symptom": "未来设置多了会混乱",
+                  "fix": "分组：学习设置 / 打印设置 / 账号",
+                  "priority": 3
+                }
+              ]
+            },
+            {
+              "page": "词书库(/library) 与 词书页(/decks)",
+              "issues": [
+                {
+                  "title": "词书卡片点击区域不明确",
+                  "symptom": "不知道点哪里进入词书",
+                  "fix": "整张卡片可点击，hover/active 有反馈",
+                  "priority": 2
+                },
+                {
+                  "title": "添加词书流程断裂",
+                  "symptom": "从 library 添加后不自动跳转到 decks",
+                  "fix": "添加成功后 toast + 跳转到词书页",
+                  "priority": 2
+                },
+                {
+                  "title": "词书进度条在小屏被挤压",
+                  "symptom": "进度条宽度不足，百分比数字重叠",
+                  "fix": "进度条最小宽度 80px，数字放在条外右侧",
+                  "priority": 2
+                },
+                {
+                  "title": "空词书无引导",
+                  "symptom": "新用户看到空列表不知所措",
+                  "fix": "显示「去词书库挑选课本词书」按钮",
+                  "priority": 1
+                },
+                {
+                  "title": "词书内单词列表无搜索",
+                  "symptom": "词书 500 词时找某个词很难",
+                  "fix": "顶部加搜索框，支持模糊匹配",
+                  "priority": 3
+                }
+              ]
+            }
+          ],
+          "worksheet_layout_options": {
+            "economy": {
+              "sections": [
+                "页眉：日期 + 词书名（单行）",
+                "题型一 中译英：单列卡片，每卡含中文+填空格，4 题/行（flex-wrap）",
+                "题型二 英译中选择：题干+选项紧凑排列，选项用 A/B/C/D 前缀而非卡片",
+                "题型三 语境填空：词库横排 + 句子列表，句间距 0.5em",
+                "页脚：答案区（小字反色块，裁剪线提示家长撕掉）"
+              ],
+              "page_break_rules": [
+                "不强制分页，仅在内容自然溢出时分页",
+                "避免题目被拦腰截断：break-inside: avoid 应用于每道题容器",
+                "答案区始终在最后一页底部"
+              ],
+              "typography": [
+                "正文 12pt，行高 1.4",
+                "题号加粗 14pt",
+                "填空下划线 1pt",
+                "页边距 10mm",
+                "单词间距 0.3em"
+              ]
+            },
+            "standard": {
+              "sections": [
+                "封面页：标题「英语单词小测验」+ 日期 + 姓名填写栏 + 得分栏",
+                "题型一 中译英：标准表格，序号/中文/作答栏，每行一题",
+                "题型二 英译中选择：每题独立块，选项 2×2 网格卡片",
+                "题型三 语境填空：词库框 + 编号句子，句间距 1em",
+                "答题卡页（可选）：涂卡式选择题答案区",
+                "答案页：单独成页，标注「请沿此线裁剪」"
+              ],
+              "page_break_rules": [
+                "每大题型前 page-break-before: always",
+                "答案页 page-break-before: always",
+                "orphans: 3; widows: 3 防止单行落单"
+              ],
+              "typography": [
+                "正文 14pt，行高 1.6",
+                "题号加粗 16pt",
+                "填空下划线 1.5pt，长度固定 60mm",
+                "页边距 15mm",
+                "表格边框 0.5pt 实线"
+              ]
+            }
+          },
+          "mobile_css_changes": [
+            "@media (max-width: 480px) { .worksheet-table { display: block; } .worksheet-table tr { display: flex; flex-direction: column; border-bottom: 1px solid #eee; padding: 8px 0; } }",
+            "@media (max-width: 480px) { .worksheet-q-choices { grid-template-columns: 1fr; } }",
+            ".deck-picker-dropdown { max-height: 50vh; overflow-y: auto; }",
+            "@media print { .answer-section, .grading-area, nav, .no-print { display: none !important; } }",
+            "@media print { .worksheet-table { table-layout: fixed; width: 100%; } .worksheet-table td { word-break: break-word; } }",
+            "@media print { .fill-blank { border-bottom: 1.5pt solid #000; } }",
+            ".worksheet-break.economy-mode { break-before: auto; }",
+            "@media (max-width: 480px) { .primary-btn { font-size: 14px; padding: 12px 16px; white-space: nowrap; } }",
+            "@media (max-width: 480px) { textarea.paste-area { min-height: 120px; } }",
+            "@media (max-width: 480px) { .word-checkbox-row { min-height: 44px; display: flex; align-items: center; } }",
+            "@media (max-width: 480px) { .word-bank { overflow-x: auto; -webkit-overflow-scrolling: touch; } }",
+            "@media (max-width: 480px) { .deck-card { padding: 12px; } .deck-progress { min-width: 80px; } }",
+            ".grading-drawer { position: fixed; bottom: 0; left: 0; right: 0; max-height: 60vh; overflow-y: auto; transform: translateY(100%); transition: transform 0.3s; }",
+            ".grading-drawer.open { transform: translateY(0); }",
+            "@media (max-width: 480px) { .worksheet-header { position: sticky; top: 0; z-index: 10; background: #fff; padding: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); } }",
+            "@media (max-width: 480px) { .history-list { max-height: 400px; overflow-y: auto; } }",
+            "@media print { .worksheet-q-choices { grid-template-columns: 1fr 1fr; } }",
+            "body { -webkit-text-size-adjust: 100%; }"
+          ],
+          "acceptance_tests": [
+            "iPhone SE (375px)：打开试卷页，中译英表格无横向滚动条，所有内容可见",
+            "iPhone SE：选择题选项单列显示，文字不截断，每个选项可完整阅读",
+            "任意手机：词书下拉菜单打开后可滚动，选择第 20 个词书不超出屏幕",
+            "任意手机：点击「打印」后调起系统打印预览，答案区不出现在预览中",
+            "打印预览：省纸模式下 15 词试卷应在 1 页内；标准模式 3 页左右",
+            "任意手机：批改录入抽屉从底部滑出，可滚动查看所有题目，点击题号跳转",
+            "任意手机：粘贴 500 字文章到提取区，提取结果列表每行可点击勾选，无误触",
+            "任意手机：首次进入今日作业页，显示引导卡片指向词书",
+            "任意手机：切换使用模式后出现 toast，3 秒内可撤销",
+            "实际打印：填空下划线清晰可见，表格边框完整，无内容被裁切"
+          ]
+        }
+      }
+    ]
+  }
+}
