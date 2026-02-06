@@ -6,6 +6,10 @@ from app.db import get_session
 from app.models import Worksheet, Word
 
 
+def _enable_parent_mode(client) -> None:
+    client.cookies.set("vs_mode", "parent")
+
+
 def _create_words_with_missing_definition():
     with get_session() as session:
         w1 = Word(term="alpha", definition="", example="")
@@ -16,6 +20,7 @@ def _create_words_with_missing_definition():
 
 
 def test_worksheet_question_types_degrade_when_missing_definition(client):
+    _enable_parent_mode(client)
     w1_id, w2_id = _create_words_with_missing_definition()
 
     data = {
@@ -41,6 +46,7 @@ def test_worksheet_question_types_degrade_when_missing_definition(client):
 
 
 def test_worksheet_never_ends_up_with_no_question_types(client):
+    _enable_parent_mode(client)
     w1_id, w2_id = _create_words_with_missing_definition()
 
     # Intentionally request only MCQ, but missing defs should force fallback to spelling.
@@ -59,3 +65,18 @@ def test_worksheet_never_ends_up_with_no_question_types(client):
         assert row is not None
         sheet = json.loads(row.sheet_json)
         assert sheet["question_types"] == ["spelling"]
+
+
+def test_worksheets_page_redirects_in_self_mode(client):
+    resp = client.get("/worksheets", follow_redirects=False)
+    assert resp.status_code == 303
+    location = resp.headers.get("location") or ""
+    assert location.startswith("/settings?")
+
+
+def test_worksheets_extract_is_deprecated(client):
+    _enable_parent_mode(client)
+    resp = client.post("/worksheets/extract", data={"source_text": "hello world"}, follow_redirects=False)
+    assert resp.status_code == 303
+    location = resp.headers.get("location") or ""
+    assert location.startswith("/worksheets?")

@@ -131,74 +131,76 @@
       </div>
     {% endif %}
 
-    <div class="card">
-      <div class="card-k">家长模式设置</div>
-      <div class="card-v">生成并打印作业</div>
-      <form class="stack mt-10" method="post" action="/settings/parent">
-        <div class="muted">流程：粘贴文本 → 识词 → 生成作业 → 打印 → 勾错词</div>
-        <div class="muted mt-8">孩子阶段</div>
-        <div class="mode-switch-group stage-switch-group" role="radiogroup" aria-label="孩子阶段">
-          <label class="mode-switch-item">
-            <input type="radio" name="stage" value="primary" {% if parent_stage == 'primary' %}checked{% endif %} />
-            <span class="mode-switch-chip">
-              <span class="mode-switch-title">小学</span>
-              <span class="mode-switch-sub">基础词汇</span>
-            </span>
-          </label>
-          <label class="mode-switch-item">
-            <input type="radio" name="stage" value="junior" {% if parent_stage != 'primary' %}checked{% endif %} />
-            <span class="mode-switch-chip">
-              <span class="mode-switch-title">初中</span>
-              <span class="mode-switch-sub">中考词汇</span>
-            </span>
-          </label>
-        </div>
-        <label>从文本提取时：每日推荐词量
-          <input type="number" name="daily_words" min="1" max="60" value="{{ parent_daily_words }}" />
-        </label>
-
-        <details class="deck-picker mt-8">
-          <summary class="deck-picker-summary">课本/目标词库（可选，建议一次设置好）</summary>
-          <div class="card mt-10">
-            <label>课本词表（可选，用于标注“课本内/外”）
-              <select name="textbook_deck_id">
-                <option value="0" {% if not parent_textbook_deck_id %}selected{% endif %}>不设置</option>
-                {% for d in decks %}
-                  <option value="{{ d.id }}" {% if parent_textbook_deck_id == d.id %}selected{% endif %}>{{ d.name }}</option>
-                {% endfor %}
-              </select>
+    {% if is_parent_mode %}
+      <div class="card">
+        <div class="card-k">家长模式设置</div>
+        <div class="card-v">生成并打印作业</div>
+        <form class="stack mt-10" method="post" action="/settings/parent">
+          <div class="muted">流程：生成作业 → 打印 → 勾错词</div>
+          <div class="muted mt-8">孩子阶段</div>
+          <div class="mode-switch-group stage-switch-group" role="radiogroup" aria-label="孩子阶段">
+            <label class="mode-switch-item">
+              <input type="radio" name="stage" value="primary" {% if parent_stage == 'primary' %}checked{% endif %} />
+              <span class="mode-switch-chip">
+                <span class="mode-switch-title">小学</span>
+                <span class="mode-switch-sub">基础词汇</span>
+              </span>
             </label>
-
-            <label class="mt-10">词频词表（可选，用于标注“高频”）
-              <select name="frequency_deck_id">
-                <option value="0" {% if not parent_frequency_deck_id %}selected{% endif %}>不设置</option>
-                {% for d in parent_frequency_deck_candidates %}
-                  <option value="{{ d.id }}" {% if parent_frequency_deck_id == d.id %}selected{% endif %}>{{ d.name }}</option>
-                {% endfor %}
-              </select>
+            <label class="mode-switch-item">
+              <input type="radio" name="stage" value="junior" {% if parent_stage != 'primary' %}checked{% endif %} />
+              <span class="mode-switch-chip">
+                <span class="mode-switch-title">初中</span>
+                <span class="mode-switch-sub">中考词汇</span>
+              </span>
             </label>
-
-            <div class="mt-12">
-              <div class="muted">目标词库（可选）：用于标注“目标内 / 常考”</div>
-              {% if parent_target_deck_candidates and parent_target_deck_candidates|length > 0 %}
-                <div class="check-grid mt-8">
-                  {% for d in parent_target_deck_candidates %}
-                    <label class="check">
-                      <input type="checkbox" name="target_deck_ids" value="{{ d.id }}" {% if d.id in parent_target_deck_ids %}checked{% endif %} />
-                      <span>{{ d.name }}</span>
-                    </label>
-                  {% endfor %}
-                </div>
-              {% else %}
-                <div class="muted mt-8">暂无可选目标词库：先去“词书”或“词书库”导入（如 中考词汇 / 高频 10k）。</div>
-              {% endif %}
-            </div>
           </div>
-        </details>
+          <label>每日推荐词量
+            <input type="number" name="daily_words" min="1" max="60" value="{{ parent_daily_words }}" />
+          </label>
 
-        <button class="btn primary btn-emphasis" type="submit">保存设置</button>
-      </form>
-    </div>
+          <details class="deck-picker mt-8">
+            <summary class="deck-picker-summary">课本/目标词库（可选，建议一次设置好）</summary>
+            <div class="card mt-10">
+              <label>课本词表（可选，用于标注“课本内/外”）
+                <select name="textbook_deck_id">
+                  <option value="0" {% if not parent_textbook_deck_id %}selected{% endif %}>不设置</option>
+                  {% for d in decks %}
+                    <option value="{{ d.id }}" {% if parent_textbook_deck_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+
+              <label class="mt-10">词频词表（可选，用于标注“高频”）
+                <select name="frequency_deck_id">
+                  <option value="0" {% if not parent_frequency_deck_id %}selected{% endif %}>不设置</option>
+                  {% for d in parent_frequency_deck_candidates %}
+                    <option value="{{ d.id }}" {% if parent_frequency_deck_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+
+              <div class="mt-12">
+                <div class="muted">目标词库（可选）：用于标注“目标内 / 常考”</div>
+                {% if parent_target_deck_candidates and parent_target_deck_candidates|length > 0 %}
+                  <div class="check-grid mt-8">
+                    {% for d in parent_target_deck_candidates %}
+                      <label class="check">
+                        <input type="checkbox" name="target_deck_ids" value="{{ d.id }}" {% if d.id in parent_target_deck_ids %}checked{% endif %} />
+                        <span>{{ d.name }}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="muted mt-8">暂无可选目标词库：先去“词书”或“词书库”导入（如 中考词汇 / 高频 10k）。</div>
+                {% endif %}
+              </div>
+            </div>
+          </details>
+
+          <button class="btn primary btn-emphasis" type="submit">保存设置</button>
+        </form>
+      </div>
+    {% endif %}
 
     {% if not is_parent_mode %}
       <div class="card">

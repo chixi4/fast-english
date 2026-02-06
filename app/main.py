@@ -803,6 +803,19 @@ def _wants_html(request: Request) -> bool:
     return "text/html" in accept or "*/*" in accept
 
 
+def _is_parent_mode(request: Request) -> bool:
+    return getattr(request.state, "ui_mode", _UI_MODE_SELF) == _UI_MODE_PARENT
+
+
+def _require_parent_mode_for_worksheets(request: Request) -> Response | None:
+    if _is_parent_mode(request):
+        return None
+    msg = "作业功能仅家长模式可用"
+    if _wants_html(request):
+        return _redirect("/settings?" + urlencode({"toast": msg}))
+    raise HTTPException(status_code=403, detail=msg)
+
+
 @app.exception_handler(HTTPException)
 def http_exception_handler(request: Request, exc: HTTPException):
     if _wants_html(request):
@@ -1381,6 +1394,10 @@ def _ai_generate_reading_for_worksheet(
 
 @app.get("/worksheets", response_class=HTMLResponse)
 def worksheets_page(request: Request, toast: str | None = None):
+    blocked = _require_parent_mode_for_worksheets(request)
+    if blocked is not None:
+        return blocked
+
     with get_session() as session:
         parent = _ensure_parent_settings(session)
         stage = (parent.stage or "junior").strip().lower()
@@ -1395,178 +1412,26 @@ def worksheets_page(request: Request, toast: str | None = None):
             "stage": stage,
             "stage_label": _stage_label(stage),
             "daily_words": daily_words,
-            "source_text": "",
-            "extract": None,
         },
     )
 
 
 @app.post("/worksheets/extract", response_class=HTMLResponse)
 def worksheets_extract(request: Request, source_text: str = Form("")):
-    source_text = (source_text or "").strip()
-    if len(source_text) < 5:
-        return worksheets_page(request, toast="请粘贴一段英文文本（至少 5 个字符）。")
+    blocked = _require_parent_mode_for_worksheets(request)
+    if blocked is not None:
+        return blocked
 
-    terms = _extract_terms_from_text(source_text)
-    if not terms:
-        return worksheets_page(request, toast="没有提取到英文单词。请检查文本内容。")
-    if len(terms) > 300:
-        terms = terms[:300]
-
-    with get_session() as session:
-        parent = _ensure_parent_settings(session)
-        stage = (parent.stage or "junior").strip().lower()
-        daily_words = int(parent.daily_words or 10)
-        plan = _ensure_default_plan(session)
-
-        rows = session.query(Word).filter(func.lower(Word.term).in_(terms)).all()
-        by_term = {str(w.term or "").strip().lower(): w for w in rows}
-
-        found: list[Word] = []
-        seen_ids: set[int] = set()
-        for t in terms:
-            w = by_term.get(t)
-            if not w:
-                continue
-            if int(w.id) in seen_ids:
-                continue
-            seen_ids.add(int(w.id))
-            found.append(w)
-
-        missing_count = max(0, len(terms) - len(found))
-        word_ids = [int(w.id) for w in found]
-
-        textbook_set: set[int] = set()
-        if parent.textbook_deck_id and word_ids:
-            rows = (
-                session.query(DeckWord.word_id)
-                .filter(DeckWord.deck_id == int(parent.textbook_deck_id), DeckWord.word_id.in_(word_ids))
-                .all()
-            )
-            textbook_set = {int(wid) for (wid,) in rows}
-
-        target_deck_ids: list[int] = []
-        try:
-            obj = json.loads(parent.target_deck_ids_json or "[]")
-            if isinstance(obj, list):
-                for x in obj:
-                    if isinstance(x, int) and x > 0:
-                        target_deck_ids.append(int(x))
-        except Exception:
-            target_deck_ids = []
-
-        deck_name_by_id: dict[int, str] = {}
-        if target_deck_ids:
-            for d in session.query(Deck).filter(Deck.id.in_(target_deck_ids)).all():
-                deck_name_by_id[int(d.id)] = str(d.name or "").strip()
-
-        in_target_map: dict[int, list[int]] = {}
-        if target_deck_ids and word_ids:
-            rows = (
-                session.query(DeckWord.deck_id, DeckWord.word_id)
-                .filter(DeckWord.deck_id.in_(target_deck_ids), DeckWord.word_id.in_(word_ids))
-                .all()
-            )
-            for did, wid in rows:
-                in_target_map.setdefault(int(wid), []).append(int(did))
-
-        freq_rank: dict[int, int] = {}
-        if parent.frequency_deck_id and word_ids:
-            rows = (
-                session.query(DeckWord.word_id, DeckWord.position)
-                .filter(DeckWord.deck_id == int(parent.frequency_deck_id), DeckWord.word_id.in_(word_ids))
-                .all()
-            )
-            for wid, pos in rows:
-                try:
-                    freq_rank[int(wid)] = int(pos or 0)
-                except Exception:
-                    continue
-
-        in_plan_set: set[int] = set()
-        if word_ids:
-            rows = (
-                session.query(PlanWord.word_id)
-                .filter(PlanWord.plan_id == plan.id, PlanWord.word_id.in_(word_ids))
-                .all()
-            )
-            in_plan_set = {int(wid) for (wid,) in rows}
-
-        threshold = 2500 if stage == "primary" else 5000
-
-        scored: list[tuple[int, int]] = []
-        for w in found:
-            wid = int(w.id)
-            score = 0
-            if wid in textbook_set:
-                score -= 100
-            if wid in in_target_map:
-                score += 100
-            r = freq_rank.get(wid)
-            if r and r > 0 and r <= threshold:
-                score += 50 + int((threshold - r) / max(1, threshold) * 20)
-            if wid in in_plan_set:
-                score -= 20
-            scored.append((wid, score))
-
-        scored.sort(key=lambda t: (t[1], t[0]), reverse=True)
-        recommended_set = {wid for (wid, _s) in scored[: max(1, daily_words)]}
-
-        items: list[dict[str, Any]] = []
-        for w in found:
-            wid = int(w.id)
-            target_names = [deck_name_by_id.get(did, f"deck#{did}") for did in in_target_map.get(wid, [])]
-            def_short = _short_definition(w.definition)
-            items.append(
-                {
-                    "word_id": wid,
-                    "term": str(w.term or ""),
-                    "definition_short": def_short,
-                    "textbook": wid in textbook_set,
-                    "in_targets": target_names,
-                    "freq_rank": freq_rank.get(wid) or 0,
-                    "recommended": wid in recommended_set,
-                    "missing_def": not bool(def_short),
-                }
-            )
-
-        # Reduce parent cognitive load: show recommended items first.
-        items.sort(
-            key=lambda it: (
-                0 if it.get("recommended") else 1,
-                0 if (it.get("in_targets") or []) else 1,
-                int(it.get("freq_rank") or 999999),
-                1 if it.get("textbook") else 0,
-                str(it.get("term") or ""),
-            )
-        )
-
-        worksheets = session.query(Worksheet).order_by(Worksheet.id.desc()).limit(30).all()
-
-    extract = {
-        "found_count": len(items),
-        "missing_count": int(missing_count),
-        "items": items,
-        "error": "",
-    }
-
-    return templates.TemplateResponse(
-        request,
-        "worksheets.html",
-        {
-            "toast": "",
-            "worksheets": worksheets,
-            "stage": stage,
-            "stage_label": _stage_label(stage),
-            "daily_words": daily_words,
-            "source_text": source_text,
-            "extract": extract,
-        },
-    )
+    _ = source_text
+    return _redirect("/worksheets?" + urlencode({"toast": "“课文导入”已下线，请直接使用“生成今日作业”。"}))
 
 
 @app.post("/worksheets/generate_today")
 def worksheets_generate_today(request: Request, question_types: list[str] = Form([])):
+    blocked = _require_parent_mode_for_worksheets(request)
+    if blocked is not None:
+        return blocked
+
     with get_session() as session:
         parent = _ensure_parent_settings(session)
         stage = (parent.stage or "junior").strip().lower()
@@ -1672,7 +1537,7 @@ def worksheets_generate_today(request: Request, question_types: list[str] = Form
                     break
 
         if not picked:
-            msg = "今天没有可生成作业的单词。先去“词书库”导入词书，或在“作业”粘贴文本提取生词。"
+            msg = "今天没有可生成作业的单词。先去“词书库”导入词书，或先在自学模式积累学习记录。"
             return _redirect("/?" + urlencode({"toast": msg}))
 
         plan = _ensure_default_plan(session)
@@ -2097,6 +1962,10 @@ def worksheets_generate(
     word_ids: list[int] = Form([]),
     question_types: list[str] = Form([]),
 ):
+    blocked = _require_parent_mode_for_worksheets(request)
+    if blocked is not None:
+        return blocked
+
     stage = (stage or "junior").strip().lower()
     if stage not in {"primary", "junior"}:
         stage = "junior"
@@ -2245,6 +2114,10 @@ def worksheet_detail(
     view: str | None = None,
     layout: str | None = None,
 ):
+    blocked = _require_parent_mode_for_worksheets(request)
+    if blocked is not None:
+        return blocked
+
     def _is_missing_short_def(s: str) -> bool:
         t = (s or "").strip()
         return (not t) or t in {"（无释义）", "(无释义)", "无释义"}
@@ -2386,6 +2259,10 @@ def worksheet_grade(
     view: str | None = None,
     layout: str | None = None,
 ):
+    blocked = _require_parent_mode_for_worksheets(request)
+    if blocked is not None:
+        return blocked
+
     cleaned_wrong: set[int] = set()
     for raw in wrong_word_ids or []:
         try:

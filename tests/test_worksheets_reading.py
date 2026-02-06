@@ -6,6 +6,10 @@ from app.db import get_session
 from app.models import Worksheet, Word
 
 
+def _enable_parent_mode(client) -> None:
+    client.cookies.set("vs_mode", "parent")
+
+
 def _create_words(n: int = 6) -> list[int]:
     with get_session() as session:
         ids: list[int] = []
@@ -18,6 +22,7 @@ def _create_words(n: int = 6) -> list[int]:
 
 
 def test_worksheet_can_generate_reading_section_in_mock_mode(client):
+    _enable_parent_mode(client)
     word_ids = _create_words(6)
     data = {
         "mode": "extract",
@@ -42,4 +47,3 @@ def test_worksheet_can_generate_reading_section_in_mock_mode(client):
         answers = sheet.get("answers") or {}
         assert "reading" in answers
         assert len(answers["reading"]) >= 1
-
