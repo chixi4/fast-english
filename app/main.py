@@ -1685,20 +1685,35 @@ def _prime_onboarding_source(source_id: str, *, wait_sec: float = 0.6, seed_coun
     _seed_plan_from_source(sid, count=seed_count)
 
 
-def _ensure_source_wordbook_imported(source_id: str, *, timeout_sec: float = 8.0) -> tuple[bool, str]:
+def _source_wordbook_ready(source_id: str) -> tuple[bool, str]:
     try:
         source = get_source(source_id)
     except Exception:
         return False, ""
 
     deck = (source.default_deck or "").strip()
-    if deck:
-        with get_session() as session:
-            d = session.query(Deck).filter(Deck.name == deck).first()
-            if d is not None:
-                has_link = session.query(DeckWord.word_id).filter(DeckWord.deck_id == int(d.id)).limit(1).first()
-                if has_link is not None:
-                    return True, deck
+    if not deck:
+        return False, deck
+
+    with get_session() as session:
+        d = session.query(Deck).filter(Deck.name == deck).first()
+        if d is None:
+            return False, deck
+        has_link = session.query(DeckWord.word_id).filter(DeckWord.deck_id == int(d.id)).limit(1).first()
+        return (has_link is not None), deck
+
+
+def _ensure_source_wordbook_imported(source_id: str, *, timeout_sec: float = 8.0) -> tuple[bool, str]:
+    ready, deck = _source_wordbook_ready(source_id)
+    if ready:
+        return True, deck
+
+    try:
+        source = get_source(source_id)
+    except Exception:
+        return False, ""
+
+    deck = (source.default_deck or "").strip()
 
     # Tests should stay fully offline and deterministic.
     if os.getenv("PYTEST_CURRENT_TEST"):
@@ -3155,10 +3170,11 @@ def _record_onboarding_stage_choice(*, user_id: int, username_norm: str, flow: s
 def _apply_onboarding_stage_preferences(*, username_norm: str, flow: str, stage: str) -> None:
     flow2 = _normalize_onboarding_flow(flow)
     source_id = _recommended_source_id_for_stage(flow2, stage)
-    # 阶段选择后尽量先同步准备一轮，减少新手引导里“连续刷新多次才可用”的体感。
-    ready, _deck_name = _ensure_source_wordbook_imported(source_id, timeout_sec=4.0)
+    # 阶段选择接口必须快：只做快速就绪检查，下载与导入放后台。
+    ready, _deck_name = _source_wordbook_ready(source_id)
     if not ready:
         _queue_source_wordbook_import(source_id)
+    # 若词书已就绪则立即加一批学习卡；未就绪时该调用会快速返回。
     _seed_plan_from_source(source_id, count=20)
     deck_name = ""
     try:

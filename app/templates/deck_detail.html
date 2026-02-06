@@ -32,7 +32,7 @@
   </div>
 
   <h2>词表（最多300条）</h2>
-  <table class="table">
+  <table class="table" data-mobile-cards="1" data-audit-id="deck-detail-table">
     <thead>
       <tr>
         <th>term</th>
@@ -46,18 +46,18 @@
     <tbody>
       {% for item in items %}
         <tr>
-          <td class="mono">{{ item.word.term }}</td>
-          <td class="mono">{{ item.link.chapter }}</td>
-          <td>
+          <td class="mono" data-col-label="单词">{{ item.word.term }}</td>
+          <td class="mono" data-col-label="章节">{{ item.link.chapter }}</td>
+          <td data-col-label="计划">
             {% if item.card %}
               <span class="badge ok">已加入</span>
             {% else %}
               <span class="badge">未加入</span>
             {% endif %}
           </td>
-          <td class="mono">{% if item.card %}{{ item.card.due_at }}{% else %}-{% endif %}</td>
-          <td class="mono">{% if item.card %}{{ state_map.get(item.card.state, item.card.state) }}{% else %}-{% endif %}</td>
-          <td class="mono">{{ item.word.correct_count }}/{{ item.word.wrong_count }}</td>
+          <td class="mono" data-col-label="到期时间">{% if item.card %}{{ item.card.due_at }}{% else %}-{% endif %}</td>
+          <td class="mono" data-col-label="状态">{% if item.card %}{{ state_map.get(item.card.state, item.card.state) }}{% else %}-{% endif %}</td>
+          <td class="mono" data-col-label="正确/错误">{{ item.word.correct_count }}/{{ item.word.wrong_count }}</td>
         </tr>
       {% endfor %}
     </tbody>

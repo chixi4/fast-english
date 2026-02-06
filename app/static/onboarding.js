@@ -2,11 +2,14 @@
   const STATE_URL = "/api/onboarding/state";
   const ACTION_URL = "/api/onboarding/action";
   const ONBOARDING_ACTIVE_KEY = "vs_onboarding_active";
+  const AUTO_NAV_GUARD_KEY = "vs_onboarding_auto_nav_guard";
+  const AUTO_NAV_GUARD_TTL_MS = 8000;
   const MOUNT_ID = "onboardingGuideMount";
   const SPRITE_ID = "onboardingSprite";
   const TOOLTIP_ID = "onboardingTooltip";
 
   let inflight = false;
+  let actionInFlight = false;
   let cache = null;
   let positionRaf = 0;
   let pendingTimer = 0;
@@ -33,6 +36,43 @@
     } catch {
       return "";
     }
+  };
+  const readAutoNavGuard = () => {
+    try {
+      const raw = window.sessionStorage.getItem(AUTO_NAV_GUARD_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return null;
+      const ts = Number(parsed.ts || 0);
+      if (!Number.isFinite(ts) || ts <= 0) return null;
+      return {
+        key: String(parsed.key || ""),
+        href: String(parsed.href || ""),
+        ts,
+      };
+    } catch {
+      return null;
+    }
+  };
+  const writeAutoNavGuard = (step) => {
+    if (!step) return;
+    const payload = {
+      key: String(step.key || ""),
+      href: toPath(String(step.href || "").trim()),
+      ts: Date.now(),
+    };
+    try {
+      window.sessionStorage.setItem(AUTO_NAV_GUARD_KEY, JSON.stringify(payload));
+    } catch {}
+  };
+  const shouldBlockAutoNav = (step) => {
+    if (!step) return false;
+    const guard = readAutoNavGuard();
+    if (!guard) return false;
+    if ((Date.now() - guard.ts) > AUTO_NAV_GUARD_TTL_MS) return false;
+    const stepKey = String(step.key || "");
+    const stepHref = toPath(String(step.href || "").trim());
+    return !!(guard.key && guard.key === stepKey && guard.href && guard.href === stepHref);
   };
   const setPendingGate = (on) => {
     document.documentElement.classList.toggle("onboarding-pending", !!on);
@@ -230,10 +270,12 @@
     if (state.role_selection_required || state.stage_selection_required) return false;
     const step = state.current_step || null;
     if (!step) return false;
+    if (shouldBlockAutoNav(step)) return false;
     const href = String(step.href || "").trim();
     if (!href) return false;
     const hrefPath = toPath(href);
     if (!hrefPath || hrefPath === currentPath()) return false;
+    writeAutoNavGuard(step);
     return htmxNavigate(href, { pushURL: true });
   };
 
@@ -508,6 +550,8 @@
   };
 
   const doAction = async (action, extra = {}) => {
+    if (actionInFlight) return;
+    actionInFlight = true;
     try {
       if (action === "snooze") {
         const state = await postAction("snooze", { hours: 24 });
@@ -516,9 +560,11 @@
       }
       const state = await postAction(action, extra);
       applyState(state);
-      maybeAutoNavigateToCurrentStep(state, action);
+      // 交由用户手动点下一步，避免动作后出现自动连跳/回跳体感。
     } catch {
       await refresh();
+    } finally {
+      actionInFlight = false;
     }
   };
 
