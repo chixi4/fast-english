@@ -205,7 +205,7 @@
         <header class="analytics-panel-h">留存分析</header>
         {% if is_admin %}
           <div class="analytics-retention">
-            <table class="table analytics-table" data-analytics-retention-table>
+            <table class="table analytics-table" data-analytics-retention-table data-mobile-cards="1" data-audit-id="analytics-retention-table">
               <thead>
                 <tr>
                   <th>注册</th>
@@ -220,21 +220,21 @@
               <tbody>
                 {% for r in dashboard.retention.table %}
                   <tr>
-                    <td class="mono">{{ r.date }}</td>
-                    <td class="mono">{{ r.size }}</td>
-                    <td class="analytics-heat-cell" style="--heat: {{ (r.d1 or 0) / 100 }}">
+                    <td class="mono" data-col-label="注册">{{ r.date }}</td>
+                    <td class="mono" data-col-label="规模">{{ r.size }}</td>
+                    <td class="analytics-heat-cell" data-col-label="D1" style="--heat: {{ (r.d1 or 0) / 100 }}">
                       {% if r.d1 is not none %}{{ r.d1 }}%<div class="muted analytics-heat-sub">{{ r.d1_avg }} 次/活跃人</div>{% else %}-{% endif %}
                     </td>
-                    <td class="analytics-heat-cell" style="--heat: {{ (r.d3 or 0) / 100 }}">
+                    <td class="analytics-heat-cell" data-col-label="D3" style="--heat: {{ (r.d3 or 0) / 100 }}">
                       {% if r.d3 is not none %}{{ r.d3 }}%<div class="muted analytics-heat-sub">{{ r.d3_avg }} 次/活跃人</div>{% else %}-{% endif %}
                     </td>
-                    <td class="analytics-heat-cell" style="--heat: {{ (r.d7 or 0) / 100 }}">
+                    <td class="analytics-heat-cell" data-col-label="D7" style="--heat: {{ (r.d7 or 0) / 100 }}">
                       {% if r.d7 is not none %}{{ r.d7 }}%<div class="muted analytics-heat-sub">{{ r.d7_avg }} 次/活跃人</div>{% else %}-{% endif %}
                     </td>
-                    <td class="analytics-heat-cell" style="--heat: {{ (r.d14 or 0) / 100 }}">
+                    <td class="analytics-heat-cell" data-col-label="D14" style="--heat: {{ (r.d14 or 0) / 100 }}">
                       {% if r.d14 is not none %}{{ r.d14 }}%<div class="muted analytics-heat-sub">{{ r.d14_avg }} 次/活跃人</div>{% else %}-{% endif %}
                     </td>
-                    <td class="analytics-heat-cell" style="--heat: {{ (r.d30 or 0) / 100 }}">
+                    <td class="analytics-heat-cell" data-col-label="D30" style="--heat: {{ (r.d30 or 0) / 100 }}">
                       {% if r.d30 is not none %}{{ r.d30 }}%<div class="muted analytics-heat-sub">{{ r.d30_avg }} 次/活跃人</div>{% else %}-{% endif %}
                     </td>
                   </tr>

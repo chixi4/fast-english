@@ -60,7 +60,7 @@ a { color: var(--text); }
 .table-col-28 { width: 28%; }
 .table-col-48 { width: 48%; }
 
-.container { --gutter: 18px; max-width: 980px; margin: 0 auto; padding: var(--gutter); }
+.container { --gutter: 18px; max-width: 980px; margin: 0 auto; padding: var(--gutter); width: 100%; min-width: 0; }
 .topbar { position: relative; background: var(--bg); border-bottom: 1px solid var(--border); z-index: 1000; flex: 0 0 auto; }
 .topbar-inner { display: flex; align-items: center; justify-content: space-between; }
 .brand { display: flex; align-items: center; gap: 10px; }
@@ -979,15 +979,16 @@ mark.kw {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
 }
-.library-row .deck-title { margin: 0; min-width: 0; }
+.library-row .deck-title { margin: 0; min-width: 0; flex: 1 1 auto; }
 .library-row .deck-title strong {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.library-row form { margin: 0; display: flex; align-items: center; }
+.library-row form { margin: 0; display: flex; align-items: center; flex: 0 0 auto; min-width: 0; }
 .library-row .btn { white-space: nowrap; }
 .library-row .btn.compact {
   transform: translateY(-1px);
@@ -1225,15 +1226,42 @@ mark.kw {
     padding: 10px 10px;
   }
 
-  /* 表格横向滚动 */
+  /* 表格：手机端默认换行，避免页面级横向滚动 */
   .table {
-    display: block;
-    overflow-x: auto;
-    white-space: nowrap;
+    width: 100%;
+    table-layout: fixed;
   }
   .table th, .table td {
     padding: 8px;
     font-size: 14px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  /* 高密度数据表：仅移动端转“键值卡片” */
+  .table[data-mobile-cards="1"] { display: block; border-collapse: separate; border-spacing: 0; }
+  .table[data-mobile-cards="1"] thead { display: none; }
+  .table[data-mobile-cards="1"] tbody { display: block; }
+  .table[data-mobile-cards="1"] tr {
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 10px;
+    margin: 10px 0;
+  }
+  .table[data-mobile-cards="1"] th,
+  .table[data-mobile-cards="1"] td {
+    display: block;
+    width: 100%;
+    border: none;
+    padding: 4px 0;
+  }
+  .table[data-mobile-cards="1"] td::before {
+    content: attr(data-col-label);
+    display: block;
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 2px;
   }
 
   /* 表单优化 */
@@ -1259,6 +1287,11 @@ mark.kw {
 
   .deck-stats { grid-template-columns: 1fr 1fr; }
   .deck-actions { grid-template-columns: 1fr; }
+  .library-row .btn.compact {
+    min-width: 88px;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
 
   .review-rating-grid { gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-rating-grid .btn { min-height: 56px; }
@@ -1316,6 +1349,8 @@ mark.kw {
 main#content {
   flex: 1 1 auto;
   overflow-y: auto;
+  overflow-x: hidden;
+  overflow-x: clip;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: none;
 }
@@ -1453,6 +1488,11 @@ main#content {
 
 .analytics-retention { display: grid; gap: 12px; margin-top: 10px; }
 .analytics-table th, .analytics-table td { padding: 8px 10px; }
+.analytics-table th, .analytics-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .analytics-retention-note { font-size: 12px; }
 .analytics-heat-cell {
   position: relative;
