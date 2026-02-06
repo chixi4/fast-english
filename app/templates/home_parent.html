@@ -31,7 +31,7 @@
 
     <div class="actions actions-full">
       <form id="parentGenerateTodayForm" class="m-0" method="post" action="/worksheets/generate_today" hx-boost="false">
-        <button class="btn primary btn-emphasis" id="parentGenerateTodayBtn" type="submit">生成今日作业并打印</button>
+        <button class="btn primary btn-emphasis" id="parentGenerateTodayBtn" data-guide-anchor="parent-generate-sheet" type="submit">生成今日作业并打印</button>
       </form>
       <a class="btn subtle" href="/worksheets">查看作业记录</a>
     </div>
@@ -45,7 +45,7 @@
           · 进入后勾选错词并提交
         </div>
         <div class="actions mt-10">
-          <a class="btn primary" href="/worksheets/{{ pending_ws.id }}?view=grading">去批改</a>
+          <a class="btn primary" data-guide-anchor="parent-grade-sheet" href="/worksheets/{{ pending_ws.id }}?view=grading">去批改</a>
           <a class="btn subtle" href="/worksheets">查看历史</a>
         </div>
       </div>

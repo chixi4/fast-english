@@ -17,45 +17,63 @@
 
   {% if word_count == 0 %}
     <div class="card">
-      <div class="big">还没有单词</div>
-      <div class="actions">
-        <a class="btn primary" href="/library">导入词书</a>
-        <a class="btn" href="/words">高级导入</a>
-      </div>
+      {% if onboarding_self_active %}
+        <div class="big">开始一次学习</div>
+        <div class="muted">系统正在准备阶段词汇，通常只需几秒。</div>
+        <div class="actions">
+          <a class="btn primary" data-guide-anchor="self-first-review" hx-boost="false" href="/review?onboarding_retry=1">开始一次学习</a>
+          <a class="btn" hx-boost="false" href="/?onboarding_retry=1">重试准备</a>
+        </div>
+      {% else %}
+        <div class="big">还没有单词</div>
+        <div class="actions">
+          <a class="btn primary" data-guide-anchor="self-first-review" href="/library">导入词书</a>
+          <a class="btn" href="/words">高级导入</a>
+        </div>
+      {% endif %}
     </div>
   {% elif total == 0 %}
     <div class="card">
-      <div class="big">加入学习计划</div>
-      {% if deck_id %}
-        <form class="row" method="post" action="/plan/add">
-          <input type="hidden" name="deck_id" value="{{ deck_id }}" />
-          <input class="review-count-input" type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" />
-          <input type="hidden" name="return_to" value="review" />
-          <button class="btn primary" type="submit">加入并开始</button>
-          <a class="btn" href="/decks/{{ deck_id }}">词书详情</a>
-        </form>
+      {% if onboarding_self_active %}
+        <div class="big">开始一次学习</div>
+        <div class="muted">系统正在把阶段词汇加入学习计划，通常只需几秒。</div>
+        <div class="actions">
+          <a class="btn primary" data-guide-anchor="self-first-review" hx-boost="false" href="/review?onboarding_retry=1">开始一次学习</a>
+          <a class="btn" hx-boost="false" href="/?onboarding_retry=1">重试准备</a>
+        </div>
       {% else %}
-        <form class="stack" method="post" action="/plan/add">
-          <label>从词书加入
-            <select name="deck_id">
-              {% for d in decks %}
-                <option value="{{ d.id }}">{{ d.name }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label>加入数量
-            <input type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" />
-          </label>
-          <input type="hidden" name="return_to" value="review" />
-          <button class="btn primary" type="submit">开始学习</button>
-        </form>
+        <div class="big">加入学习计划</div>
+        {% if deck_id %}
+          <form class="row" method="post" action="/plan/add">
+            <input type="hidden" name="deck_id" value="{{ deck_id }}" />
+            <input class="review-count-input" type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" />
+            <input type="hidden" name="return_to" value="review" />
+            <button class="btn primary" data-guide-anchor="self-first-review" type="submit">加入并开始</button>
+            <a class="btn" href="/decks/{{ deck_id }}">词书详情</a>
+          </form>
+        {% else %}
+          <form class="stack" method="post" action="/plan/add">
+            <label>从词书加入
+              <select name="deck_id">
+                {% for d in decks %}
+                  <option value="{{ d.id }}">{{ d.name }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>加入数量
+              <input type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" />
+            </label>
+            <input type="hidden" name="return_to" value="review" />
+            <button class="btn primary" data-guide-anchor="self-first-review" type="submit">开始学习</button>
+          </form>
+        {% endif %}
       {% endif %}
     </div>
   {% elif not word %}
     <div class="card">
       <div class="big">暂无到期卡片</div>
       <div class="actions">
-        <a class="btn primary" href="/mistakes">错词篮</a>
+        <a class="btn primary" data-guide-anchor="self-try-mistakes" href="/mistakes">错词篮</a>
         <a class="btn" href="/">返回主页</a>
       </div>
     </div>
@@ -84,7 +102,14 @@
         </div>
       </div>
 
-      <div class="review-reveal-overlay" id="revealOverlay" role="button" tabindex="0" aria-label="点击显示答案">
+      <div
+        class="review-reveal-overlay"
+        id="revealOverlay"
+        data-guide-anchor="self-first-review"
+        role="button"
+        tabindex="0"
+        aria-label="点击显示答案"
+      >
         <div class="review-prompt-area" aria-hidden="true">
           <div class="review-prompt muted" id="reviewPrompt">
             <div class="review-prompt-title">请回忆单词释义</div>

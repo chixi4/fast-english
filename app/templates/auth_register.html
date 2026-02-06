@@ -2,22 +2,75 @@
 {% block content %}
   <h1>注册</h1>
 
-  {% if toast %}
-    <div class="card">{{ toast }}</div>
-  {% endif %}
-
+  {% set raw_msg = error_message or toast %}
+  {% set has_field_error = field_errors and (field_errors.get("username") or field_errors.get("password") or field_errors.get("password2")) %}
+  {% set msg = raw_msg if (raw_msg and not has_field_error) else '' %}
   <div class="card auth-card">
-    <form class="stack" method="post" action="/auth/register">
+    <form class="stack" method="post" action="/auth/register" hx-boost="false">
       <input type="hidden" name="next" value="{{ next or '/' }}" />
       <label>账号
-        <input name="username" autocomplete="username" required value="{{ username or '' }}" />
+        <input
+          name="username"
+          autocomplete="username"
+          required
+          value="{{ username or '' }}"
+          {% if field_errors and field_errors.get("username") %}class="is-invalid"{% endif %}
+        />
+        {% if field_errors and field_errors.get("username") %}
+          <span class="field-error">{{ field_errors.get("username") }}</span>
+        {% endif %}
       </label>
       <label>密码
-        <input name="password" type="password" autocomplete="new-password" required />
+        <span class="auth-pass-wrap">
+          <input
+            name="password"
+            type="password"
+            autocomplete="new-password"
+            required
+            {% if field_errors and field_errors.get("password") %}class="is-invalid"{% endif %}
+          />
+          <button
+            class="auth-pass-eye"
+            data-auth-pass-toggle
+            type="button"
+            aria-label="显示密码"
+            aria-pressed="false"
+            title="显示密码"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m3 3 18 18"/><path d="M10.58 10.58a2 2 0 0 0 2.83 2.83"/><path d="M9.88 5.09A10.94 10.94 0 0 1 12 5c5 0 9.27 3.11 11 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 1 12c1.73 3.89 6 7 11 7 1.61 0 3.16-.33 4.56-.91"/></svg>
+          </button>
+        </span>
+        {% if field_errors and field_errors.get("password") %}
+          <span class="field-error">{{ field_errors.get("password") }}</span>
+        {% endif %}
       </label>
       <label>确认密码
-        <input name="password2" type="password" autocomplete="new-password" required />
+        <span class="auth-pass-wrap">
+          <input
+            name="password2"
+            type="password"
+            autocomplete="new-password"
+            required
+            {% if field_errors and field_errors.get("password2") %}class="is-invalid"{% endif %}
+          />
+          <button
+            class="auth-pass-eye"
+            data-auth-pass-toggle
+            type="button"
+            aria-label="显示密码"
+            aria-pressed="false"
+            title="显示密码"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m3 3 18 18"/><path d="M10.58 10.58a2 2 0 0 0 2.83 2.83"/><path d="M9.88 5.09A10.94 10.94 0 0 1 12 5c5 0 9.27 3.11 11 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 1 12c1.73 3.89 6 7 11 7 1.61 0 3.16-.33 4.56-.91"/></svg>
+          </button>
+        </span>
+        {% if field_errors and field_errors.get("password2") %}
+          <span class="field-error">{{ field_errors.get("password2") }}</span>
+        {% endif %}
       </label>
+      <div class="auth-inline-feedback {% if msg %}is-error{% else %}is-empty{% endif %}" {% if error_code %}data-error-code="{{ error_code }}"{% endif %}>
+        {% if msg %}<span>{{ msg }}</span>{% else %}<span aria-hidden="true">&nbsp;</span>{% endif %}
+      </div>
       <button class="btn primary" type="submit">创建账号</button>
     </form>
 

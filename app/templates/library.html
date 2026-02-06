@@ -2,6 +2,13 @@
 {% block content %}
   <h1 class="title-accent">词书库</h1>
 
+  {% if source_id %}
+    <div class="card mt-12">
+      <div class="card-k">已按你的阶段推荐词书</div>
+      <div class="muted">优先导入带“已推荐”标签的词书即可。</div>
+    </div>
+  {% endif %}
+
   <div class="card mt-12">
     <div class="card-k">怎么选</div>
     <div class="muted">
@@ -17,10 +24,13 @@
     <h2>{{ g[0] }}</h2>
     <div class="deck-mobile">
       {% for s in g[1] %}
-        <div class="card">
+        <div class="card{% if source_id and source_id == s.id %} card-recommended{% endif %}">
           <div class="library-row">
             <div class="deck-title">
               <strong>{{ s.name }}</strong>
+              {% if source_id and source_id == s.id %}
+                <span class="badge badge-recommended ml-8">已推荐</span>
+              {% endif %}
               <div class="muted mt-6">{{ s.description }}</div>
               <div class="muted mt-6 fs-12">许可：{{ s.license }}</div>
             </div>
@@ -29,7 +39,11 @@
               <input type="hidden" name="deck_name" value="{{ s.default_deck }}" />
               <input type="hidden" name="default_tags" value="{{ s.default_tags }}" />
               <input type="hidden" name="on_conflict" value="skip" />
-              <button class="btn primary compact" type="submit">导入</button>
+              <button
+                class="btn primary compact"
+                {% if source_id and source_id == s.id %}data-guide-anchor="self-import-deck"{% endif %}
+                type="submit"
+              >导入</button>
             </form>
           </div>
         </div>
