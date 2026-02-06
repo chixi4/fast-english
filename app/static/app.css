@@ -485,6 +485,8 @@ label { display: grid; gap: 6px; color: var(--muted); }
 .q-choices { display: grid; gap: 8px; margin-top: 10px; }
 .choice { display: flex; gap: 10px; align-items: flex-start; color: var(--muted); }
 .choice input { width: auto; margin-top: 4px; }
+.choice.ok { color: rgba(125, 210, 138, 0.95); }
+.choice.bad { color: rgba(255, 107, 107, 0.95); }
 input[type="radio"],
 input[type="checkbox"] {
   accent-color: var(--primary);
@@ -653,6 +655,7 @@ mark.kw {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+.picker-meta { margin-top: 6px; font-size: 12px; opacity: 0.78; }
 
 .retest-list { display: grid; gap: 0; }
 .retest-row { cursor: pointer; }
@@ -1230,6 +1233,47 @@ label.check input { margin: 0; }
 .link-card { display: block; text-decoration: none; color: inherit; }
 .link-card:hover { border-color: rgba(245, 245, 247, 0.22); }
 
+/* Learning dashboard (progress) */
+.dash-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 72px;
+  padding: 10px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 12px;
+  background: rgba(44, 44, 46, 0.55);
+}
+.dash-bar {
+  width: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.dash-bar-fill {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 999px;
+  background: rgba(212, 102, 44, 0.92);
+  box-shadow: 0 0 10px rgba(212, 102, 44, 0.22);
+}
+.dash-bar-label {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.2px;
+}
+.dash-wrong-list { display: grid; gap: 8px; margin-top: 8px; }
+.dash-wrong-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.dash-wrong-term { font-weight: 700; }
+.dash-wrong-meta { font-size: 12px; white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .dash-bars { height: 64px; gap: 5px; }
+  .dash-bar { width: 12px; gap: 4px; }
+  .dash-bar-label { display: none; }
+}
+
 /* Worksheet (paper-like area inside dark theme) */
 .worksheet-sheet {
   margin-top: 12px;
@@ -1288,11 +1332,22 @@ label.check input { margin: 0; }
 .worksheet-q-stem { font-weight: 700; }
 .worksheet-q-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin-top: 6px; }
 .worksheet-ol { margin-top: 10px; padding-left: 18px; }
+.worksheet-reading-passage {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 12px;
+  line-height: 1.65;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .worksheet-answers { margin-top: 10px; color: rgba(0, 0, 0, 0.78); font-size: 14px; }
 
 .worksheet-break { height: 0; margin: 14px 0; }
 
 @media print {
+  @page { margin: 10mm; }
   html, body {
     background: #ffffff !important;
     color: #000000 !important;
@@ -1303,7 +1358,7 @@ label.check input { margin: 0; }
   main#content { overflow: visible !important; }
   .topbar, .nav, .divider-bar, .divider-tail, .no-print, #loading { display: none !important; }
   main#content .container { max-width: none; padding: 0; }
-  .worksheet-sheet { border: none; border-radius: 0; padding: 10mm 10mm; margin: 0; }
+  .worksheet-sheet { border: none; border-radius: 0; padding: 0; margin: 0; }
   .worksheet-fields { color: #000000; }
   .worksheet-line { border-bottom: 1.5pt solid #000000; }
   .worksheet-table { table-layout: fixed; }
@@ -1316,5 +1371,12 @@ label.check input { margin: 0; }
     page-break-inside: avoid;
   }
   .worksheet-blank { border-bottom: 1.5pt solid #000000; }
+  .worksheet-sheet mark.kw {
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    text-decoration: underline;
+    font-weight: 800;
+  }
   a { color: #000000; text-decoration: none; }
 }

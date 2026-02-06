@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
   <h1>我的</h1>
+  {% set is_parent_mode = request.state.ui_mode == 'parent' %}
 
   <div class="card" style="margin-top: 12px;">
     <div class="card-k">当前账号</div>
@@ -18,48 +19,64 @@
 
   <div class="cards">
     <div class="card">
-      <div class="card-k">AI 状态</div>
-      <div class="card-v">{{ ai_status }}</div>
-      <div class="muted">{{ ai_model }}</div>
-      {% if ai_checker_model %}
-        <div class="muted">checker：{{ ai_checker_model }}</div>
-      {% endif %}
+      <div class="card-k">学习看板</div>
+      <div class="card-v">{% if is_parent_mode %}学习进度{% else %}学习进度{% endif %}</div>
+      <div class="muted">查看已掌握 / 高频错词 / 近两周复习。</div>
+      <div class="actions" style="margin-top: 12px;">
+        <a class="btn primary" href="/dashboard">打开看板</a>
+      </div>
     </div>
 
+    {% if not is_parent_mode %}
+      <div class="card">
+        <div class="card-k">服务状态</div>
+        <div class="card-v">{{ ai_status }}</div>
+        <div class="muted">{{ ai_model }}</div>
+        {% if ai_checker_model %}
+          <div class="muted">checker：{{ ai_checker_model }}</div>
+        {% endif %}
+      </div>
+    {% endif %}
+
     <div class="card">
-      <div class="card-k">使用模式</div>
-      {% set is_parent_mode = request.state.ui_mode == 'parent' %}
-      <div class="card-v">{% if is_parent_mode %}纸质作业（家长）{% else %}屏幕自学（本人）{% endif %}</div>
-      <div class="muted">纸质作业模式更适合家长打印给孩子做（只保留“作业/词书/设置”入口）。</div>
-      <form class="stack" method="post" action="/settings/mode" style="margin-top: 10px;">
+      <div class="card-k">谁在用</div>
+      <div class="card-v">{% if is_parent_mode %}家长帮孩子学{% else %}自己学{% endif %}</div>
+      <div class="muted">切换后主页与导航会自动调整。</div>
+      <form class="stack" method="post" action="/settings/mode" style="margin-top: 10px;" hx-boost="false">
         <div class="radio-row">
-          <label class="radio"><input type="radio" name="mode" value="parent" {% if is_parent_mode %}checked{% endif %}/>纸质作业（家长）</label>
-          <label class="radio"><input type="radio" name="mode" value="self" {% if not is_parent_mode %}checked{% endif %}/>屏幕自学（本人）</label>
+          <label class="radio"><input type="radio" name="mode" value="parent" {% if is_parent_mode %}checked{% endif %}/>家长帮孩子学（打印作业）</label>
+          <label class="radio"><input type="radio" name="mode" value="self" {% if not is_parent_mode %}checked{% endif %}/>自己学（屏幕复习）</label>
         </div>
         <input type="hidden" name="return_to" value="/settings" />
-        <button class="btn primary" type="submit">保存模式</button>
-      </form>
-    </div>
-
-    <div class="card">
-      <div class="card-k">学习计划</div>
-      <div class="card-v">{{ plan_daily_new_limit }}/天</div>
-      <form class="stack" method="post" action="/settings/plan" style="margin-top: 10px;">
-        <label>每日新词上限
-          <input type="number" name="daily_new_limit" min="1" max="200" value="{{ plan_daily_new_limit }}" />
-        </label>
-        <label>每日复习上限
-          <input type="number" name="daily_review_limit" min="0" max="5000" value="{{ plan_daily_review_limit }}" />
-        </label>
         <button class="btn primary" type="submit">保存</button>
       </form>
     </div>
+
+    {% if not is_parent_mode %}
+      <div class="card">
+        <div class="card-k">学习计划</div>
+        <div class="card-v">{{ plan_daily_new_limit }}/天</div>
+        <form class="stack" method="post" action="/settings/plan" style="margin-top: 10px;">
+          <label>每日新词上限
+            <input type="number" name="daily_new_limit" min="1" max="200" value="{{ plan_daily_new_limit }}" />
+          </label>
+          <label>每日复习上限
+            <input type="number" name="daily_review_limit" min="0" max="5000" value="{{ plan_daily_review_limit }}" />
+          </label>
+          <label>积压暂停新词（阈值）
+            <input type="number" name="suspend_new_when_due_over" min="0" max="5000" value="{{ plan_suspend_new_when_due_over }}" />
+          </label>
+          <div class="muted">当“到期复习”超过该阈值时，今天会自动暂停新词，先把积压做完。</div>
+          <button class="btn primary" type="submit">保存</button>
+        </form>
+      </div>
+    {% endif %}
 
     <div class="card">
       <div class="card-k">家长模式</div>
       <div class="card-v">打印作业给孩子做</div>
       <form class="stack" method="post" action="/settings/parent" style="margin-top: 10px;">
-        <div class="muted">流程：粘贴 → 识别生词 → 生成作业 → 打印 → 勾错题</div>
+        <div class="muted">流程：粘贴 → 识别生词 → 生成作业 → 打印 → 勾错词</div>
         <label>孩子阶段
           <div class="radio-row" style="margin-top: 6px;">
             <label class="radio"><input type="radio" name="stage" value="primary" {% if parent_stage == 'primary' %}checked{% endif %}/>小学</label>
@@ -113,14 +130,16 @@
       </form>
     </div>
 
-    <div class="card">
-      <div class="card-k">高级</div>
-      <div class="card-v">Tools</div>
-      <div class="actions">
-        <a class="btn" href="/words">单词库</a>
-        <a class="btn" href="/simulations">实战短文</a>
+    {% if not is_parent_mode %}
+      <div class="card">
+        <div class="card-k">高级</div>
+        <div class="card-v">Tools</div>
+        <div class="actions">
+          <a class="btn" href="/words">单词库</a>
+          <a class="btn" href="/simulations">实战短文</a>
+        </div>
       </div>
-    </div>
+    {% endif %}
   </div>
 
   <div class="fullbleed divider-tail"></div>

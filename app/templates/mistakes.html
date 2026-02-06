@@ -1,7 +1,23 @@
 {% extends "base.html" %}
 {% block content %}
   <h1>错词篮</h1>
-  <p class="muted">生成短文 + 题目，在语境中巩固</p>
+  <p class="muted">按单词聚合：生成短文 + 题目，在语境中巩固</p>
+
+  <form class="row" method="get" action="/mistakes" style="margin-top: 8px;">
+    <input type="hidden" name="level" value="{{ selected_level }}" />
+    <input type="hidden" name="target_count" value="{{ target_count }}" />
+    <input type="hidden" name="length_mode" value="{{ length_mode }}" />
+    <label class="muted">排序
+      <select name="sort" onchange="this.form.submit()">
+        <option value="freq" {% if sort != 'time' %}selected{% endif %}>按频率</option>
+        <option value="time" {% if sort == 'time' %}selected{% endif %}>按时间</option>
+      </select>
+    </label>
+    <label class="check" style="margin: 0;">
+      <input type="checkbox" name="include_once" value="1" {% if include_once %}checked{% endif %} onchange="this.form.submit()" />
+      <span>包含一次错词</span>
+    </label>
+  </form>
 
   {% if error %}
     <div class="card">
@@ -51,6 +67,7 @@
             <div class="picker-row" role="option" tabindex="0" aria-selected="false" data-word-id="{{ item.word.id }}">
               <div class="picker-term mono">{{ item.word.term }}</div>
               <div class="picker-def">{{ item.word.definition }}</div>
+              <div class="picker-meta muted">×{{ item.wrong_events }}{% if item.last_wrong_at %} · {{ item.last_wrong_at.strftime("%m-%d %H:%M") }}{% endif %}</div>
             </div>
           {% endfor %}
         </div>

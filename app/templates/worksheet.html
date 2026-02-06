@@ -53,9 +53,23 @@
       <div>词量：{{ words|length }}</div>
     </div>
 
+    {% if warnings and warnings|length > 0 %}
+      <div class="card no-print" style="margin-top: 12px;">
+        <div class="card-k">提示</div>
+        <div class="muted" style="margin-top: 6px;">
+          {% for w in warnings %}
+            <div>· {{ w }}</div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
     <div class="worksheet-questions">
       <div class="no-print" style="margin-top: 12px;">
         <h2>本次词汇（仅家长预览，不打印）</h2>
+        {% if missing_def_count and missing_def_count > 0 %}
+          <div class="muted" style="margin-top: 6px;">缺少中文释义：<span class="mono">{{ missing_def_count }}</span> 个（已自动降级题型）。</div>
+        {% endif %}
         <table class="worksheet-table">
           <thead>
             <tr>
@@ -69,7 +83,7 @@
               <tr>
                 <td>{{ loop.index }}</td>
                 <td class="mono">{{ w.term }}</td>
-                <td>{{ w.definition_short }}</td>
+                <td>{{ w.definition_short if w.definition_short else "—" }}</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -77,52 +91,84 @@
         <div class="worksheet-break"></div>
       </div>
 
-      <h2>一、拼写（看中文写英文）</h2>
-      <table class="worksheet-table">
-        <thead>
-          <tr>
-            <th style="width: 44px;">#</th>
-            <th>中文提示</th>
-            <th style="width: 48%;">英文</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for w in words %}
+      {% set sec = 0 %}
+
+      {% if "spelling" in question_types %}
+        {% set sec = sec + 1 %}
+        <h2>{{ sec }}、拼写（看中文写英文）</h2>
+        <table class="worksheet-table">
+          <thead>
             <tr>
-              <td>{{ loop.index }}</td>
-              <td>{{ w.definition_short }}</td>
-              <td><div class="worksheet-blank"></div></td>
+              <th style="width: 44px;">#</th>
+              <th>中文提示</th>
+              <th style="width: 48%;">英文</th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {% for w in words %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ w.definition_short }}</td>
+                <td><div class="worksheet-blank"></div></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="worksheet-break"></div>
+      {% endif %}
 
-      <div class="worksheet-break"></div>
-
-      <h2>二、选择（英译中）</h2>
-      <div class="worksheet-q-list">
-        {% for q in mcq %}
-          <div class="worksheet-q">
-            <div class="worksheet-q-stem">{{ loop.index }}. <span class="mono">{{ q.stem }}</span></div>
-            <div class="worksheet-q-choices">
-              <div>A. {{ q.choices[0] }}</div>
-              <div>B. {{ q.choices[1] }}</div>
-              <div>C. {{ q.choices[2] }}</div>
-              <div>D. {{ q.choices[3] }}</div>
+      {% if "mcq" in question_types and mcq and mcq|length > 0 %}
+        {% set sec = sec + 1 %}
+        <h2>{{ sec }}、选择（英译中）</h2>
+        <div class="worksheet-q-list">
+          {% for q in mcq %}
+            <div class="worksheet-q">
+              <div class="worksheet-q-stem">{{ loop.index }}. <span class="mono">{{ q.stem }}</span></div>
+              <div class="worksheet-q-choices">
+                <div>A. {{ q.choices[0] }}</div>
+                <div>B. {{ q.choices[1] }}</div>
+                <div>C. {{ q.choices[2] }}</div>
+                <div>D. {{ q.choices[3] }}</div>
+              </div>
             </div>
-          </div>
-        {% endfor %}
-      </div>
+          {% endfor %}
+        </div>
+        <div class="worksheet-break"></div>
+      {% endif %}
 
-      <div class="worksheet-break"></div>
+      {% if "cloze" in question_types and cloze and cloze|length > 0 %}
+        {% set sec = sec + 1 %}
+        <h2>{{ sec }}、填空（词库填入）</h2>
+        <div class="muted worksheet-word-bank">词库：{% for t in word_bank %}<span class="mono">{{ t }}</span>{% if not loop.last %}、{% endif %}{% endfor %}</div>
+        <ol class="worksheet-ol">
+          {% for it in cloze %}
+            <li>{{ it.sentence_blank }}</li>
+          {% endfor %}
+        </ol>
+        <div class="worksheet-break"></div>
+      {% endif %}
 
-      <h2>三、填空（词库填入）</h2>
-      <div class="muted worksheet-word-bank">词库：{% for t in word_bank %}<span class="mono">{{ t }}</span>{% if not loop.last %}、{% endif %}{% endfor %}</div>
-      <ol class="worksheet-ol">
-        {% for it in cloze %}
-          <li>{{ it.sentence_blank }}</li>
-        {% endfor %}
-      </ol>
+      {% if "reading" in question_types and reading_passage_html and reading_questions and reading_questions|length > 0 %}
+        {% set sec = sec + 1 %}
+        <h2>{{ sec }}、阅读（短文理解）</h2>
+        <div class="worksheet-reading-passage">{{ reading_passage_html|safe }}</div>
+        <div class="worksheet-q-list">
+          {% for q in reading_questions %}
+            <div class="worksheet-q">
+              <div class="worksheet-q-stem">{{ loop.index }}. {{ q.stem }}</div>
+              <div class="worksheet-q-choices">
+                <div>A. {{ q.choices[0] }}</div>
+                <div>B. {{ q.choices[1] }}</div>
+                <div>C. {{ q.choices[2] }}</div>
+                <div>D. {{ q.choices[3] }}</div>
+              </div>
+              {% if q.target_term %}
+                <div class="muted no-print" style="margin-top: 6px;">关联词：<span class="mono">{{ q.target_term }}</span></div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
     </div>
 
     <div class="worksheet-break no-print"></div>
@@ -131,26 +177,39 @@
       <div class="card-k">答案（仅网页显示）</div>
       <div class="muted">批改时对照纸质作业，错的在下面勾上提交。</div>
       <div class="worksheet-answers">
-        <div><strong>拼写：</strong>
-          {% for a in spelling_answers %}
-            {{ loop.index }}={{ a }}{% if not loop.last %} · {% endif %}
-          {% endfor %}
-        </div>
-        <div><strong>选择题：</strong>
-          {% for a in mcq_answers %}
-            {{ loop.index }}={{ a }}{% if not loop.last %} · {% endif %}
-          {% endfor %}
-        </div>
-        <div style="margin-top: 8px;"><strong>填空：</strong>
-          {% for a in cloze_answers %}
-            {{ loop.index }}={{ a }}{% if not loop.last %} · {% endif %}
-          {% endfor %}
-        </div>
+        {% if "spelling" in question_types %}
+          <div><strong>拼写：</strong>
+            {% for a in spelling_answers %}
+              {{ loop.index }}={{ a }}{% if not loop.last %} · {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+        {% if "mcq" in question_types %}
+          <div{% if "spelling" in question_types %} style="margin-top: 8px;"{% endif %}><strong>选择题：</strong>
+            {% for a in mcq_answers %}
+              {{ loop.index }}={{ a }}{% if not loop.last %} · {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+        {% if "cloze" in question_types %}
+          <div style="margin-top: 8px;"><strong>填空：</strong>
+            {% for a in cloze_answers %}
+              {{ loop.index }}={{ a }}{% if not loop.last %} · {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+        {% if "reading" in question_types %}
+          <div style="margin-top: 8px;"><strong>阅读：</strong>
+            {% for a in reading_answers %}
+              {{ loop.index }}={{ a }}{% if not loop.last %} · {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
       </div>
     </div>
 
     <div class="card no-print" style="margin-top: 12px;">
-      <div class="card-k">勾错题并提交</div>
+      <div class="card-k">勾错词并提交</div>
       {% if already_graded %}
         <div class="muted" style="margin-top: 6px;">此作业已提交过一次。如需重新统计，建议生成新作业。</div>
       {% else %}

@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
-from datetime import datetime, timedelta
+import difflib
+from datetime import datetime, timedelta, timezone
 import hmac
 import html
 import json
@@ -14,6 +15,11 @@ from pathlib import Path
 import re
 from typing import Any
 from urllib.parse import urlencode
+
+try:
+    from zoneinfo import ZoneInfo
+except Exception:  # pragma: no cover
+    ZoneInfo = None  # type: ignore[assignment]
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -71,7 +77,7 @@ def _static_v() -> str:
 templates.env.globals["static_v"] = _static_v
 templates.env.globals["level_labels"] = LEVEL_LABELS
 
-app = FastAPI(title="Vocabulary Study MVP")
+app = FastAPI(title="迅捷单词")
 app.add_middleware(GZipMiddleware, minimum_size=500)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
@@ -477,6 +483,100 @@ def _utcnow() -> datetime:
     return datetime.utcnow()
 
 
+def _get_app_tzinfo(*, timezone_name: str) -> Any:
+    name = (timezone_name or "").strip() or "Asia/Shanghai"
+    if ZoneInfo is not None:
+        try:
+            return ZoneInfo(name)
+        except Exception:
+            pass
+
+    # Common fallback: Windows dev env without tzdata.
+    if name.lower() in {"asia/shanghai", "asia/chongqing", "asia/beijing", "prc", "cst"}:
+        return timezone(timedelta(hours=8))
+
+    try:
+        return datetime.now().astimezone().tzinfo or timezone.utc
+    except Exception:
+        return timezone.utc
+
+
+def _next_local_midnight_utc_naive(*, now_utc: datetime, tzinfo: Any) -> datetime:
+    """
+    Convert "tomorrow 00:00" in app timezone to naive UTC datetime (to match DB convention).
+    """
+    aware_utc = now_utc.replace(tzinfo=timezone.utc)
+    local = aware_utc.astimezone(tzinfo)
+    tomorrow = local.date() + timedelta(days=1)
+    local_midnight = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 0, 0, tzinfo=tzinfo)
+    return local_midnight.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _apply_daily_new_limit(
+    session,
+    *,
+    now: datetime,
+    daily_new_limit: int,
+    suspend_new_when_due_over: int,
+    timezone_name: str,
+) -> dict[str, Any]:
+    """
+    Enforce plan behavior:
+    - If review backlog > suspend_new_when_due_over => pause new cards for today (effective new limit = 0)
+    - If due new cards > effective limit => postpone extra new cards' due_at to next local midnight
+    Returns a small state dict for UI hints.
+    """
+    new_limit = max(0, int(daily_new_limit or 0))
+    suspend_over = max(0, int(suspend_new_when_due_over or 0))
+
+    due_review_total = int(
+        session.query(func.count(SrsCard.word_id))
+        .filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_not(None))
+        .scalar()
+        or 0
+    )
+    new_paused = bool(suspend_over > 0 and due_review_total > suspend_over)
+    effective_new_limit = 0 if new_paused else new_limit
+
+    due_new_total = int(
+        session.query(func.count(SrsCard.word_id))
+        .filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_(None))
+        .scalar()
+        or 0
+    )
+
+    postponed = 0
+    next_midnight_utc: datetime | None = None
+    if due_new_total > effective_new_limit:
+        tzinfo = _get_app_tzinfo(timezone_name=timezone_name)
+        next_midnight_utc = _next_local_midnight_utc_naive(now_utc=now, tzinfo=tzinfo)
+        extra_rows = (
+            session.query(SrsCard.word_id)
+            .filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_(None))
+            .order_by(SrsCard.due_at.asc(), SrsCard.created_at.asc(), SrsCard.word_id.asc())
+            .offset(effective_new_limit)
+            .limit(50000)
+            .all()
+        )
+        extra_ids = [int(wid) for (wid,) in extra_rows]
+        postponed = len(extra_ids)
+        if extra_ids:
+            session.query(SrsCard).filter(SrsCard.word_id.in_(extra_ids)).update(
+                {SrsCard.due_at: next_midnight_utc}, synchronize_session=False
+            )
+            session.flush()
+        due_new_total = min(due_new_total, effective_new_limit)
+
+    return {
+        "due_review_total": due_review_total,
+        "due_new_total": due_new_total,
+        "new_paused": new_paused,
+        "effective_new_limit": effective_new_limit,
+        "postponed_new": postponed,
+        "next_midnight_utc": next_midnight_utc,
+    }
+
+
 def _merge_tags(*values: str) -> str:
     items: list[str] = []
     seen: set[str] = set()
@@ -757,12 +857,21 @@ def home(request: Request, deck_id: int | None = None, toast: str | None = None)
     if deck_id == 0:
         deck_id = None
     now = _utcnow()
+    settings = get_settings()
     with get_session() as session:
         plan = _ensure_default_plan(session)
         daily_new_limit = int(plan.daily_new_limit or 20)
         daily_review_limit = int(plan.daily_review_limit or 200)
         suspend_new_when_due_over = int(plan.suspend_new_when_due_over or 200)
         quick_add_count = max(1, min(10, daily_new_limit))
+
+        plan_state = _apply_daily_new_limit(
+            session,
+            now=now,
+            daily_new_limit=daily_new_limit,
+            suspend_new_when_due_over=suspend_new_when_due_over,
+            timezone_name=settings.app_timezone,
+        )
 
         decks = session.query(Deck).order_by(Deck.name.asc()).all()
         word_count = int(session.query(Word).count())
@@ -822,13 +931,18 @@ def home(request: Request, deck_id: int | None = None, toast: str | None = None)
             )
 
         total = int(base_q.count())
-        due_count = int(base_q.filter(SrsCard.due_at <= now).count())
-        new_count = int(base_q.filter(SrsCard.last_reviewed_at.is_(None)).count())
+        due_review_total = int(base_q.filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_not(None)).count())
+        due_new_total = int(base_q.filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_(None)).count())
+
+        due_review_today = due_review_total if daily_review_limit <= 0 else min(due_review_total, daily_review_limit)
+        due_new_today = min(due_new_total, int(plan_state.get("effective_new_limit") or 0))
+        due_today = due_review_today + due_new_today
+        due_total = due_review_total + due_new_total
 
         mistake_count = int(session.query(Mistake).count())
         sim_count = int(session.query(Simulation).count())
 
-    est_minutes = max(1, int(round((due_count + min(new_count, 20)) * 0.25))) if total > 0 else 0
+    est_minutes = max(1, int(round(due_today * 0.25))) if total > 0 else 0
 
     return templates.TemplateResponse(
         request,
@@ -841,8 +955,14 @@ def home(request: Request, deck_id: int | None = None, toast: str | None = None)
             "deck_count": deck_count,
             "word_count": word_count,
             "total": total,
-            "due_count": due_count,
-            "new_count": new_count,
+            "due_count": due_today,
+            "due_total": due_total,
+            "due_review_total": due_review_total,
+            "due_new_total": due_new_total,
+            "due_review_today": due_review_today,
+            "due_new_today": due_new_today,
+            "new_paused": bool(plan_state.get("new_paused")),
+            "postponed_new": int(plan_state.get("postponed_new") or 0),
             "est_minutes": est_minutes,
             "unplanned_word_count": unplanned_word_count,
             "mistake_count": mistake_count,
@@ -928,6 +1048,25 @@ def _stage_label(stage: str) -> str:
     return "小学" if (stage or "").strip().lower() == "primary" else "初中"
 
 
+def _pos_hint_from_definition(defn: str) -> str:
+    s = (defn or "").strip()
+    if not s:
+        return ""
+    # ECDICT-like defs often start with phonetic wrapped by slashes: "/kæmp/ n. 露营..."
+    s = re.sub(r"^/[^/]{1,64}/\s*", "", s)
+    head = s[:48].lower()
+    # Common POS markers.
+    m = re.search(r"\b(vt|vi|v|n|adj|adv|prep|conj|pron|int)\.\b", head)
+    if not m:
+        m = re.search(r"^(vt|vi|v|n|adj|adv|prep|conj|pron|int)\.\b", head.strip())
+    if not m:
+        return ""
+    tag = m.group(1)
+    if tag in {"vt", "vi"}:
+        return "v"
+    return tag
+
+
 def _ai_generate_sentences_for_terms(*, stage: str, terms: list[str], term_notes: dict[str, str]) -> dict[str, str]:
     """
     Best-effort: ask the writer model for one short sentence per term.
@@ -940,6 +1079,7 @@ def _ai_generate_sentences_for_terms(*, stage: str, terms: list[str], term_notes
     stage = (stage or "junior").strip().lower()
     stage_hint = "小学" if stage == "primary" else "初中"
     max_words = 10 if stage == "primary" else 14
+    min_words = 5 if stage == "primary" else 6
 
     vocab_lines: list[str] = []
     for t in terms:
@@ -956,8 +1096,11 @@ def _ai_generate_sentences_for_terms(*, stage: str, terms: list[str], term_notes
         f"请为下面每个单词各写 1 句英文例句，适合{stage_hint}学生，尽量简单自然。\n"
         f"硬性要求：\n"
         f"1) 每句不超过 {max_words} 个英文单词（不含标点）。\n"
+        f"1.1) 每句至少 {min_words} 个英文单词（不含标点），避免“太短太模板”。\n"
         "2) 每句必须包含该目标词一次，并且用 [[目标词]] 标记，例如 [[apple]]。\n"
         "3) 不要使用目标词变形（复数/过去式/ing），只允许大小写不同。\n"
+        "4) 不要写过于模板的句子（例如：This is [[word]]. / This is a [[word]]. / I like [[word]].）。\n"
+        "5) 尽量写具体语境（学校/家庭/运动/旅行/食物等），自然一些。\n"
         "4) 只输出 JSON，结构如下：\n"
         f"{json.dumps(schema_hint, ensure_ascii=False)}\n\n"
         "单词（含释义/备注）：\n"
@@ -977,7 +1120,8 @@ def _ai_generate_sentences_for_terms(*, stage: str, terms: list[str], term_notes
     def _ok(term: str, sent: str) -> bool:
         if not term or not sent:
             return False
-        if _en_word_count(sent) > max_words:
+        wc = _en_word_count(sent)
+        if wc < min_words or wc > max_words:
             return False
         # Must contain [[term]] marker (case-insensitive).
         return re.search(rf"\[\[{re.escape(term)}\]\]", sent, flags=re.IGNORECASE) is not None
@@ -992,7 +1136,7 @@ def _ai_generate_sentences_for_terms(*, stage: str, terms: list[str], term_notes
             text = (((data.get("choices") or [{}])[0]).get("message") or {}).get("content") or ""
             json_text = _safe_json_extract(str(text))
             obj = json.loads(json_text)
-            out: dict[str, str] = {}
+            raw_out: dict[str, str] = {}
             for it in (obj.get("sentences") or []):
                 if not isinstance(it, dict):
                     continue
@@ -1000,28 +1144,34 @@ def _ai_generate_sentences_for_terms(*, stage: str, terms: list[str], term_notes
                 sent = str(it.get("sentence") or "").strip()
                 if not term or not sent:
                     continue
-                out[term] = sent
+                raw_out[term] = sent
 
-            bad_terms = [t for t in terms if not _ok(t, out.get(t, ""))]
+            out = {t: s for (t, s) in raw_out.items() if _ok(t, s)}
+            bad_terms = [t for t in terms if t not in out]
             if not bad_terms:
                 return out
 
-            if settings.ai_checker_model:
+            # Try to fix missing/invalid items with either checker model or the same writer model.
+            fix_model = settings.ai_checker_model or (settings.ai_writer_model or settings.ai_model)
+            if fix_model:
                 checker_schema = {"sentences": [{"term": "string", "sentence": "string"}]}
                 checker_user_lines: list[str] = []
                 checker_user_lines.append(f"请修复下面这些例句，使其满足全部硬性要求。只输出 JSON：{json.dumps(checker_schema, ensure_ascii=False)}")
                 checker_user_lines.append("硬性要求：")
                 checker_user_lines.append(f"1) 每句不超过 {max_words} 个英文单词（不含标点）。")
+                checker_user_lines.append(f"1.1) 每句至少 {min_words} 个英文单词（不含标点）。")
                 checker_user_lines.append("2) 每句必须包含该目标词一次，并且用 [[目标词]] 标记。")
                 checker_user_lines.append("3) 不要使用目标词变形（复数/过去式/ing），只允许大小写不同。")
+                checker_user_lines.append("4) 不要写模板句（This is [[word]]. / This is a [[word]]. / I like [[word]].）。")
+                checker_user_lines.append("5) 尽量写具体语境，自然一些。")
                 checker_user_lines.append("需要修复的条目：")
                 for t in bad_terms:
                     note = (term_notes.get(t) or "").strip()
-                    prev = (out.get(t) or "").strip()
+                    prev = (raw_out.get(t) or "").strip()
                     checker_user_lines.append(f"- {t}: {note} | draft={prev}")
 
                 checker_payload: dict[str, Any] = {
-                    "model": settings.ai_checker_model,
+                    "model": fix_model,
                     "messages": [
                         {"role": "system", "content": system},
                         {"role": "user", "content": "\n".join(checker_user_lines).strip()},
@@ -1046,7 +1196,7 @@ def _ai_generate_sentences_for_terms(*, stage: str, terms: list[str], term_notes
                             continue
                         term2 = str(it2.get("term") or "").strip()
                         sent2 = str(it2.get("sentence") or "").strip()
-                        if term2 in out and _ok(term2, sent2):
+                        if term2 in bad_terms and _ok(term2, sent2):
                             out[term2] = sent2
                 except Exception:
                     pass
@@ -1059,6 +1209,149 @@ def _ai_generate_sentences_for_terms(*, stage: str, terms: list[str], term_notes
 
     _ = last_err
     return {}
+
+
+def _ai_generate_reading_for_worksheet(
+    *,
+    stage: str,
+    terms: list[str],
+    term_notes: dict[str, str],
+) -> GeneratedSimulation | None:
+    """
+    Best-effort: generate a short reading passage + multiple-choice questions for printed worksheets.
+    Output uses the same schema as GeneratedSimulation.
+    """
+    settings = get_settings()
+    if settings.ai_mock:
+        # Minimal deterministic mock for offline demo / tests.
+        picked = [t for t in terms if t.strip()][:6]
+        if not picked:
+            return None
+        p1 = " ".join([f"We learn [[{t}]] today." for t in picked[:3]])
+        p2 = " ".join([f"Please remember [[{t}]] for homework." for t in picked[3:]])
+        passage = (p1 + "\n\n" + p2).strip()
+        qs: list[dict[str, Any]] = []
+        for i, t in enumerate(picked[:4]):
+            qs.append(
+                {
+                    "id": f"q{i+1}",
+                    "type": "detail",
+                    "stem": f"Which word appears in the passage?",
+                    "choices": [t, picked[(i + 1) % len(picked)], picked[(i + 2) % len(picked)], picked[(i + 3) % len(picked)]],
+                    "answer_index": 0,
+                    "explanation": "It is marked in the passage.",
+                    "target_term": t,
+                }
+            )
+        return GeneratedSimulation.model_validate({"passage": passage, "questions": qs})
+
+    if not settings.ai_api_key:
+        return None
+
+    stage2 = (stage or "junior").strip().lower()
+    stage_hint = "小学" if stage2 == "primary" else "初中"
+    question_count = 3 if stage_hint == "小学" else 4
+    # Keep reading shorter than self-study simulations.
+    if stage_hint == "小学":
+        lo, hi = 90, 130
+        p_lo, p_hi = 2, 3
+    else:
+        lo, hi = 150, 220
+        p_lo, p_hi = 2, 4
+
+    vocab_lines: list[str] = []
+    for t in terms:
+        note = (term_notes.get(t) or "").strip()
+        if note:
+            vocab_lines.append(f"- {t}: {note}")
+        else:
+            vocab_lines.append(f"- {t}")
+    vocab_block = "\n".join(vocab_lines)
+
+    schema_hint = {
+        "passage": "string",
+        "questions": [
+            {
+                "id": "q1",
+                "type": "main_idea|detail|inference|vocab_in_context",
+                "stem": "string",
+                "choices": ["A ...", "B ...", "C ...", "D ..."],
+                "answer_index": 0,
+                "explanation": "string",
+                "target_term": "string|null",
+            }
+        ],
+    }
+
+    system = "你是英语阅读理解出题老师。你只输出严格 JSON，不要输出 Markdown，不要输出多余文本。"
+    user = (
+        f"请写 1 篇适合{stage_hint}学生的短文，并出 {question_count} 道选择题（阅读理解为主，可包含少量词汇语境题）。\n"
+        "硬性要求：\n"
+        f"1) 短文长度约 {lo}-{hi} 词，分成 {p_lo}-{p_hi} 段。\n"
+        "2) 短文必须自然包含每个目标词（大小写不敏感），并且用 [[目标词]] 标记。\n"
+        "3) 必须使用目标词原形拼写（与目标词列表一致，只允许大小写不同），不要使用变形（复数/过去式/ing）。\n"
+        f"4) 题目总数 = {question_count}；每题 4 个选项（choices 长度 = 4）；answer_index 为 0-3。\n"
+        "5) explanation 每题 1 句话即可。\n"
+        "6) 如果题目与某个目标词强相关，请把 target_term 填成该词；否则填 null。\n"
+        "7) 只输出 JSON，结构如下：\n"
+        f"{json.dumps(schema_hint, ensure_ascii=False)}\n\n"
+        "目标词（含释义/备注）：\n"
+        f"{vocab_block}\n"
+    ).strip()
+
+    url = f"{settings.ai_base_url}/chat/completions"
+    payload: dict[str, Any] = {
+        "model": settings.ai_writer_model or settings.ai_model,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "temperature": 0.6,
+    }
+
+    def _missing_terms(passage: str) -> list[str]:
+        miss: list[str] = []
+        for t in terms:
+            if not t:
+                continue
+            if re.search(rf"\[\[{re.escape(t)}\]\]", passage or "", flags=re.IGNORECASE) is None:
+                miss.append(t)
+        return miss
+
+    last_err: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                resp = client.post(url, headers={"Authorization": f"Bearer {settings.ai_api_key}"}, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+            text = (((data.get("choices") or [{}])[0]).get("message") or {}).get("content") or ""
+            json_text = _safe_json_extract(str(text))
+            parsed = GeneratedSimulation.model_validate(json.loads(json_text))
+
+            missing = _missing_terms(parsed.passage)
+            if missing:
+                raise RuntimeError(f"reading passage missing terms: {', '.join(missing)}")
+            if len(parsed.questions) != question_count:
+                # Allow small deviation but keep it bounded for printing.
+                if not (question_count - 1 <= len(parsed.questions) <= question_count + 1):
+                    raise RuntimeError("reading question_count out of range")
+            for q in parsed.questions:
+                if len(q.choices) != 4:
+                    raise RuntimeError("reading question choices must be 4")
+            return parsed
+        except Exception as e:
+            last_err = e
+            payload = {
+                **payload,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": "上一次输出不符合要求（JSON不可解析或不满足硬性要求）。请严格按要求只输出 JSON。"},
+                    {"role": "user", "content": user},
+                ],
+                "temperature": 0.4 if attempt == 1 else 0.2,
+            }
+            continue
+
+    _ = last_err
+    return None
 
 
 @app.get("/worksheets", response_class=HTMLResponse)
@@ -1198,15 +1491,17 @@ def worksheets_extract(request: Request, source_text: str = Form("")):
         for w in found:
             wid = int(w.id)
             target_names = [deck_name_by_id.get(did, f"deck#{did}") for did in in_target_map.get(wid, [])]
+            def_short = _short_definition(w.definition)
             items.append(
                 {
                     "word_id": wid,
                     "term": str(w.term or ""),
-                    "definition_short": _short_definition(w.definition) or "（无释义）",
+                    "definition_short": def_short,
                     "textbook": wid in textbook_set,
                     "in_targets": target_names,
                     "freq_rank": freq_rank.get(wid) or 0,
                     "recommended": wid in recommended_set,
+                    "missing_def": not bool(def_short),
                 }
             )
 
@@ -1246,13 +1541,24 @@ def worksheets_extract(request: Request, source_text: str = Form("")):
 
 
 @app.post("/worksheets/generate_today")
-def worksheets_generate_today(request: Request):
+def worksheets_generate_today(request: Request, question_types: list[str] = Form([])):
     with get_session() as session:
         parent = _ensure_parent_settings(session)
         stage = (parent.stage or "junior").strip().lower()
         if stage not in {"primary", "junior"}:
             stage = "junior"
         desired = max(1, min(60, int(parent.daily_words or 10)))
+
+        allowed_qt = {"spelling", "mcq", "cloze", "reading"}
+        cleaned_qt: list[str] = []
+        for raw in question_types or []:
+            key = str(raw or "").strip().lower()
+            if key in allowed_qt and key not in cleaned_qt:
+                cleaned_qt.append(key)
+        if not cleaned_qt:
+            cleaned_qt = ["spelling", "mcq"] if stage == "primary" else ["spelling", "mcq", "cloze"]
+
+        warnings: list[str] = []
 
         now = _utcnow()
 
@@ -1359,8 +1665,9 @@ def worksheets_generate_today(request: Request):
                 {
                     "word_id": int(w.id),
                     "term": str(w.term or ""),
-                    "definition_short": _short_definition(w.definition) or "（无释义）",
+                    "definition_short": _short_definition(w.definition),
                     "example": str(w.example or "").strip(),
+                    "pos": _pos_hint_from_definition(str(w.definition or "")),
                 }
             )
 
@@ -1368,15 +1675,71 @@ def worksheets_generate_today(request: Request):
             msg = "今天没有可生成作业的单词（选中的词条不存在或已被删除）。"
             return _redirect("/?" + urlencode({"toast": msg}))
 
-        mcq, mcq_answers = _build_mcq(words)
-        cloze, cloze_answers = _build_cloze(words, stage=stage)
+        has_missing_def = any(not str(w.get("definition_short") or "").strip() for w in words)
+        if has_missing_def and "mcq" in cleaned_qt:
+            cleaned_qt = [t for t in cleaned_qt if t != "mcq"]
+            warnings.append("部分单词缺少中文释义，已自动移除“选择题”。")
+        if has_missing_def and "spelling" in cleaned_qt:
+            warnings.append("缺少中文释义的单词：拼写题将不显示中文提示。")
+        if not cleaned_qt:
+            cleaned_qt = ["spelling"]
+            warnings.append("本次作业没有可用题型，已自动保留“拼写题”。")
+
+        mcq: list[dict[str, Any]] = []
+        mcq_answers: list[str] = []
+        if "mcq" in cleaned_qt:
+            pool = _query_mcq_distractor_pool(session, exclude_word_ids={int(w["word_id"]) for w in words})
+            mcq, mcq_answers = _build_mcq(words, distractor_pool=pool)
+
+        cloze: list[dict[str, Any]] = []
+        cloze_answers: list[str] = []
+        if "cloze" in cleaned_qt:
+            cloze, cloze_answers = _build_cloze(words, stage=stage)
+
+        reading: dict[str, Any] = {}
+        reading_answers: list[str] = []
+        if "reading" in cleaned_qt:
+            all_terms = [str(w.get("term") or "").strip() for w in words if str(w.get("term") or "").strip()]
+            k = 5 if stage == "primary" else 6
+            reading_terms = all_terms[:k]
+            if len(reading_terms) < 3:
+                cleaned_qt = [t for t in cleaned_qt if t != "reading"]
+                warnings.append("阅读理解需要至少 3 个单词，本次已自动移除。")
+            else:
+                notes = {str(w.get("term") or "").strip(): str(w.get("definition_short") or "").strip() for w in words}
+                sim = _ai_generate_reading_for_worksheet(stage=stage, terms=reading_terms, term_notes=notes)
+                if sim is None:
+                    cleaned_qt = [t for t in cleaned_qt if t != "reading"]
+                    warnings.append("阅读理解生成失败，已自动移除。")
+                else:
+                    reading = sim.model_dump()
+                    reading["target_terms"] = reading_terms
+                    letters = ["A", "B", "C", "D"]
+                    for q in sim.questions:
+                        idx = int(getattr(q, "answer_index", 0) or 0)
+                        reading_answers.append(letters[idx] if 0 <= idx < 4 else "A")
+
+        if not cleaned_qt:
+            cleaned_qt = ["spelling"]
+            warnings.append("本次作业题型生成失败，已自动保留“拼写题”。")
+
+        answers: dict[str, Any] = {}
+        if mcq_answers:
+            answers["mcq"] = mcq_answers
+        if cloze_answers:
+            answers["cloze"] = cloze_answers
+        if reading_answers:
+            answers["reading"] = reading_answers
         sheet = {
             "version": 1,
             "stage": stage,
+            "question_types": cleaned_qt,
+            "warnings": warnings,
             "words": words,
             "mcq": mcq,
             "cloze": cloze,
-            "answers": {"mcq": mcq_answers, "cloze": cloze_answers},
+            "reading": reading,
+            "answers": answers,
         }
 
         row = Worksheet(
@@ -1394,38 +1757,159 @@ def worksheets_generate_today(request: Request):
     return _redirect(f"/worksheets/{ws_id}")
 
 
-def _build_mcq(words: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
-    defs = [str(w.get("definition_short") or "").strip() for w in words]
-    fillers = ["（以上都不对）", "（无法判断）", "（先跳过）", "（都不是）", "（不确定）"]
+def _def_bigrams(s: str) -> set[str]:
+    t = (s or "").strip()
+    if not t:
+        return set()
+    t = re.sub(r"\s+", "", t)
+    t = re.sub(r"[，。,;；/｜|（）()\\[\\]{}<>·—…\\-]+", "", t)
+    if not t:
+        return set()
+    if len(t) == 1:
+        return {t}
+    return {t[i : i + 2] for i in range(len(t) - 1)}
+
+
+def _def_similarity(a: str, b: str) -> float:
+    a2 = (a or "").strip()
+    b2 = (b or "").strip()
+    if not a2 or not b2:
+        return 0.0
+    bg_a = _def_bigrams(a2)
+    bg_b = _def_bigrams(b2)
+    if not bg_a or not bg_b:
+        return 0.0
+    inter = len(bg_a & bg_b)
+    union = len(bg_a | bg_b)
+    jaccard = (inter / union) if union else 0.0
+    seq = difflib.SequenceMatcher(None, a2, b2).ratio()
+    return jaccard * 0.7 + seq * 0.3
+
+
+def _term_similarity(a: str, b: str) -> float:
+    a2 = (a or "").strip().lower()
+    b2 = (b or "").strip().lower()
+    if not a2 or not b2:
+        return 0.0
+    if a2 == b2:
+        return 1.0
+    return difflib.SequenceMatcher(None, a2, b2).ratio()
+
+
+def _query_mcq_distractor_pool(
+    session,
+    *,
+    limit: int = 900,
+    exclude_word_ids: set[int] | None = None,
+) -> list[dict[str, str]]:
+    q = session.query(Word.id, Word.term, Word.definition).filter(Word.definition.is_not(None))
+    q = q.filter(Word.definition != "")
+    if exclude_word_ids:
+        q = q.filter(~Word.id.in_(exclude_word_ids))
+    rows = q.order_by(Word.id.desc()).limit(int(limit)).all()
+    out: list[dict[str, str]] = []
+    for _wid, term, definition in rows:
+        sd = _short_definition(str(definition or ""))
+        if not sd:
+            continue
+        out.append({"term": str(term or ""), "definition_short": sd})
+    return out
+
+
+def _build_mcq(
+    words: list[dict[str, Any]],
+    *,
+    distractor_pool: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """
+    Multiple-choice (英译中):
+    - Prefer distractors from "confusable" words (spelling-similar terms).
+    - Fallback to meaning-similar short definitions.
+    - Never use placeholder fillers (以上都不对/无法判断/先跳过...).
+    """
+    base_pool: list[tuple[str, str]] = []
+    seen_terms: set[str] = set()
+
+    def _add(term: str, def_short: str) -> None:
+        t = (term or "").strip()
+        d = (def_short or "").strip()
+        if not t or not d:
+            return
+        key = t.lower()
+        if key in seen_terms:
+            return
+        seen_terms.add(key)
+        base_pool.append((t, d))
+
+    for w in words:
+        _add(str(w.get("term") or ""), str(w.get("definition_short") or ""))
+    for it in (distractor_pool or []):
+        _add(str(it.get("term") or ""), str(it.get("definition_short") or ""))
 
     questions: list[dict[str, Any]] = []
     answers: list[str] = []
-    n = len(words)
+    pool_defs = [d for (_t, d) in base_pool]
+
     for i, w in enumerate(words):
-        correct = defs[i] or "（无释义）"
+        term = str(w.get("term") or "").strip()
+        correct = str(w.get("definition_short") or "").strip() or "（无释义）"
         distractors: list[str] = []
-        j = 1
-        while len(distractors) < 3 and j <= max(5, n):
-            cand = defs[(i + j) % n] if n else ""
-            if cand and cand != correct and cand not in distractors:
-                distractors.append(cand)
-            j += 1
-        for f in fillers:
+
+        # 1) Confusable terms (spelling-similar)
+        similar: list[tuple[float, str]] = []
+        for t2, d2 in base_pool:
+            if not d2 or d2 == correct:
+                continue
+            if t2.strip().lower() == term.lower():
+                continue
+            sim = _term_similarity(term, t2)
+            if sim >= 0.72:
+                similar.append((sim, d2))
+        similar.sort(key=lambda x: x[0], reverse=True)
+        for _sim, d2 in similar:
+            if d2 not in distractors:
+                distractors.append(d2)
             if len(distractors) >= 3:
                 break
-            if f != correct and f not in distractors:
-                distractors.append(f)
+
+        # 2) Meaning-similar (Chinese short definition similarity)
+        if len(distractors) < 3 and correct and correct != "（无释义）":
+            ms: list[tuple[float, str]] = []
+            for d2 in pool_defs:
+                if not d2 or d2 == correct or d2 in distractors:
+                    continue
+                score = _def_similarity(correct, d2)
+                if score > 0:
+                    ms.append((score, d2))
+            ms.sort(key=lambda x: x[0], reverse=True)
+            for _score, d2 in ms:
+                if d2 not in distractors:
+                    distractors.append(d2)
+                if len(distractors) >= 3:
+                    break
+
+        # 3) Fill with any other defs (deterministic order)
+        if len(distractors) < 3:
+            for d2 in pool_defs:
+                if not d2 or d2 == correct or d2 in distractors:
+                    continue
+                distractors.append(d2)
+                if len(distractors) >= 3:
+                    break
+
+        # Worst-case: still not enough (tiny datasets). Use safe placeholders (rare, offline tests).
+        while len(distractors) < 3:
+            distractors.append("—")
 
         choices = [correct] + distractors[:3]
-        # Deterministic shuffle: rotate by i (keeps stable but avoids always-A)
         rot = i % 4
         choices = choices[rot:] + choices[:rot]
-        answer_index = choices.index(correct)
+        answer_index = choices.index(correct) if correct in choices else 0
         answers.append(["A", "B", "C", "D"][answer_index])
         questions.append(
             {
                 "word_id": int(w["word_id"]),
-                "stem": str(w.get("term") or ""),
+                "stem": term,
                 "choices": choices,
                 "answer_index": answer_index,
             }
@@ -1435,6 +1919,103 @@ def _build_mcq(words: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[
 
 
 def _build_cloze(words: list[dict[str, Any]], *, stage: str) -> tuple[list[dict[str, Any]], list[str]]:
+    def _guess_pos(short_def: str, pos_hint: str) -> str:
+        hint = (pos_hint or "").strip().lower()
+        if hint in {"n", "v", "adj", "adv"}:
+            return hint
+        s = (short_def or "").strip()
+        if not s:
+            return ""
+        if s.endswith("的"):
+            return "adj"
+        # Common verb-like Chinese hints.
+        if any(k in s for k in ["做", "使", "让", "增加", "提高", "收集", "进行", "拥有", "拿", "举", "抬"]):
+            return "v"
+        return ""
+
+    def _fallback_sentence(term: str, *, stage: str, pos: str, note: str, seed: int) -> str:
+        t = (term or "").strip()
+        if not t:
+            return "____."
+        stage2 = (stage or "junior").strip().lower()
+        pos2 = (pos or "").strip().lower()
+        note2 = (note or "").strip()
+
+        noun_primary = [
+            "I see [[{t}]] at school.",
+            "We visit the [[{t}]] today.",
+            "Look at the [[{t}]].",
+            "The [[{t}]] is over there.",
+            "My friend has a [[{t}]].",
+        ]
+        verb_primary = [
+            "I [[{t}]] my hand in class.",
+            "I [[{t}]] a book at home.",
+            "We [[{t}]] together after school.",
+            "I [[{t}]] it every day.",
+            "They [[{t}]] it for fun.",
+        ]
+        adj_primary = [
+            "The food is [[{t}]] today.",
+            "This cake tastes [[{t}]].",
+            "I feel [[{t}]] today.",
+            "The day is [[{t}]].",
+            "This is [[{t}]] to me.",
+        ]
+        other_primary = [
+            "Today we learn [[{t}]].",
+            "Please write [[{t}]] here.",
+            "Can you spell [[{t}]]?",
+            "We practice [[{t}]] now.",
+            "Remember [[{t}]] today.",
+        ]
+
+        noun_junior = [
+            "We saw a [[{t}]] on our way home.",
+            "The [[{t}]] is near the city.",
+            "Our class visited the [[{t}]] last week.",
+            "He works in a [[{t}]].",
+            "They live on the [[{t}]].",
+        ]
+        verb_junior = [
+            "Please [[{t}]] your hand to answer.",
+            "I [[{t}]] stamps as a hobby.",
+            "We [[{t}]] the problem step by step.",
+            "They [[{t}]] money for the trip.",
+            "I [[{t}]] it every morning.",
+        ]
+        adj_junior = [
+            "The soup smells [[{t}]] and warm.",
+            "I am [[{t}]] that we can finish it.",
+            "It is [[{t}]] to happen soon.",
+            "The answer is [[{t}]] this time.",
+            "The view is [[{t}]] after rain.",
+        ]
+        other_junior = [
+            "Try to use [[{t}]] in a sentence.",
+            "Please spell [[{t}]] correctly.",
+            "We will review [[{t}]] tomorrow.",
+            "Write down [[{t}]] in your notebook.",
+            "Remember the word [[{t}]] today.",
+        ]
+
+        if stage2 == "primary":
+            table = {"n": noun_primary, "v": verb_primary, "adj": adj_primary, "adv": other_primary}
+        else:
+            table = {"n": noun_junior, "v": verb_junior, "adj": adj_junior, "adv": other_junior}
+        templates = table.get(pos2) or table.get("n") or noun_junior
+
+        # Small hint-based tweaks for a few common notes.
+        if pos2 == "v" and ("收集" in note2 or "搜集" in note2):
+            templates = [tpl for tpl in templates if "stamps" in tpl] + templates
+        if pos2 == "v" and ("举" in note2 or "抬" in note2):
+            templates = [tpl for tpl in templates if "hand" in tpl] + templates
+        if pos2 == "adj" and ("美味" in note2 or "好吃" in note2):
+            templates = [tpl for tpl in templates if "cake" in tpl or "food" in tpl] + templates
+
+        tpl = templates[seed % len(templates)]
+        return tpl.format(t=t)
+
     need_ai_terms: list[str] = []
     term_notes: dict[str, str] = {}
     for w in words:
@@ -1450,20 +2031,33 @@ def _build_cloze(words: list[dict[str, Any]], *, stage: str) -> tuple[list[dict[
 
     items: list[dict[str, Any]] = []
     answers: list[str] = []
+    used_blanks: set[str] = set()
     for w in words:
         term = str(w.get("term") or "").strip()
         ex = str(w.get("example") or "").strip()
+        note = str(w.get("definition_short") or "").strip()
+        pos = _guess_pos(note, str(w.get("pos") or ""))
         sent = ex
         # Prefer AI sentence when example is missing or doesn't contain term.
         if term and term in ai_sentences:
             sent = ai_sentences[term]
         if not sent:
-            sent = f"This is [[{term}]]." if term else "This is ____."
+            sent = _fallback_sentence(term, stage=stage, pos=pos, note=note, seed=len(items))
         # Normalize marker to blank
         blank = sent
         if term:
             blank = re.sub(rf"\[\[{re.escape(term)}\]\]", "____", blank, flags=re.IGNORECASE)
             blank = re.sub(rf"\b{re.escape(term)}\b", "____", blank, flags=re.IGNORECASE)
+        # Avoid repeated ultra-generic blanks in fallback mode by rotating templates.
+        if blank in used_blanks and term:
+            for extra in range(1, 8):
+                sent2 = _fallback_sentence(term, stage=stage, pos=pos, note=note, seed=len(items) + extra)
+                blank2 = re.sub(rf"\[\[{re.escape(term)}\]\]", "____", sent2, flags=re.IGNORECASE)
+                blank2 = re.sub(rf"\b{re.escape(term)}\b", "____", blank2, flags=re.IGNORECASE)
+                if blank2 not in used_blanks:
+                    blank = blank2
+                    break
+        used_blanks.add(blank)
         items.append({"word_id": int(w["word_id"]), "sentence_blank": blank})
         answers.append(term or "")
 
@@ -1476,10 +2070,22 @@ def worksheets_generate(
     mode: str = Form("extract"),
     stage: str = Form("junior"),
     word_ids: list[int] = Form([]),
+    question_types: list[str] = Form([]),
 ):
     stage = (stage or "junior").strip().lower()
     if stage not in {"primary", "junior"}:
         stage = "junior"
+
+    allowed_qt = {"spelling", "mcq", "cloze", "reading"}
+    cleaned_qt: list[str] = []
+    for raw in question_types or []:
+        key = str(raw or "").strip().lower()
+        if key in allowed_qt and key not in cleaned_qt:
+            cleaned_qt.append(key)
+    if not cleaned_qt:
+        cleaned_qt = ["spelling", "mcq"] if stage == "primary" else ["spelling", "mcq", "cloze"]
+
+    warnings: list[str] = []
 
     cleaned: list[int] = []
     for raw in word_ids or []:
@@ -1506,25 +2112,81 @@ def worksheets_generate(
                 {
                     "word_id": int(w.id),
                     "term": str(w.term or ""),
-                    "definition_short": _short_definition(w.definition) or "（无释义）",
+                    "definition_short": _short_definition(w.definition),
                     "example": str(w.example or "").strip(),
+                    "pos": _pos_hint_from_definition(str(w.definition or "")),
                 }
             )
 
         if not words:
             return _redirect("/worksheets?" + urlencode({"toast": "勾选的单词已不存在（可能被删除）。"}))
 
-        mcq, mcq_answers = _build_mcq(words)
-        cloze, cloze_answers = _build_cloze(words, stage=stage)
-        word_bank = [str(w.get("term") or "") for w in words]
+        has_missing_def = any(not str(w.get("definition_short") or "").strip() for w in words)
+        if has_missing_def and "mcq" in cleaned_qt:
+            cleaned_qt = [t for t in cleaned_qt if t != "mcq"]
+            warnings.append("部分单词缺少中文释义，已自动移除“选择题”。")
+        if has_missing_def and "spelling" in cleaned_qt:
+            warnings.append("缺少中文释义的单词：拼写题将不显示中文提示。")
+        if not cleaned_qt:
+            cleaned_qt = ["spelling"]
+            warnings.append("本次作业没有可用题型，已自动保留“拼写题”。")
+
+        mcq: list[dict[str, Any]] = []
+        mcq_answers: list[str] = []
+        if "mcq" in cleaned_qt:
+            pool = _query_mcq_distractor_pool(session, exclude_word_ids={int(w["word_id"]) for w in words})
+            mcq, mcq_answers = _build_mcq(words, distractor_pool=pool)
+
+        cloze: list[dict[str, Any]] = []
+        cloze_answers: list[str] = []
+        if "cloze" in cleaned_qt:
+            cloze, cloze_answers = _build_cloze(words, stage=stage)
+
+        reading: dict[str, Any] = {}
+        reading_answers: list[str] = []
+        if "reading" in cleaned_qt:
+            all_terms = [str(w.get("term") or "").strip() for w in words if str(w.get("term") or "").strip()]
+            k = 5 if stage == "primary" else 6
+            reading_terms = all_terms[:k]
+            if len(reading_terms) < 3:
+                cleaned_qt = [t for t in cleaned_qt if t != "reading"]
+                warnings.append("阅读理解需要至少 3 个单词，本次已自动移除。")
+            else:
+                notes = {str(w.get("term") or "").strip(): str(w.get("definition_short") or "").strip() for w in words}
+                sim = _ai_generate_reading_for_worksheet(stage=stage, terms=reading_terms, term_notes=notes)
+                if sim is None:
+                    cleaned_qt = [t for t in cleaned_qt if t != "reading"]
+                    warnings.append("阅读理解生成失败，已自动移除。")
+                else:
+                    reading = sim.model_dump()
+                    reading["target_terms"] = reading_terms
+                    letters = ["A", "B", "C", "D"]
+                    for q in sim.questions:
+                        idx = int(getattr(q, "answer_index", 0) or 0)
+                        reading_answers.append(letters[idx] if 0 <= idx < 4 else "A")
+
+        if not cleaned_qt:
+            cleaned_qt = ["spelling"]
+            warnings.append("本次作业题型生成失败，已自动保留“拼写题”。")
+
+        answers: dict[str, Any] = {}
+        if mcq_answers:
+            answers["mcq"] = mcq_answers
+        if cloze_answers:
+            answers["cloze"] = cloze_answers
+        if reading_answers:
+            answers["reading"] = reading_answers
 
         sheet = {
             "version": 1,
             "stage": stage,
+            "question_types": cleaned_qt,
+            "warnings": warnings,
             "words": words,
             "mcq": mcq,
             "cloze": cloze,
-            "answers": {"mcq": mcq_answers, "cloze": cloze_answers},
+            "reading": reading,
+            "answers": answers,
         }
 
         # Ensure plan + cards exist so grading can feed FSRS.
@@ -1585,6 +2247,22 @@ def worksheet_detail(
         sheet = _safe_json_dict(row.sheet_json)
         meta = _safe_json_dict(row.meta_json)
 
+        stage = str(row.stage or sheet.get("stage") or "junior").strip().lower()
+        if stage not in {"primary", "junior"}:
+            stage = "junior"
+
+        question_types_raw = sheet.get("question_types")
+        question_types: list[str] = []
+        if isinstance(question_types_raw, list):
+            for x in question_types_raw:
+                k = str(x or "").strip().lower()
+                if k in {"spelling", "mcq", "cloze", "reading"} and k not in question_types:
+                    question_types.append(k)
+        if not question_types:
+            question_types = ["spelling", "mcq"] if stage == "primary" else ["spelling", "mcq", "cloze"]
+
+        warnings = list(sheet.get("warnings") or []) if isinstance(sheet.get("warnings"), list) else []
+
         words = list(sheet.get("words") or [])
         # Hydrate missing short defs/examples from the DB so older worksheets remain usable.
         word_ids = [int(w.get("word_id") or 0) for w in words if int(w.get("word_id") or 0) > 0]
@@ -1604,21 +2282,40 @@ def worksheet_detail(
                     d = _short_definition(str(w.definition or ""))
                     if d:
                         it["definition_short"] = d
+                    else:
+                        it["definition_short"] = ""
                 if not str(it.get("example") or "").strip() and str(w.example or "").strip():
                     it["example"] = str(w.example or "").strip()
 
-        mcq = list(sheet.get("mcq") or [])
-        cloze = list(sheet.get("cloze") or [])
+        missing_def_count = sum(1 for w in words if _is_missing_short_def(str(w.get("definition_short") or "")))
+        if missing_def_count > 0:
+            if "mcq" in question_types:
+                question_types = [t for t in question_types if t != "mcq"]
+                warnings.append("本次作业包含缺少中文释义的单词，已自动移除“选择题”。")
+            if "spelling" in question_types:
+                warnings.append("缺少中文释义的单词：拼写题将不显示中文提示。")
+        if not question_types:
+            question_types = ["spelling"]
+            warnings.append("本次作业没有可用题型，已自动保留“拼写题”。")
+
+        mcq = list(sheet.get("mcq") or []) if "mcq" in question_types else []
+        cloze = list(sheet.get("cloze") or []) if "cloze" in question_types else []
+        reading_obj = sheet.get("reading") or {}
+        reading: dict[str, Any] = reading_obj if isinstance(reading_obj, dict) else {}
+        reading_questions = list(reading.get("questions") or []) if "reading" in question_types else []
+        reading_passage_html = _passage_to_html(str(reading.get("passage") or "")) if "reading" in question_types else ""
         answers = sheet.get("answers") or {}
 
-        if _mcq_has_placeholders(mcq) and not any(_is_missing_short_def(str(w.get("definition_short") or "")) for w in words):
-            mcq, mcq_answers = _build_mcq(words)
+        if "mcq" in question_types and _mcq_has_placeholders(mcq) and missing_def_count == 0:
+            pool = _query_mcq_distractor_pool(session, exclude_word_ids={int(w.get("word_id") or 0) for w in words})
+            mcq, mcq_answers = _build_mcq(words, distractor_pool=pool)
             answers = dict(answers or {})
             answers["mcq"] = mcq_answers
         else:
             mcq_answers = list((answers.get("mcq") or []))
 
-        cloze_answers = list((answers.get("cloze") or []))
+        cloze_answers = list((answers.get("cloze") or [])) if "cloze" in question_types else []
+        reading_answers = list((answers.get("reading") or [])) if "reading" in question_types else []
 
     word_bank = [str(w.get("term") or "") for w in words]
     spelling_answers = [str(w.get("term") or "") for w in words]
@@ -1633,15 +2330,21 @@ def worksheet_detail(
             "worksheet_id": int(row.id),
             "title": (row.title or f"作业 #{row.id}").strip(),
             "created_at": row.created_at,
-            "stage": str(row.stage or "junior"),
-            "stage_label": _stage_label(str(row.stage or "junior")),
+            "stage": stage,
+            "stage_label": _stage_label(stage),
             "words": words,
             "mcq": mcq,
             "cloze": cloze,
+            "reading_passage_html": reading_passage_html,
+            "reading_questions": reading_questions,
             "word_bank": word_bank,
             "mcq_answers": mcq_answers,
             "cloze_answers": cloze_answers,
+            "reading_answers": reading_answers,
             "spelling_answers": spelling_answers,
+            "question_types": question_types,
+            "warnings": warnings,
+            "missing_def_count": int(missing_def_count),
             "already_graded": bool(meta.get("graded_at")),
             "toast": (toast or "").strip(),
             "view": view2,
@@ -1710,7 +2413,7 @@ def worksheet_grade(
         meta["wrong_word_ids"] = sorted(list(cleaned_wrong))
         row.meta_json = json.dumps(meta, ensure_ascii=False)
 
-    params = {"toast": "已记录错题并安排复习"}
+    params = {"toast": "已记录错词并安排复习"}
     if str(view or "").strip().lower() == "grading":
         params["view"] = "grading"
     if str(layout or "").strip().lower() == "standard":
@@ -1775,9 +2478,19 @@ def update_ui_mode(request: Request, mode: str = Form("self"), return_to: str = 
     if mode not in {_UI_MODE_PARENT, _UI_MODE_SELF}:
         mode = _UI_MODE_SELF
 
-    label = "纸质作业（家长）" if mode == _UI_MODE_PARENT else "屏幕自学（本人）"
+    label = "家长帮孩子学" if mode == _UI_MODE_PARENT else "自己学"
     dest = _safe_next(return_to or "/settings")
-    resp = _redirect(dest + "?" + urlencode({"toast": f"已切换到：{label}"}))
+    dest_url = dest + "?" + urlencode({"toast": f"已切换到：{label}"})
+
+    # The app uses hx-boost and only swaps #content, but the top navigation lives outside that swap area.
+    # When switching modes we must force a full navigation so the header is re-rendered with the new mode.
+    if (request.headers.get("HX-Request") or "").strip().lower() == "true":
+        resp = Response(status_code=200)
+        resp.headers["HX-Redirect"] = dest_url
+        _set_ui_mode_cookie(resp, request, mode)
+        return resp
+
+    resp = _redirect(dest_url)
     _set_ui_mode_cookie(resp, request, mode)
     return resp
 
@@ -1814,17 +2527,22 @@ def update_plan_settings(
         auto_added = 0
         if new_limit > old_new_limit:
             now = _utcnow()
-            due_total = int(session.query(func.count(SrsCard.word_id)).filter(SrsCard.due_at <= now).scalar() or 0)
+            due_review_total = int(
+                session.query(func.count(SrsCard.word_id))
+                .filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_not(None))
+                .scalar()
+                or 0
+            )
             due_new = int(
                 session.query(func.count(SrsCard.word_id))
                 .filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_(None))
                 .scalar()
                 or 0
             )
-            if suspend_over <= 0 or due_total <= suspend_over:
+            if suspend_over <= 0 or due_review_total <= suspend_over:
                 need = max(0, new_limit - due_new)
                 if need > 0:
-                    planned_ids_subq = session.query(PlanWord.word_id).filter(PlanWord.plan_id == plan.id).subquery()
+                    planned_ids = session.query(PlanWord.word_id).filter(PlanWord.plan_id == plan.id)
                     # Prefer decks already linked to the plan (by priority), then any deck with remaining words.
                     plan_deck_ids = [
                         int(did)
@@ -1836,7 +2554,7 @@ def update_plan_settings(
 
                     def _deck_remaining_counts(deck_ids: list[int] | None) -> list[tuple[int, int]]:
                         q = session.query(DeckWord.deck_id, func.count(DeckWord.word_id))
-                        q = q.filter(~DeckWord.word_id.in_(planned_ids_subq))
+                        q = q.filter(~DeckWord.word_id.in_(planned_ids))
                         if deck_ids:
                             q = q.filter(DeckWord.deck_id.in_(deck_ids))
                         q = q.group_by(DeckWord.deck_id).order_by(func.count(DeckWord.word_id).desc())
@@ -2609,6 +3327,130 @@ def api_analytics_dashboard(request: Request, days: int = 7):
     return _build_analytics_dashboard(days=days, username_norm=username_norm, is_admin=is_admin)
 
 
+def _build_learning_dashboard(
+    session,
+    *,
+    now: datetime,
+    timezone_name: str,
+    days: int = 14,
+    mastered_stability_days: int = 30,
+) -> dict[str, Any]:
+    tzinfo = _get_app_tzinfo(timezone_name=timezone_name)
+    days = max(7, min(int(days or 14), 60))
+    mastered_thr = max(1, int(mastered_stability_days or 30))
+
+    total_cards = int(session.query(func.count(SrsCard.word_id)).scalar() or 0)
+    new_cards = int(session.query(func.count(SrsCard.word_id)).filter(SrsCard.last_reviewed_at.is_(None)).scalar() or 0)
+    mastered_cards = int(
+        session.query(func.count(SrsCard.word_id))
+        .filter(
+            SrsCard.state == 2,  # Review
+            SrsCard.stability.is_not(None),
+            SrsCard.stability >= float(mastered_thr),
+        )
+        .scalar()
+        or 0
+    )
+    learning_cards = int(
+        session.query(func.count(SrsCard.word_id))
+        .filter(
+            SrsCard.last_reviewed_at.is_not(None),
+            ~(
+                (SrsCard.state == 2)
+                & (SrsCard.stability.is_not(None))
+                & (SrsCard.stability >= float(mastered_thr))
+            ),
+        )
+        .scalar()
+        or 0
+    )
+    due_cards = int(session.query(func.count(SrsCard.word_id)).filter(SrsCard.due_at <= now).scalar() or 0)
+
+    last_review_at = session.query(func.max(SrsReviewLog.reviewed_at)).scalar()
+    last_review_at_local = ""
+    if isinstance(last_review_at, datetime):
+        last_review_at_local = last_review_at.replace(tzinfo=timezone.utc).astimezone(tzinfo).strftime("%Y-%m-%d %H:%M")
+
+    cutoff = now - timedelta(days=days - 1)
+    log_rows = (
+        session.query(SrsReviewLog.reviewed_at, SrsReviewLog.rating)
+        .filter(SrsReviewLog.reviewed_at >= cutoff)
+        .order_by(SrsReviewLog.reviewed_at.asc())
+        .all()
+    )
+    daily_total: dict[str, int] = {}
+    daily_again: dict[str, int] = {}
+    for reviewed_at, rating in log_rows:
+        if not isinstance(reviewed_at, datetime):
+            continue
+        local_day = reviewed_at.replace(tzinfo=timezone.utc).astimezone(tzinfo).date().isoformat()
+        daily_total[local_day] = int(daily_total.get(local_day, 0) + 1)
+        if int(rating or 0) == int(Rating.Again.value):
+            daily_again[local_day] = int(daily_again.get(local_day, 0) + 1)
+
+    today_local = now.replace(tzinfo=timezone.utc).astimezone(tzinfo).date()
+    series: list[dict[str, Any]] = []
+    max_count = 0
+    study_days = 0
+    for i in range(days - 1, -1, -1):
+        d = today_local - timedelta(days=i)
+        key = d.isoformat()
+        cnt = int(daily_total.get(key, 0))
+        ag = int(daily_again.get(key, 0))
+        if cnt > 0:
+            study_days += 1
+        max_count = max(max_count, cnt)
+        series.append({"day": key, "label": d.strftime("%m-%d"), "count": cnt, "again": ag})
+
+    # 高频错词（按 wrong_count）
+    wrong_rows = (
+        session.query(Word, func.max(Mistake.created_at).label("last_wrong_at"))
+        .join(Mistake, Mistake.word_id == Word.id)
+        .filter(Word.wrong_count > 0)
+        .group_by(Word.id)
+        .order_by(Word.wrong_count.desc(), func.max(Mistake.created_at).desc(), Word.term.asc())
+        .limit(10)
+        .all()
+    )
+    wrong_top: list[dict[str, Any]] = []
+    for w, last_wrong_at in wrong_rows:
+        ts = ""
+        if isinstance(last_wrong_at, datetime):
+            ts = last_wrong_at.replace(tzinfo=timezone.utc).astimezone(tzinfo).strftime("%m-%d %H:%M")
+        wrong_top.append({"term": str(w.term or ""), "wrong_count": int(w.wrong_count or 0), "last_wrong_at": ts})
+
+    return {
+        "meta": {"days": days, "tz": timezone_name, "mastered_thr": mastered_thr, "last_review_at": last_review_at_local},
+        "counts": {
+            "total": total_cards,
+            "new": new_cards,
+            "learning": learning_cards,
+            "mastered": mastered_cards,
+            "due": due_cards,
+        },
+        "series": {"items": series, "max": max_count, "study_days": int(study_days)},
+        "wrong_top": wrong_top,
+    }
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def learning_dashboard_page(request: Request):
+    now = _utcnow()
+    settings = get_settings()
+    is_parent_mode = getattr(request.state, "ui_mode", _UI_MODE_SELF) == _UI_MODE_PARENT
+    with get_session() as session:
+        dash = _build_learning_dashboard(session, now=now, timezone_name=settings.app_timezone, days=14, mastered_stability_days=30)
+    return templates.TemplateResponse(
+        request,
+        "dashboard.html",
+        {
+            "title": "学习看板" if not is_parent_mode else "学习进度",
+            "dash": dash,
+            "is_parent_mode": bool(is_parent_mode),
+        },
+    )
+
+
 @app.get("/decks", response_class=HTMLResponse)
 def list_decks(request: Request, toast: str | None = None):
     now = _utcnow()
@@ -2747,7 +3589,21 @@ def deck_detail(request: Request, deck_id: int, toast: str | None = None):
 @app.get("/library", response_class=HTMLResponse)
 def wordbook_library(request: Request):
     sources = list_sources()
-    return templates.TemplateResponse(request, "library.html", {"sources": sources})
+    groups = [
+        ("家长/中小学生（推荐）", [s for s in sources if str(getattr(s, "kind", "")).strip() == "generated_subset"]),
+        ("考试词汇（ECDICT）", [s for s in sources if str(getattr(s, "kind", "")).strip() == "ecdict_tag"]),
+        ("高频词表（原始）", [s for s in sources if str(getattr(s, "kind", "")).strip() == "plain_words"]),
+    ]
+    groups = [(name, items) for (name, items) in groups if items]
+    return templates.TemplateResponse(
+        request,
+        "library.html",
+        {
+            "sources": sources,
+            "groups": groups,
+            "sources_note_path": "docs/WORDBOOK_SOURCES.md",
+        },
+    )
 
 
 def _add_next_words_to_plan(session, *, deck_id: int, count: int) -> tuple[str, int, int]:
@@ -2758,11 +3614,11 @@ def _add_next_words_to_plan(session, *, deck_id: int, count: int) -> tuple[str, 
     plan = _ensure_default_plan(session)
     _ensure_plan_deck(session, plan, deck_id)
 
-    planned_ids_subq = session.query(PlanWord.word_id).filter(PlanWord.plan_id == plan.id).subquery()
+    planned_ids = session.query(PlanWord.word_id).filter(PlanWord.plan_id == plan.id)
     rows = (
         session.query(DeckWord.word_id)
         .join(Word, Word.id == DeckWord.word_id)
-        .filter(DeckWord.deck_id == deck_id, ~DeckWord.word_id.in_(planned_ids_subq))
+        .filter(DeckWord.deck_id == deck_id, ~DeckWord.word_id.in_(planned_ids))
         # Randomize selection so added words don't always follow deck order / alphabetical order.
         .order_by(func.random())
         .limit(count)
@@ -3301,13 +4157,18 @@ def review(request: Request, deck_id: int | None = None, toast: str | None = Non
     if deck_id == 0:
         deck_id = None
     now = _utcnow()
+    settings = get_settings()
     prefetch_limit = 120
     with get_session() as session:
         decks = session.query(Deck).order_by(Deck.name.asc()).all()
         plan = _ensure_default_plan(session)
-
-        if deck_id is None and decks:
-            deck_id = int(decks[0].id)
+        plan_state = _apply_daily_new_limit(
+            session,
+            now=now,
+            daily_new_limit=int(plan.daily_new_limit or 20),
+            suspend_new_when_due_over=int(plan.suspend_new_when_due_over or 200),
+            timezone_name=settings.app_timezone,
+        )
 
         word_count = int(session.query(func.count(Word.id)).scalar() or 0)
 
@@ -3327,21 +4188,60 @@ def review(request: Request, deck_id: int | None = None, toast: str | None = Non
                 .filter(DeckWord.deck_id == deck_id)
             )
 
-        due_q = base_q.filter(SrsCard.due_at <= now).order_by(SrsCard.due_at.asc(), Word.term.asc())
         prefetch_rows: list[Any] = []
+        review_limit = int(plan.daily_review_limit or 200)
+        if review_limit < 0:
+            review_limit = 0
+        due_review_total = int(
+            base_q.filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_not(None)).count()
+        )
+        due_new_total = int(base_q.filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_(None)).count())
+        due_review_today = due_review_total if review_limit <= 0 else min(due_review_total, review_limit)
+        due_new_today = min(due_new_total, int(plan_state.get("effective_new_limit") or 0))
+        due_today = due_review_today + due_new_today
+
         if deck_id is not None:
-            prefetch_rows = (
+            review_rows = (
                 session.query(Word, SrsCard, DeckWord.chapter)
                 .join(SrsCard, SrsCard.word_id == Word.id)
                 .join(DeckWord, DeckWord.word_id == Word.id)
                 .filter(DeckWord.deck_id == deck_id)
-                .filter(SrsCard.due_at <= now)
+                .filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_not(None))
                 .order_by(SrsCard.due_at.asc(), Word.term.asc())
-                .limit(prefetch_limit)
+                .limit(min(prefetch_limit, max(0, due_review_today)))
                 .all()
             )
+            remaining = max(0, prefetch_limit - len(review_rows))
+            new_rows = []
+            if remaining > 0 and due_new_today > 0:
+                new_rows = (
+                    session.query(Word, SrsCard, DeckWord.chapter)
+                    .join(SrsCard, SrsCard.word_id == Word.id)
+                    .join(DeckWord, DeckWord.word_id == Word.id)
+                    .filter(DeckWord.deck_id == deck_id)
+                    .filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_(None))
+                    .order_by(SrsCard.due_at.asc(), SrsCard.created_at.asc(), Word.term.asc())
+                    .limit(min(remaining, due_new_today))
+                    .all()
+                )
+            prefetch_rows = list(review_rows) + list(new_rows)
         else:
-            prefetch_rows = due_q.limit(prefetch_limit).all()
+            review_rows = (
+                base_q.filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_not(None))
+                .order_by(SrsCard.due_at.asc(), Word.term.asc())
+                .limit(min(prefetch_limit, max(0, due_review_today)))
+                .all()
+            )
+            remaining = max(0, prefetch_limit - len(review_rows))
+            new_rows = []
+            if remaining > 0 and due_new_today > 0:
+                new_rows = (
+                    base_q.filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_(None))
+                    .order_by(SrsCard.due_at.asc(), SrsCard.created_at.asc(), Word.term.asc())
+                    .limit(min(remaining, due_new_today))
+                    .all()
+                )
+            prefetch_rows = list(review_rows) + list(new_rows)
 
         due_pair = None
         if prefetch_rows:
@@ -3358,7 +4258,7 @@ def review(request: Request, deck_id: int | None = None, toast: str | None = Non
             func.coalesce(func.sum(case((SrsCard.due_at <= now, 1), else_=0)), 0),
         ).first() or (0, 0)
         total = int(total or 0)
-        due_count = int(due_count or 0)
+        due_count = int(min(int(due_count or 0), due_today))
 
         next_pair = base_q.filter(SrsCard.due_at > now).order_by(SrsCard.due_at.asc()).first()
         next_due_at = next_pair[1].due_at if next_pair else None
@@ -3402,6 +4302,8 @@ def review(request: Request, deck_id: int | None = None, toast: str | None = Non
             "deck_name": deck_name,
             "toast": (toast or "").strip(),
             "daily_new_limit": int(plan.daily_new_limit or 20),
+            "daily_review_limit": int(plan.daily_review_limit or 200),
+            "new_paused": bool(plan_state.get("new_paused")),
             "state_map": {1: "Learning", 2: "Review", 3: "Relearning"},
             "prefetch_cards_json": json.dumps(prefetch_cards, ensure_ascii=False),
         },
@@ -3560,12 +4462,57 @@ async def api_analytics_events(request: Request):
     return {"ok": True, "stored": stored}
 
 
+def _query_mistake_aggregates(
+    session,
+    *,
+    min_events: int,
+    sort: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    min_events = max(1, int(min_events or 1))
+    sort = (sort or "freq").strip().lower()
+    sort = sort if sort in {"freq", "time"} else "freq"
+    limit = max(1, min(2000, int(limit or 200)))
+
+    agg = (
+        session.query(
+            Mistake.word_id.label("word_id"),
+            func.count(Mistake.id).label("wrong_events"),
+            func.max(Mistake.created_at).label("last_wrong_at"),
+        )
+        .group_by(Mistake.word_id)
+        .subquery()
+    )
+
+    q = session.query(Word, agg.c.wrong_events, agg.c.last_wrong_at).join(agg, agg.c.word_id == Word.id)
+    if min_events > 1:
+        q = q.filter(agg.c.wrong_events >= min_events)
+
+    if sort == "time":
+        q = q.order_by(agg.c.last_wrong_at.desc(), agg.c.wrong_events.desc(), Word.term.asc())
+    else:
+        q = q.order_by(agg.c.wrong_events.desc(), agg.c.last_wrong_at.desc(), Word.term.asc())
+
+    out: list[dict[str, Any]] = []
+    for w, wrong_events, last_wrong_at in q.limit(limit).all():
+        out.append(
+            {
+                "word": w,
+                "wrong_events": int(wrong_events or 0),
+                "last_wrong_at": last_wrong_at,
+            }
+        )
+    return out
+
+
 @app.get("/mistakes", response_class=HTMLResponse)
 def mistakes(
     request: Request,
     level: str | None = None,
     target_count: int | None = None,
     length_mode: str = "standard",
+    sort: str = "freq",
+    include_once: int = 0,
     error: str | None = None,
 ):
     def _default_k(lv: str) -> int:
@@ -3600,16 +4547,16 @@ def mistakes(
                 return "kaoyan"
             return None
 
-        # Get recent mistakes with word info (simple approach for MVP)
-        rows = (
-            session.query(Mistake, Word)
-            .join(Word, Mistake.word_id == Word.id)
-            .order_by(Mistake.id.desc())
-            .limit(200)
-            .all()
-        )
+        include_once = 1 if int(include_once or 0) == 1 else 0
+        min_events = 1 if include_once == 1 else 2
+        sort2 = (sort or "freq").strip().lower()
+        sort2 = sort2 if sort2 in {"freq", "time"} else "freq"
+
+        items = _query_mistake_aggregates(session, min_events=min_events, sort=sort2, limit=240)
+
+        # For level default, use the most common deck among mistakes.
         guessed_level: str | None = None
-        if level is None and rows:
+        if level is None and items:
             # Find the most common deck among current mistakes and map it to a level.
             deck_row = (
                 session.query(Deck.name, func.count(Mistake.id))
@@ -3632,7 +4579,6 @@ def mistakes(
             selected_target_count = _default_k(selected_level)
         selected_target_count = max(6, min(14, selected_target_count))
 
-    items = [{"mistake": m, "word": w} for (m, w) in rows]
     return templates.TemplateResponse(
         request,
         "mistakes.html",
@@ -3643,6 +4589,8 @@ def mistakes(
             "selected_level": selected_level,
             "target_count": selected_target_count,
             "length_mode": selected_length_mode,
+            "sort": sort2,
+            "include_once": include_once,
             "error": (error or "").strip(),
         },
     )
@@ -3711,22 +4659,22 @@ async def generate_simulation(
                     error="你勾选的单词已不存在（可能被删除）。请刷新后重试，或直接不勾选让系统自动选词。",
                 )
         else:
-            # Auto-pick from recent mistakes (dedupe by word_id, then prefer higher wrong_count)
-            rows = (
-                session.query(Mistake, Word)
-                .join(Word, Mistake.word_id == Word.id)
-                .order_by(Mistake.id.desc())
-                .limit(600)
-                .all()
-            )
-            latest: dict[int, tuple[Word, datetime]] = {}
-            for m, w in rows:
-                if w.id not in latest:
-                    latest[w.id] = (w, m.created_at)
-
-            candidates = list(latest.values())
-            candidates.sort(key=lambda t: (t[0].wrong_count, t[1]), reverse=True)
-            words = [w for (w, _ts) in candidates[:k]]
+            # Auto-pick from mistakes (aggregated per word)
+            picked: list[Word] = []
+            items = _query_mistake_aggregates(session, min_events=2, sort="freq", limit=800)
+            picked.extend([it["word"] for it in items[:k]])
+            if len(picked) < k:
+                items2 = _query_mistake_aggregates(session, min_events=1, sort="freq", limit=800)
+                seen = {int(w.id) for w in picked}
+                for it in items2:
+                    w = it["word"]
+                    if int(w.id) in seen:
+                        continue
+                    seen.add(int(w.id))
+                    picked.append(w)
+                    if len(picked) >= k:
+                        break
+            words = picked[:k]
 
     if not words:
         return mistakes(
@@ -3771,11 +4719,14 @@ async def generate_simulation(
         )
 
     with get_session() as session:
+        term_word_map = {str(w.term or "").strip().lower(): int(w.id) for w in words if str(w.term or "").strip()}
+        payload_obj = sim.model_dump()
+        payload_obj["term_word_map"] = term_word_map
         row = Simulation(
             level=selected_level,
             target_terms_json=json.dumps(terms, ensure_ascii=False),
             passage=sim.passage,
-            questions_json=sim.model_dump_json(ensure_ascii=False),
+            questions_json=json.dumps(payload_obj, ensure_ascii=False),
         )
         session.add(row)
         session.flush()
@@ -3862,24 +4813,27 @@ async def generate_simulation_stream(
                         f"requested={len(ids)} found={len(words)} dt={(time.perf_counter() - sel_t0) * 1000:.0f}ms"
                     )
                 else:
-                    rows = (
-                        session.query(Mistake, Word)
-                        .join(Word, Mistake.word_id == Word.id)
-                        .order_by(Mistake.id.desc())
-                        .limit(600)
-                        .all()
-                    )
-                    latest: dict[int, tuple[Word, datetime]] = {}
-                    for m, w in rows:
-                        if w.id not in latest:
-                            latest[w.id] = (w, m.created_at)
-                    candidates = list(latest.values())
-                    candidates.sort(key=lambda t: (t[0].wrong_count, t[1]), reverse=True)
-                    words = [w for (w, _ts) in candidates[:k]]
+                    items = _query_mistake_aggregates(session, min_events=2, sort="freq", limit=800)
+                    words = [it["word"] for it in items[:k]]
+                    scanned_rows = len(items)
+                    unique = scanned_rows
+                    if len(words) < k:
+                        items2 = _query_mistake_aggregates(session, min_events=1, sort="freq", limit=800)
+                        seen = {int(w.id) for w in words}
+                        for it in items2:
+                            w = it["word"]
+                            if int(w.id) in seen:
+                                continue
+                            seen.add(int(w.id))
+                            words.append(w)
+                            if len(words) >= k:
+                                break
+                        scanned_rows = max(scanned_rows, len(items2))
+                        unique = scanned_rows
                     yield _note(
                         "word selection=auto "
-                        f"scanned_rows={len(rows)} unique={len(candidates)} picked={len(words)} "
-                        f"sort=(wrong_count,latest) dt={(time.perf_counter() - sel_t0) * 1000:.0f}ms"
+                        f"scanned_rows={scanned_rows} unique={unique} picked={len(words)} "
+                        f"sort=(wrong_events,last_wrong_at) dt={(time.perf_counter() - sel_t0) * 1000:.0f}ms"
                     )
 
             if not words:
@@ -4013,11 +4967,14 @@ async def generate_simulation_stream(
                         return
 
             with get_session() as session:
+                term_word_map = {str(w.term or "").strip().lower(): int(w.id) for w in words if str(w.term or "").strip()}
+                payload_obj = sim.model_dump()
+                payload_obj["term_word_map"] = term_word_map
                 row = Simulation(
                     level=selected_level,
                     target_terms_json=json.dumps(terms, ensure_ascii=False),
                     passage=sim.passage,
-                    questions_json=sim.model_dump_json(ensure_ascii=False),
+                    questions_json=json.dumps(payload_obj, ensure_ascii=False),
                 )
                 session.add(row)
                 session.flush()
@@ -4223,44 +5180,129 @@ def list_simulations(request: Request):
 
 @app.post("/simulations/{sim_id}/grade_async", response_class=HTMLResponse)
 async def grade_simulation_async(request: Request, sim_id: int):
+    form = await request.form()
+
+    def _idx_label(i: int) -> str:
+        try:
+            return ["A", "B", "C", "D"][int(i)]
+        except Exception:
+            return ""
+
     with get_session() as session:
         row = session.get(Simulation, sim_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="not found")
+        if not row:
+            raise HTTPException(status_code=404, detail="not found")
 
-    payload = json.loads(row.questions_json)
-    questions: list[dict[str, Any]] = payload["questions"]
+        payload = json.loads(row.questions_json or "{}")
+        questions: list[dict[str, Any]] = list(payload.get("questions") or [])
 
-    form = await request.form()
-    answers: dict[str, int] = {}
-    for q in questions:
-        qid = q["id"]
-        raw = form.get(qid)
-        if raw is None:
-            continue
-        try:
-            answers[qid] = int(raw)
-        except ValueError:
-            continue
+        term_word_map_raw = payload.get("term_word_map") or {}
+        term_word_map: dict[str, int] = {}
+        if isinstance(term_word_map_raw, dict):
+            for k, v in term_word_map_raw.items():
+                key = str(k or "").strip().lower()
+                try:
+                    wid = int(v)
+                except Exception:
+                    continue
+                if key and wid > 0:
+                    term_word_map[key] = wid
 
-    graded = []
-    correct = 0
-    for q in questions:
-        qid = q["id"]
-        user_idx = answers.get(qid, -1)
-        ok = user_idx == int(q["answer_index"])
-        if ok:
-            correct += 1
-        graded.append({**q, "user_answer_index": user_idx, "is_correct": ok})
+        answers: dict[str, int] = {}
+        for q in questions:
+            qid = str(q.get("id") or "")
+            if not qid:
+                continue
+            raw = form.get(qid)
+            if raw is None:
+                continue
+            try:
+                answers[qid] = int(raw)
+            except ValueError:
+                continue
 
-    score = f"{correct}/{len(questions)}"
-    return templates.TemplateResponse(
-        request,
-        "simulation_result.html",
-        {
-            "sim": row,
-            "graded": graded,
-            "score": score,
-            "level_guide": LEVEL_GUIDE,
-        },
-    )
+        graded: list[dict[str, Any]] = []
+        correct = 0
+        term_has_wrong: dict[str, bool] = {}
+
+        for q in questions:
+            qid = str(q.get("id") or "")
+            user_idx = answers.get(qid, -1)
+            answer_idx = int(q.get("answer_index") or 0)
+            ok = user_idx == answer_idx
+            if ok:
+                correct += 1
+
+            target_term = str(q.get("target_term") or "").strip()
+            if target_term:
+                key = target_term.lower()
+                term_has_wrong[key] = bool(term_has_wrong.get(key, False) or (not ok))
+
+            choices = list(q.get("choices") or [])
+            user_choice = choices[user_idx] if 0 <= user_idx < len(choices) else ""
+            answer_choice = choices[answer_idx] if 0 <= answer_idx < len(choices) else ""
+
+            graded.append(
+                {
+                    **q,
+                    "user_answer_index": user_idx,
+                    "answer_index": answer_idx,
+                    "user_answer_label": _idx_label(user_idx),
+                    "answer_label": _idx_label(answer_idx),
+                    "user_choice_text": user_choice,
+                    "answer_choice_text": answer_choice,
+                    "is_correct": ok,
+                }
+            )
+
+        # ---- FSRS writeback (per target_term) ----
+        scheduler = get_scheduler()
+        now = _utcnow()
+        reviewed: list[dict[str, Any]] = []
+        needs_relearn: list[Word] = []
+
+        for term_key, has_wrong in term_has_wrong.items():
+            wid = int(term_word_map.get(term_key) or 0)
+            if wid <= 0:
+                # Fallback: lookup by term (case-insensitive)
+                w0 = session.query(Word).filter(func.lower(Word.term) == term_key).first()
+                wid = int(w0.id) if w0 else 0
+            if wid <= 0:
+                continue
+
+            word = session.get(Word, wid)
+            if not word:
+                continue
+
+            card_row = _ensure_srs_card(session, wid)
+            fsrs_card = db_card_to_fsrs(card_row)
+            r = Rating.Again if has_wrong else Rating.Good
+            updated_card, _log = scheduler.review_card(fsrs_card, r)
+            apply_fsrs_to_db(card_row, updated_card)
+
+            word.last_reviewed_at = now
+            if r == Rating.Again:
+                word.wrong_count += 1
+                session.add(Mistake(word_id=wid))
+                needs_relearn.append(word)
+            else:
+                word.correct_count += 1
+
+            session.add(SrsReviewLog(word_id=wid, rating=int(r.value), reviewed_at=now, duration_ms=None))
+            reviewed.append({"word_id": wid, "term": str(word.term or ""), "rating": str(r.name)})
+
+        score = f"{correct}/{len(questions)}"
+        needs_relearn.sort(key=lambda w: (w.wrong_count, str(w.term or "")), reverse=True)
+
+        return templates.TemplateResponse(
+            request,
+            "simulation_result.html",
+            {
+                "sim": row,
+                "graded": graded,
+                "score": score,
+                "reviewed": reviewed,
+                "needs_relearn": needs_relearn,
+                "level_guide": LEVEL_GUIDE,
+            },
+        )

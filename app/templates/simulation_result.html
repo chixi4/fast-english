@@ -2,6 +2,25 @@
 {% block content %}
   <h1>判分结果</h1>
   <p class="muted">得分：<span class="mono">{{ score }}</span></p>
+
+  {% if reviewed and reviewed|length > 0 %}
+    <div class="card">
+      <div class="muted">已回写复习：<span class="mono">{{ reviewed|length }}</span> 个词。</div>
+      {% if needs_relearn and needs_relearn|length > 0 %}
+        <div class="muted" style="margin-top: 8px;">
+          需要回炉：
+          {% for w in needs_relearn %}
+            <span class="mono">{{ w.term }}</span>{% if not loop.last %}、{% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+      <div class="actions" style="margin-top: 10px;">
+        <a class="btn primary" href="/review">去复习</a>
+        <a class="btn" href="/mistakes">看错词篮</a>
+      </div>
+    </div>
+  {% endif %}
+
   <div class="actions">
     <a class="btn" href="/simulations/{{ sim.id }}">返回题目</a>
     <a class="btn primary" href="/simulations/{{ sim.id }}/retest">重测词汇</a>
@@ -20,8 +39,19 @@
         {% endif %}
         {{ q.stem | kw }}
       </div>
-      <div class="muted">你的选择：{{ q.user_answer_index }}</div>
-      <div class="muted">正确答案：{{ q.answer_index }}</div>
+      <div class="muted">你的选择：{% if q.user_answer_label %}{{ q.user_answer_label }}{% else %}-{% endif %} {{ q.user_choice_text | kw }}</div>
+      <div class="muted">正确答案：{{ q.answer_label }} {{ q.answer_choice_text | kw }}</div>
+      <div class="q-choices" style="margin-top: 10px;">
+        {% set labels = ["A", "B", "C", "D"] %}
+        {% for c in q.choices %}
+          {% set cls = "choice" %}
+          {% if loop.index0 == q.answer_index %}{% set cls = cls ~ " ok" %}{% endif %}
+          {% if loop.index0 == q.user_answer_index and not q.is_correct %}{% set cls = cls ~ " bad" %}{% endif %}
+          <div class="{{ cls }}">
+            <span class="mono">{{ labels[loop.index0] }}.</span> <span>{{ c | kw }}</span>
+          </div>
+        {% endfor %}
+      </div>
       <div class="example">{{ q.explanation | kw }}</div>
     </div>
   {% endfor %}

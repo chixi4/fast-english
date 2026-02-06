@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#1c1c1e" />
-    <title>{{ title or "应语单词" }}</title>
+    <title>{{ title or "迅捷单词" }}</title>
     <link rel="stylesheet" href="/static/app.css?v={{ static_v() }}" />
     <script>
       // Used for CSS fallbacks (avoid first-paint native selects before we enhance them).
@@ -20,7 +20,7 @@
       <div class="container topbar-inner">
         <div class="brand">
           <a href="/">
-            <span class="brand-accent">应语</span><span class="brand-text">单词</span>
+            <span class="brand-accent">迅捷</span><span class="brand-text">单词</span>
           </a>
         </div>
 
@@ -28,13 +28,14 @@
           {% set is_parent_mode = request.state.ui_mode == 'parent' %}
           {% if is_parent_mode %}
             <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">今日作业</a>
-            <a href="/decks" class="{% if request.url.path.startswith('/decks') %}active{% endif %}">词书</a>
-            <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">设置</a>
+            <a href="/worksheets" class="{% if request.url.path.startswith('/worksheets') %}active{% endif %}">作业</a>
+            <a href="/dashboard" class="{% if request.url.path.startswith('/dashboard') %}active{% endif %}">进度</a>
+            <a href="/settings" class="{% if request.url.path.startswith('/settings') %}active{% endif %}">设置</a>
           {% else %}
             <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">今日</a>
             <a href="/decks" class="{% if request.url.path.startswith('/decks') %}active{% endif %}">词书</a>
+            <a href="/practice" class="{% if request.url.path == '/practice' %}active{% endif %}">练习</a>
             <a href="/worksheets" class="{% if request.url.path.startswith('/worksheets') %}active{% endif %}">作业</a>
-            <a href="/practice" class="{% if request.url.path == '/practice' %}active{% endif %}">应语</a>
             <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">我的</a>
           {% endif %}
         </nav>

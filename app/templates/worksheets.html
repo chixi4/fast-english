@@ -9,7 +9,7 @@
   <div class="cards">
     <div class="card">
       <div class="card-k">使用步骤</div>
-      <div class="card-v">粘贴文本 → 识别生词 → 生成作业 → 打印给孩子做 → 勾错题</div>
+      <div class="card-v">粘贴文本 → 识别生词 → 生成作业 → 打印给孩子做 → 勾错词</div>
       <div class="muted">家长用网页生成并打印，孩子只做纸质作业。</div>
       <div class="actions" style="margin-top: 10px;">
         <a class="btn" href="/settings">家长模式设置</a>
@@ -34,6 +34,26 @@
       <div class="card-k">打印今日作业</div>
       <div class="muted">不粘贴文本：系统按“到期复习 + 补新词”自动生成一张作业。</div>
       <form id="generateTodayForm" method="post" action="/worksheets/generate_today" style="margin-top: 10px;" hx-boost="false">
+        {% set qt_default = ["spelling", "mcq", "reading"] if stage == "primary" else ["spelling", "mcq", "cloze", "reading"] %}
+        <div class="muted">题型（不确定就保持默认）：</div>
+        <div class="check-grid" style="margin-top: 8px;">
+          <label class="check">
+            <input type="checkbox" name="question_types" value="spelling" {% if "spelling" in qt_default %}checked{% endif %} />
+            <span>拼写（看中文写英文）</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="question_types" value="mcq" {% if "mcq" in qt_default %}checked{% endif %} />
+            <span>选择（英译中）</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="question_types" value="cloze" {% if "cloze" in qt_default %}checked{% endif %} />
+            <span>填空（词库填入）</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="question_types" value="reading" {% if "reading" in qt_default %}checked{% endif %} />
+            <span>阅读（短文+选择）</span>
+          </label>
+        </div>
         <button class="btn" id="generateTodayBtn" type="submit">生成今日作业</button>
       </form>
     </div>
@@ -68,11 +88,14 @@
                   {% if it.in_targets and it.in_targets|length > 0 %}
                     <span class="pill ok">目标</span>
                   {% endif %}
+                  {% if it.missing_def %}
+                    <span class="pill">缺释义</span>
+                  {% endif %}
                   {% if it.freq_rank %}
                     <span class="pill">高频#{{ it.freq_rank }}</span>
                   {% endif %}
                   <div class="muted" style="margin-top: 4px;">
-                    {{ it.definition_short }}
+                    {{ it.definition_short if it.definition_short else "（未收录释义）" }}
                     {% if it.in_targets and it.in_targets|length > 0 %}
                       · {{ it.in_targets|join(' / ') }}
                     {% endif %}
@@ -87,6 +110,28 @@
             <a class="btn" href="/worksheets">清空本次结果</a>
           </div>
           <div class="muted" style="margin-top: 10px;">已按推荐自动勾选，可手动增减。</div>
+
+          {% set qt_default2 = ["spelling", "mcq", "reading"] if stage == "primary" else ["spelling", "mcq", "cloze", "reading"] %}
+          <div class="fullbleed divider-bar" style="margin-top: 14px;"></div>
+          <div class="muted">题型（不确定就保持默认）：</div>
+          <div class="check-grid" style="margin-top: 8px;">
+            <label class="check">
+              <input type="checkbox" name="question_types" value="spelling" {% if "spelling" in qt_default2 %}checked{% endif %} />
+              <span>拼写（看中文写英文）</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" name="question_types" value="mcq" {% if "mcq" in qt_default2 %}checked{% endif %} />
+              <span>选择（英译中）</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" name="question_types" value="cloze" {% if "cloze" in qt_default2 %}checked{% endif %} />
+              <span>填空（词库填入）</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" name="question_types" value="reading" {% if "reading" in qt_default2 %}checked{% endif %} />
+              <span>阅读（短文+选择）</span>
+            </label>
+          </div>
         </form>
       {% else %}
         <div class="muted" style="margin-top: 10px;">没有可用词条（先导入词书，如“中考词汇/高频 10k”）。</div>
@@ -116,15 +161,21 @@
       const riverEl = document.getElementById("worksheetAiRiver");
       let riverTimer = null;
 
-      const escapeHtml = (s) => (s || "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+      const escapeHtml = (s) =>
+        String(s || "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll("\"", "&quot;")
+          .replaceAll("'", "&#39;");
       const startRiver = () => {
         if (!riverEl || riverTimer) return;
         const hints = [
-          "[解析] 读取词书与复习计划…",
+          "[解析] 读取词库与计划…",
           "[选词] 到期复习 + 补新词…",
-          "[排版] 生成拼写/选择/填空…",
-          "[检查] 去重 + 生成答案…",
-          "[完成] 即将打开可打印作业…",
+          "[出题] 生成拼写 / 选择 / 填空 / 阅读…",
+          "[排版] 处理分页与打印样式…",
+          "[完成] 即将打开作业预览…",
         ];
         const vocab = [
           "tokenize",
@@ -133,18 +184,18 @@
           "wordbank",
           "mcq",
           "cloze",
+          "reading",
           "render",
           "layout",
           "print",
           "cache",
-          "commit",
         ];
         const lines = [];
-        const rand = (a) => a[Math.floor(Math.random() * a.length)];
+        const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
         const tick = () => {
           const t = Date.now().toString(16).slice(-6);
           const line =
-            Math.random() < 0.4
+            Math.random() < 0.45
               ? rand(hints)
               : `[${t}] ${rand(vocab)} ${rand(vocab)} ${rand(vocab)} ${Math.random().toString(16).slice(2, 10)}`;
           lines.push(line);

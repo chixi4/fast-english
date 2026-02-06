@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>{{ title }}</h1>
+
+  {% set is_parent_mode = request.state.ui_mode == 'parent' %}
+  {% set c = dash.counts %}
+  {% set meta = dash.meta %}
+  {% set series = dash.series %}
+
+  <div class="cards" style="margin-top: 12px;">
+    <div class="card">
+      <div class="card-k">计划内词汇</div>
+      <div class="card-v">{{ c.total }}</div>
+      <div class="muted">待复习：{{ c.due }}</div>
+    </div>
+    <div class="card">
+      <div class="card-k">已掌握</div>
+      <div class="card-v">{{ c.mastered }}</div>
+      <div class="muted">标准：预计能记住 ≥ {{ meta.mastered_thr }} 天</div>
+    </div>
+    <div class="card">
+      <div class="card-k">学习中</div>
+      <div class="card-v">{{ c.learning }}</div>
+      <div class="muted">未开始：{{ c.new }}</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 12px;">
+    <div class="card-k">近 {{ meta.days }} 天复习</div>
+    <div class="muted" style="margin-top: 6px;">
+      学习天数：<span class="mono">{{ series.study_days }}</span>/<span class="mono">{{ meta.days }}</span>
+      {% if meta.last_review_at %} · 最近一次：{{ meta.last_review_at }}{% endif %}
+    </div>
+    <div class="dash-bars" style="margin-top: 10px;" aria-label="近14天复习次数">
+      {% for it in series["items"] %}
+        {% set pct = (it.count / series.max * 100) if series.max else 0 %}
+        <div class="dash-bar" title="{{ it.day }}：{{ it.count }} 次（不认识 {{ it.again }}）">
+          <div class="dash-bar-fill" style="height: {{ pct|round(0) }}%;"></div>
+          <div class="dash-bar-label">{{ it.label }}</div>
+        </div>
+      {% endfor %}
+    </div>
+    <div class="muted" style="margin-top: 10px;">
+      提示：柱子越高表示当天复习越多；不认识 越多说明更吃力（可优先练错词）。
+    </div>
+  </div>
+
+  <h2 style="margin-top: 16px;">高频错词</h2>
+  {% if dash.wrong_top and dash.wrong_top|length > 0 %}
+    <div class="card">
+      <div class="dash-wrong-list">
+        {% for w in dash.wrong_top %}
+          <div class="dash-wrong-row">
+            <div class="mono dash-wrong-term">{{ loop.index }}. {{ w.term }}</div>
+            <div class="muted dash-wrong-meta">×{{ w.wrong_count }}{% if w.last_wrong_at %} · {{ w.last_wrong_at }}{% endif %}</div>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="actions" style="margin-top: 12px;">
+        {% if is_parent_mode %}
+          <a class="btn primary" href="/worksheets">去生成作业</a>
+          <a class="btn" href="/settings">去设置</a>
+        {% else %}
+          <a class="btn primary" href="/mistakes">去错词篮</a>
+          <a class="btn" href="/review">去复习</a>
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    <div class="card">
+      <div class="muted">暂无错词记录。</div>
+      <div class="actions" style="margin-top: 12px;">
+        {% if is_parent_mode %}
+          <a class="btn primary" href="/worksheets">去生成作业</a>
+        {% else %}
+          <a class="btn primary" href="/review">去复习</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="fullbleed divider-tail"></div>
+{% endblock %}

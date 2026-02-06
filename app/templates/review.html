@@ -6,6 +6,15 @@
     <div class="card">{{ toast }}</div>
   {% endif %}
 
+  {% if new_paused %}
+    <div class="card">
+      <div class="row" style="margin: 0;">
+        <span class="badge warn">积压</span>
+        <span class="muted">到期复习较多，今天已自动暂停新词，先把复习做完。</span>
+      </div>
+    </div>
+  {% endif %}
+
   {% if word_count == 0 %}
     <div class="card">
       <div class="big">还没有单词</div>
@@ -98,7 +107,8 @@
           <button class="btn easy" type="submit" name="rating" value="easy">很熟</button>
         </form>
         <div class="review-meta muted">
-          <span>还剩：<span class="mono">{{ due_count }}</span> / <span class="mono">{{ total }}</span></span>
+          <span>今日还剩：<span class="mono">{{ due_count }}</span></span>
+          <span> · 计划内总卡片：<span class="mono">{{ total }}</span></span>
           {% if next_due_at_display %}
             <span> · 下次：<span class="mono">{{ next_due_at_display }}</span></span>
           {% endif %}

@@ -17,7 +17,7 @@ class WordbookSource:
     homepage: str
     license: str
     url: str
-    kind: str  # "plain_words" | "ecdict_tag"
+    kind: str  # "plain_words" | "ecdict_tag" | "generated_subset"
     default_deck: str
     default_tags: str = ""
     config: dict[str, Any] = field(default_factory=dict)
@@ -42,6 +42,55 @@ def list_sources() -> list[WordbookSource]:
     hf_license = "MIT (arstgit/high-frequency-vocabulary)"
 
     return [
+        # Generated subsets (MIT-derived, non-official): use HF lists + fill definitions from ECDICT
+        WordbookSource(
+            id="gen_primary_1200",
+            name="小学核心词汇（高频精选 1200）",
+            description="基于 高频10k 取前1200，并用 ECDICT 补全释义（非官方词表）",
+            homepage=hf_home,
+            license=f"MIT（派生自 {hf_home} + {ecdict_home}）",
+            url="https://raw.githubusercontent.com/arstgit/high-frequency-vocabulary/master/10k.txt",
+            kind="generated_subset",
+            default_deck="小学核心词汇（高频精选）",
+            default_tags="primary, frequency, generated",
+            config={"base_source_id": "hf_10k", "top_n": 1200, "fill_ecdict": True},
+        ),
+        WordbookSource(
+            id="gen_xsc_2000",
+            name="小升初/初中基础（高频精选 2000）",
+            description="基于 高频10k 取前2000，并用 ECDICT 补全释义（非官方词表）",
+            homepage=hf_home,
+            license=f"MIT（派生自 {hf_home} + {ecdict_home}）",
+            url="https://raw.githubusercontent.com/arstgit/high-frequency-vocabulary/master/10k.txt",
+            kind="generated_subset",
+            default_deck="小升初/初中基础（高频精选）",
+            default_tags="junior, frequency, generated",
+            config={"base_source_id": "hf_10k", "top_n": 2000, "fill_ecdict": True},
+        ),
+        WordbookSource(
+            id="gen_ket_1800",
+            name="KET 词汇（高频建议 1800）",
+            description="基于 高频10k 取前1800，并用 ECDICT 补全释义（非官方建议）",
+            homepage=hf_home,
+            license=f"MIT（派生自 {hf_home} + {ecdict_home}）",
+            url="https://raw.githubusercontent.com/arstgit/high-frequency-vocabulary/master/10k.txt",
+            kind="generated_subset",
+            default_deck="KET 词汇（高频建议）",
+            default_tags="ket, frequency, generated",
+            config={"base_source_id": "hf_10k", "top_n": 1800, "fill_ecdict": True},
+        ),
+        WordbookSource(
+            id="gen_pet_3500",
+            name="PET 词汇（高频建议 3500）",
+            description="基于 高频30k 取前3500，并用 ECDICT 补全释义（非官方建议）",
+            homepage=hf_home,
+            license=f"MIT（派生自 {hf_home} + {ecdict_home}）",
+            url="https://raw.githubusercontent.com/arstgit/high-frequency-vocabulary/master/30k.txt",
+            kind="generated_subset",
+            default_deck="PET 词汇（高频建议）",
+            default_tags="pet, frequency, generated",
+            config={"base_source_id": "hf_30k", "top_n": 3500, "fill_ecdict": True},
+        ),
         # ECDICT tag-based packs
         WordbookSource(
             id="ecdict_zk",
@@ -289,11 +338,87 @@ def _iter_ecdict_tag_rows(path: Path, *, tag: str) -> list[dict[str, str]]:
     return rows
 
 
+def _format_ecdict_meaning(row: dict[str, str]) -> str:
+    phonetic = (row.get("phonetic") or "").strip()
+    translation = (row.get("translation") or "").strip()
+    definition = (row.get("definition") or "").strip()
+    meaning = translation or definition
+    if phonetic:
+        meaning = f"/{phonetic}/ {meaning}" if meaning else f"/{phonetic}/"
+    return meaning
+
+
+def _ecdict_meaning_by_term(path: Path, terms: list[str]) -> tuple[dict[str, str], list[str]]:
+    need = {(t or "").strip().lower() for t in terms if (t or "").strip()}
+    out: dict[str, str] = {}
+    warnings: list[str] = []
+
+    if not need:
+        return out, warnings
+
+    with path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            term = (row.get("word") or "").strip()
+            if not term:
+                continue
+            key = term.lower()
+            if key not in need or key in out:
+                continue
+            out[key] = _format_ecdict_meaning(row)
+            if len(out) >= len(need):
+                break
+
+    missing = [t for t in terms if (t or "").strip() and (t.strip().lower() not in out)]
+    if missing:
+        warnings.append(f"ECDICT 未找到释义：{len(missing)} 个（例如：{', '.join(missing[:6])}）")
+    return out, warnings
+
+
 async def load_rows(source: WordbookSource, *, force_download: bool = False) -> tuple[list[dict[str, str]], list[str]]:
     """
     Returns (rows, warnings). Rows are compatible with /words/import internal structure.
     """
     warnings: list[str] = []
+
+    if source.kind == "generated_subset":
+        base_id = str(source.config.get("base_source_id") or "").strip()
+        top_n = int(source.config.get("top_n") or 0)
+        top_n = max(1, min(top_n, 50000))
+        if not base_id:
+            raise ValueError("generated_subset: base_source_id missing in source config")
+
+        try:
+            base = get_source(base_id)
+        except KeyError as e:
+            raise ValueError(f"generated_subset: unknown base_source_id={base_id}") from e
+
+        base_path = await ensure_cached(base, force=force_download)
+        text = await asyncio.to_thread(base_path.read_text, encoding="utf-8-sig", errors="replace")
+        base_rows = await asyncio.to_thread(
+            _parse_plain_words,
+            text,
+            split_slash=bool(base.config.get("split_slash")),
+        )
+        terms = [str(r.get("term") or "").strip() for r in base_rows if str(r.get("term") or "").strip()][:top_n]
+
+        # Fill definitions from ECDICT (MIT). Best-effort: if ECDICT cache is missing, it will be downloaded once.
+        ecdict_stub = get_source("ecdict_zk")
+        ecdict_path = await ensure_cached(ecdict_stub, force=force_download)
+        meaning_map, w2 = await asyncio.to_thread(_ecdict_meaning_by_term, ecdict_path, terms)
+        warnings.extend(w2)
+
+        rows: list[dict[str, str]] = []
+        for i, t in enumerate(terms, start=1):
+            out = _row_template()
+            out["term"] = t
+            out["definition"] = meaning_map.get(t.lower(), "")
+            out["position"] = str(i)
+            rows.append(out)
+        if not rows:
+            warnings.append("generated_subset produced 0 rows.")
+        return rows, warnings
+
     path = await ensure_cached(source, force=force_download)
 
     if source.kind == "plain_words":
