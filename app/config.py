@@ -16,6 +16,7 @@ class Settings:
     auth_cookie_name: str
     auth_cookie_days: int
     require_login: bool
+    app_timezone: str
     ai_api_key: str | None
     ai_base_url: str
     ai_model: str
@@ -47,9 +48,10 @@ def get_settings() -> Settings:
     except Exception:
         auth_cookie_days = 30
     require_login = _env_bool("APP_REQUIRE_LOGIN", True)
+    app_timezone = (os.getenv("APP_TIMEZONE", "Asia/Shanghai") or "Asia/Shanghai").strip()
     ai_api_key = os.getenv("AI_API_KEY") or None
     ai_base_url = os.getenv("AI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-    ai_model = os.getenv("AI_MODEL", "gpt-4o-mini")
+    ai_model = os.getenv("AI_MODEL", "gemini-3-flash-preview")
     ai_writer_model = os.getenv("AI_WRITER_MODEL") or ai_model
     ai_checker_model = os.getenv("AI_CHECKER_MODEL") or None
     ai_mock = _env_bool("AI_MOCK", False)
@@ -66,6 +68,7 @@ def get_settings() -> Settings:
         auth_cookie_name=auth_cookie_name,
         auth_cookie_days=auth_cookie_days,
         require_login=require_login,
+        app_timezone=app_timezone,
         ai_api_key=ai_api_key,
         ai_base_url=ai_base_url,
         ai_model=ai_model,

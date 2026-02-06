@@ -77,9 +77,28 @@
     <div class="fullbleed divider-bar"></div>
 
     <h2 class="today-section-title">今天待学</h2>
+    {% if new_paused %}
+      <div class="card" style="margin-top: 0;">
+        <div class="row" style="margin: 0;">
+          <span class="badge warn">积压</span>
+          <span class="muted">到期复习较多，今天已自动暂停新词，先把复习做完。</span>
+        </div>
+      </div>
+    {% elif postponed_new and postponed_new > 0 %}
+      <div class="card" style="margin-top: 0;">
+        <div class="row" style="margin: 0;">
+          <span class="badge">已顺延</span>
+          <span class="muted">超过上限的新词已顺延到明天：{{ postponed_new }} 个。</span>
+        </div>
+      </div>
+    {% endif %}
     <div class="card today-summary-card" style="margin-top: 0;">
       <div class="card-v">{{ due_count }}</div>
-      <div class="muted">计划内总卡片：<span class="mono">{{ total }}</span></div>
+      <div class="muted">
+        今日：复习 <span class="mono">{{ due_review_today }}</span> + 新词 <span class="mono">{{ due_new_today }}</span>
+        · 到期总数 <span class="mono">{{ due_total }}</span>
+        · 计划内总卡片 <span class="mono">{{ total }}</span>
+      </div>
       <div class="actions" style="margin-top: 12px;">
         {% if deck_id %}
           <a class="btn primary" href="/review?deck_id={{ deck_id }}">开始学习</a>

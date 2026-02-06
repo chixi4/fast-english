@@ -2,27 +2,44 @@
 {% block content %}
   <h1 class="title-accent">词书库</h1>
 
+  <div class="card" style="margin-top: 12px;">
+    <div class="card-k">怎么选</div>
+    <div class="muted">
+      如果你是家长：优先导入「小学核心/小升初」一类的“高频精选”，再在“家长模式设置”里选好课本词表/目标词库。
+      <br />
+      词书来源与许可说明：见 <span class="mono">{{ sources_note_path }}</span>
+    </div>
+  </div>
+
   <div class="fullbleed divider-bar"></div>
 
-  <h2>可导入词书</h2>
-  <div class="deck-mobile">
-    {% for s in sources %}
-      <div class="card">
-        <div class="library-row">
-          <div class="deck-title">
-            <strong>{{ s.name }}</strong>
+  {% for g in groups %}
+    <h2>{{ g[0] }}</h2>
+    <div class="deck-mobile">
+      {% for s in g[1] %}
+        <div class="card">
+          <div class="library-row">
+            <div class="deck-title">
+              <strong>{{ s.name }}</strong>
+              <div class="muted" style="margin-top: 6px;">{{ s.description }}</div>
+              <div class="muted" style="margin-top: 6px; font-size: 12px;">许可：{{ s.license }}</div>
+            </div>
+            <form method="post" action="/library/import" style="margin:0;">
+              <input type="hidden" name="source_id" value="{{ s.id }}" />
+              <input type="hidden" name="deck_name" value="{{ s.default_deck }}" />
+              <input type="hidden" name="default_tags" value="{{ s.default_tags }}" />
+              <input type="hidden" name="on_conflict" value="skip" />
+              <button class="btn primary compact" type="submit">导入</button>
+            </form>
           </div>
-          <form method="post" action="/library/import" style="margin:0;">
-            <input type="hidden" name="source_id" value="{{ s.id }}" />
-            <input type="hidden" name="deck_name" value="{{ s.default_deck }}" />
-            <input type="hidden" name="default_tags" value="{{ s.default_tags }}" />
-            <input type="hidden" name="on_conflict" value="skip" />
-            <button class="btn primary compact" type="submit">导入</button>
-          </form>
         </div>
-      </div>
-    {% endfor %}
-  </div>
+      {% endfor %}
+    </div>
+
+    {% if not loop.last %}
+      <div class="fullbleed divider-bar"></div>
+    {% endif %}
+  {% endfor %}
 
   <div class="fullbleed divider-tail"></div>
 {% endblock %}
