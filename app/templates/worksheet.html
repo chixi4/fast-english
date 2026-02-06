@@ -6,9 +6,9 @@
       <button class="btn primary btn-emphasis" type="button" onclick="window.print()">打印</button>
       {% if view != 'grading' %}
         {% if layout == 'standard' %}
-          <a class="btn subtle" href="/worksheets/{{ worksheet_id }}?view=grading&amp;layout=standard">批改模式</a>
+          <a class="btn subtle" data-guide-anchor="parent-open-grading" href="/worksheets/{{ worksheet_id }}?view=grading&amp;layout=standard">批改模式</a>
         {% else %}
-          <a class="btn subtle" href="/worksheets/{{ worksheet_id }}?view=grading">批改模式</a>
+          <a class="btn subtle" data-guide-anchor="parent-open-grading" href="/worksheets/{{ worksheet_id }}?view=grading">批改模式</a>
         {% endif %}
       {% else %}
         {% if layout == 'standard' %}
@@ -232,7 +232,7 @@
               </label>
             {% endfor %}
           </div>
-          <button class="btn primary" type="submit">提交</button>
+          <button class="btn primary" data-guide-anchor="parent-grade-sheet" type="submit">提交</button>
         </form>
       {% endif %}
     </div>

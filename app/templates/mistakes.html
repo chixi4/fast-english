@@ -17,7 +17,7 @@
       <div class="big">还没有错词</div>
       <p class="muted">先去“今日学习”背词，标记为“不认识”后会自动收集。</p>
       <div class="actions">
-        <a class="btn primary" href="/review">去学习</a>
+        <a class="btn primary" data-guide-anchor="self-first-review" href="/review">去学习</a>
       </div>
     </div>
   {% else %}
@@ -31,7 +31,7 @@
         <input type="hidden" name="target_count" id="generateTargetCount" value="{{ target_count }}" />
         <input type="hidden" name="length_mode" value="{{ length_mode }}" />
         <input type="hidden" name="word_ids" id="word_ids" value="" />
-        <button class="btn primary" id="generateBtn" type="submit">生成短文练习</button>
+        <button class="btn primary" id="generateBtn" data-guide-anchor="self-try-mistakes" type="submit">生成短文练习</button>
       </form>
 
       <details id="advancedConfig" class="mistakes-advanced mt-12">
@@ -508,4 +508,3 @@
     </script>
   {% endif %}
 {% endblock %}
-

@@ -8,45 +8,63 @@
 
   {% if word_count == 0 %}
     <div class="card">
-      <div class="big">开始背词</div>
-      <div class="actions">
-        <a class="btn primary" href="/library"><span class="btn-label with-hint-dot">导入词书</span></a>
-        <a class="btn" href="/words">高级导入</a>
-      </div>
+      {% if onboarding_self_active %}
+        <div class="big">开始一次学习</div>
+        <div class="muted">系统正在准备阶段词汇，通常只需几秒。</div>
+        <div class="actions">
+          <a class="btn primary" data-guide-anchor="self-first-review" hx-boost="false" href="/review?onboarding_retry=1">开始一次学习</a>
+          <a class="btn" hx-boost="false" href="/?onboarding_retry=1">重试准备</a>
+        </div>
+      {% else %}
+        <div class="big">开始背词</div>
+        <div class="actions">
+          <a class="btn primary" data-guide-anchor="self-import-deck" href="/library"><span class="btn-label with-hint-dot">导入词书</span></a>
+          <a class="btn" href="/words">高级导入</a>
+        </div>
+      {% endif %}
     </div>
   {% elif total == 0 %}
     <div class="card">
-      <div class="big">开始学习</div>
-      <p class="muted">先从词书加入一些单词到学习计划。</p>
+      {% if onboarding_self_active %}
+        <div class="big">开始一次学习</div>
+        <p class="muted">系统正在把阶段词汇加入学习计划，通常只需几秒。</p>
+        <div class="actions">
+          <a class="btn primary" data-guide-anchor="self-first-review" hx-boost="false" href="/review?onboarding_retry=1">开始一次学习</a>
+          <a class="btn" hx-boost="false" href="/?onboarding_retry=1">重试准备</a>
+        </div>
+      {% else %}
+        <div class="big">开始学习</div>
+        <p class="muted">先从词书加入一些单词到学习计划。</p>
 
-      <form class="stack" method="post" action="/plan/add">
-        <label>从词书加入
-          <select name="deck_id">
-            {% for it in deck_items %}
-              {% if it.word_count > 0 %}
-                <option value="{{ it.deck.id }}" {% if suggested_deck_id == it.deck.id %}selected{% endif %}>
-                  {{ it.deck.name }}（剩余 {{ it.remaining_count }}）
-                </option>
-              {% endif %}
-            {% endfor %}
-          </select>
-        </label>
-        <label>加入数量
-          <select name="count">
-            <option value="10">10</option>
-            <option value="20" selected>20</option>
-            <option value="30">30</option>
-            <option value="50">50</option>
-          </select>
-        </label>
-        <input type="hidden" name="return_to" value="today" />
-        <button class="btn primary" type="submit">开始学习</button>
-      </form>
+        <form class="stack" method="post" action="/plan/add">
+          <label>从词书加入
+            <select name="deck_id">
+              {% for it in deck_items %}
+                {% if it.word_count > 0 %}
+                  <option value="{{ it.deck.id }}" {% if suggested_deck_id == it.deck.id %}selected{% endif %}>
+                    {{ it.deck.name }}（剩余 {{ it.remaining_count }}）
+                  </option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </label>
+          <label>加入数量
+            <select name="count">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="30">30</option>
+              <option value="50">50</option>
+            </select>
+          </label>
+          <input type="hidden" name="return_to" value="today" />
+          <button class="btn primary" type="submit">开始学习</button>
+        </form>
 
-      <div class="actions">
-        <a class="btn" href="/library">导入词书</a>
-        <a class="btn" href="/decks">管理词书</a>
-      </div>
+        <div class="actions">
+          <a class="btn" data-guide-anchor="self-import-deck" href="/library">导入词书</a>
+          <a class="btn" href="/decks">管理词书</a>
+        </div>
+      {% endif %}
     </div>
   {% else %}
     <div class="only-desktop">
@@ -78,21 +96,21 @@
 
     <h2 class="today-section-title">今天待学</h2>
     {% if new_paused %}
-      <div class="card m-0">
+      <div class="card m-0 keep-gutter">
         <div class="row m-0">
           <span class="badge warn">积压</span>
           <span class="muted">到期复习较多，今天已自动暂停新词，先把复习做完。</span>
         </div>
       </div>
     {% elif postponed_new and postponed_new > 0 %}
-      <div class="card m-0">
+      <div class="card m-0 keep-gutter">
         <div class="row m-0">
           <span class="badge">已顺延</span>
           <span class="muted">超过上限的新词已顺延到明天：{{ postponed_new }} 个。</span>
         </div>
       </div>
     {% endif %}
-    <div class="card today-summary-card m-0">
+    <div class="card today-summary-card m-0 keep-gutter">
       <div class="card-v">{{ due_count }}</div>
       <div class="muted">
         今日：复习 <span class="mono">{{ due_review_today }}</span> + 新词 <span class="mono">{{ due_new_today }}</span>
@@ -101,9 +119,9 @@
       </div>
       <div class="actions mt-12">
         {% if deck_id %}
-          <a class="btn primary" href="/review?deck_id={{ deck_id }}">开始学习</a>
+          <a class="btn primary" data-guide-anchor="self-first-review" href="/review?deck_id={{ deck_id }}">开始学习</a>
         {% else %}
-          <a class="btn primary" href="/review">开始学习</a>
+          <a class="btn primary" data-guide-anchor="self-first-review" href="/review">开始学习</a>
         {% endif %}
       </div>
     </div>

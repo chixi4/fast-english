@@ -16,6 +16,8 @@ class Settings:
     auth_cookie_name: str
     auth_cookie_days: int
     require_login: bool
+    onboarding_enabled: bool
+    login_verbose_errors: bool
     app_timezone: str
     ai_api_key: str | None
     ai_base_url: str
@@ -48,6 +50,8 @@ def get_settings() -> Settings:
     except Exception:
         auth_cookie_days = 30
     require_login = _env_bool("APP_REQUIRE_LOGIN", True)
+    onboarding_enabled = _env_bool("APP_ONBOARDING_ENABLED", True)
+    login_verbose_errors = _env_bool("APP_LOGIN_VERBOSE_ERRORS", False)
     app_timezone = (os.getenv("APP_TIMEZONE", "Asia/Shanghai") or "Asia/Shanghai").strip()
     ai_api_key = os.getenv("AI_API_KEY") or None
     ai_base_url = os.getenv("AI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
@@ -68,6 +72,8 @@ def get_settings() -> Settings:
         auth_cookie_name=auth_cookie_name,
         auth_cookie_days=auth_cookie_days,
         require_login=require_login,
+        onboarding_enabled=onboarding_enabled,
+        login_verbose_errors=login_verbose_errors,
         app_timezone=app_timezone,
         ai_api_key=ai_api_key,
         ai_base_url=ai_base_url,

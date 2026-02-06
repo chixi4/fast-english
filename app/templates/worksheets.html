@@ -3,7 +3,7 @@
   <h1>作业</h1>
 
   {% if toast %}
-    <div class="card">{{ toast }}</div>
+    <div class="card page-toast">{{ toast }}</div>
   {% endif %}
 
   <div class="cards">
@@ -17,34 +17,62 @@
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-k">打印今日作业</div>
-      <div class="muted">系统会按“到期复习 + 补新词”自动生成一张作业。</div>
-      <div class="muted mt-10">
-        阶段：{{ stage_label }} · 每日推荐词量：{{ daily_words }}
+    <div class="card worksheet-generate-card" data-guide-focus-scope="worksheet-generate">
+      <div class="card-k guide-compact-intro">打印今日作业</div>
+      <div class="muted guide-compact-intro">系统会按「到期复习 + 补新词」自动生成一张作业。</div>
+      <div class="muted mt-8 guide-compact-intro">
+        当前阶段：{{ stage_label }} · 每日推荐：{{ daily_words }} 词
       </div>
-      <form id="generateTodayForm" class="mt-10" method="post" action="/worksheets/generate_today" hx-boost="false">
+      <form
+        id="generateTodayForm"
+        class="mt-10"
+        method="post"
+        action="/worksheets/generate_today"
+        hx-post="/worksheets/generate_today"
+        hx-target="#content"
+        hx-select="#content"
+        hx-swap="outerHTML"
+        hx-push-url="true"
+      >
         {% set qt_default = ["spelling", "mcq", "reading"] if stage == "primary" else ["spelling", "mcq", "cloze", "reading"] %}
-        <div class="muted">题型（不确定就保持默认）：</div>
-        <div class="check-grid mt-8">
-          <label class="check">
+        <div class="muted guide-compact-intro">题型（建议保持默认）：</div>
+        <div class="worksheet-types mt-8">
+          <label class="check worksheet-type-item">
             <input type="checkbox" name="question_types" value="spelling" {% if "spelling" in qt_default %}checked{% endif %} />
-            <span>拼写（看中文写英文）</span>
+            <span class="worksheet-type-text">
+              <span class="worksheet-type-title">拼写</span>
+              <span class="worksheet-type-sub">看中文写英文</span>
+            </span>
           </label>
-          <label class="check">
+          <label class="check worksheet-type-item">
             <input type="checkbox" name="question_types" value="mcq" {% if "mcq" in qt_default %}checked{% endif %} />
-            <span>选择（英译中）</span>
+            <span class="worksheet-type-text">
+              <span class="worksheet-type-title">选择</span>
+              <span class="worksheet-type-sub">英译中</span>
+            </span>
           </label>
-          <label class="check">
+          <label class="check worksheet-type-item">
             <input type="checkbox" name="question_types" value="cloze" {% if "cloze" in qt_default %}checked{% endif %} />
-            <span>填空（词库填入）</span>
+            <span class="worksheet-type-text">
+              <span class="worksheet-type-title">填空</span>
+              <span class="worksheet-type-sub">词库填入</span>
+            </span>
           </label>
-          <label class="check">
+          <label class="check worksheet-type-item">
             <input type="checkbox" name="question_types" value="reading" {% if "reading" in qt_default %}checked{% endif %} />
-            <span>阅读（短文+选择）</span>
+            <span class="worksheet-type-text">
+              <span class="worksheet-type-title">阅读</span>
+              <span class="worksheet-type-sub">短文 + 选择</span>
+            </span>
           </label>
         </div>
-        <button class="btn primary btn-emphasis" id="generateTodayBtn" type="submit">生成今日作业</button>
+        <button
+          class="btn primary btn-emphasis mt-10"
+          id="generateTodayBtn"
+          data-guide-anchor="parent-generate-sheet"
+          type="submit"
+          {% if onboarding_hide_parent_generate_btn %}style="display:none"{% endif %}
+        >生成今日作业</button>
       </form>
     </div>
   </div>
@@ -157,7 +185,7 @@
   {% if worksheets and worksheets|length > 0 %}
     <div class="cards">
       {% for w in worksheets %}
-        <a class="card link-card" href="/worksheets/{{ w.id }}">
+        <a class="card link-card" data-guide-anchor="parent-grade-sheet" href="/worksheets/{{ w.id }}">
           <div class="card-k">{{ w.title or ("作业 #" ~ w.id) }}</div>
           {% set mode_label = "今日" if w.mode == "today" else ("旧版" if w.mode == "extract" else w.mode) %}
           {% set stage_label2 = "小学" if w.stage == "primary" else "初中" %}

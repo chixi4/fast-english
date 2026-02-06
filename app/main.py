@@ -11,6 +11,7 @@ import json
 import httpx
 import os
 import time
+import threading
 from pathlib import Path
 import re
 from typing import Any
@@ -36,7 +37,7 @@ from app.ai import AiClient, LEVEL_GUIDE, LEVEL_LABELS, _safe_json_extract
 from app.ai_types import GeneratedSimulation
 from app.auth import decode_session, encode_session, hash_password, new_session_for_user, verify_password
 from app.auth_db import get_auth_session, init_auth_db
-from app.auth_models import AuthEvent, AuthUser
+from app.auth_models import AuthEvent, AuthOnboardingState, AuthUser
 from app.config import get_settings
 from app.db import get_session, init_db
 from app.models import (
@@ -71,7 +72,9 @@ def _static_v() -> str:
         css_v = (BASE_DIR / "static" / "app.css").stat().st_mtime_ns
         js_v = (BASE_DIR / "static" / "htmx.min.js").stat().st_mtime_ns
         dash_v = (BASE_DIR / "static" / "analytics_dashboard.js").stat().st_mtime_ns
-        return str(max(css_v, js_v, dash_v))
+        auth_v = (BASE_DIR / "static" / "auth.js").stat().st_mtime_ns
+        onboarding_v = (BASE_DIR / "static" / "onboarding.js").stat().st_mtime_ns
+        return str(max(css_v, js_v, dash_v, auth_v, onboarding_v))
     except Exception:
         return "0"
 
@@ -88,6 +91,11 @@ _UI_MODE_SELF = "self"
 
 
 def _read_ui_mode(request: Request) -> str:
+    state_mode = getattr(request.state, "ui_mode", None)
+    if isinstance(state_mode, str):
+        sm = state_mode.strip().lower()
+        if sm in {_UI_MODE_PARENT, _UI_MODE_SELF}:
+            return sm
     raw = (request.cookies.get(_UI_MODE_COOKIE) or "").strip().lower()
     if raw in {_UI_MODE_PARENT, _UI_MODE_SELF}:
         return raw
@@ -357,42 +365,164 @@ def _safe_next(next_url: str | None) -> str:
     return n
 
 
+def _build_auth_context(
+    *,
+    title: str,
+    next_url: str,
+    username: str = "",
+    toast: str = "",
+    error_code: str = "",
+    error_message: str = "",
+    field_errors: dict[str, str] | None = None,
+    action_hint: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "title": title,
+        "next": _safe_next(next_url),
+        "username": (username or "").strip(),
+        "toast": (toast or "").strip(),
+        "error_code": (error_code or "").strip(),
+        "error_message": (error_message or "").strip(),
+        "field_errors": field_errors or {},
+        "action_hint": action_hint or {},
+    }
+
+
+def _render_auth_login(
+    request: Request,
+    *,
+    next_url: str,
+    username: str = "",
+    status_code: int = 200,
+    toast: str = "",
+    error_code: str = "",
+    error_message: str = "",
+    field_errors: dict[str, str] | None = None,
+    action_hint: dict[str, str] | None = None,
+):
+    ctx = _build_auth_context(
+        title="登录",
+        next_url=next_url,
+        username=username,
+        toast=toast,
+        error_code=error_code,
+        error_message=error_message,
+        field_errors=field_errors,
+        action_hint=action_hint,
+    )
+    return templates.TemplateResponse(request, "auth_login.html", ctx, status_code=status_code)
+
+
+def _render_auth_register(
+    request: Request,
+    *,
+    next_url: str,
+    username: str = "",
+    status_code: int = 200,
+    toast: str = "",
+    error_code: str = "",
+    error_message: str = "",
+    field_errors: dict[str, str] | None = None,
+    action_hint: dict[str, str] | None = None,
+):
+    ctx = _build_auth_context(
+        title="注册",
+        next_url=next_url,
+        username=username,
+        toast=toast,
+        error_code=error_code,
+        error_message=error_message,
+        field_errors=field_errors,
+        action_hint=action_hint,
+    )
+    return templates.TemplateResponse(request, "auth_register.html", ctx, status_code=status_code)
+
+
 @app.get("/auth/login", response_class=HTMLResponse)
 def auth_login(request: Request, next: str = "/", toast: str | None = None, username: str | None = None):
     if request.state.user_username:
         return _redirect(_safe_next(next))
-    return templates.TemplateResponse(
+    return _render_auth_login(
         request,
-        "auth_login.html",
-        {
-            "title": "登录",
-            "toast": (toast or "").strip(),
-            "next": _safe_next(next),
-            "username": (username or "").strip(),
-        },
+        next_url=next,
+        username=(username or "").strip(),
+        toast=(toast or "").strip(),
     )
 
 
 @app.post("/auth/login", response_class=HTMLResponse)
-def auth_login_post(request: Request, username: str = Form(...), password: str = Form(...), next: str = Form("/")):
+def auth_login_post(request: Request, username: str = Form(""), password: str = Form(""), next: str = Form("/")):
+    settings = get_settings()
     next = _safe_next(next)
     raw, norm = _norm_username(username)
     if not raw or not password:
-        return templates.TemplateResponse(
+        field_errors: dict[str, str] = {}
+        if not raw:
+            field_errors["username"] = "请填写账号。"
+        if not password:
+            field_errors["password"] = "请填写密码。"
+        return _render_auth_login(
             request,
-            "auth_login.html",
-            {"title": "登录", "toast": "请输入账号和密码。", "next": next, "username": raw},
+            next_url=next,
+            username=raw,
             status_code=400,
+            toast="请填写账号和密码。",
+            error_code="missing_credentials",
+            error_message="请填写账号和密码。",
+            field_errors=field_errors,
+            action_hint={"label": "去注册", "href": f"/auth/register?{urlencode({'next': next})}", "text": ""},
         )
 
     with get_auth_session() as session:
         user = session.query(AuthUser).filter(AuthUser.username_norm == norm).first()
-        if not user or not verify_password(password, user.password_hash):
-            return templates.TemplateResponse(
+        if not user:
+            if settings.login_verbose_errors:
+                return _render_auth_login(
+                    request,
+                    next_url=next,
+                    username=raw,
+                    status_code=400,
+                    toast="账号未注册。",
+                    error_code="account_not_found",
+                    error_message="账号未注册。",
+                    field_errors={"username": "账号未注册。"},
+                    action_hint={
+                        "label": "去注册",
+                        "href": f"/auth/register?{urlencode({'next': next})}",
+                        "text": "",
+                    },
+                )
+            return _render_auth_login(
                 request,
-                "auth_login.html",
-                {"title": "登录", "toast": "账号或密码错误。", "next": next, "username": raw},
+                next_url=next,
+                username=raw,
                 status_code=400,
+                toast="账号或密码错误。",
+                error_code="auth_failed",
+                error_message="账号或密码错误。",
+                action_hint={"label": "去注册", "href": f"/auth/register?{urlencode({'next': next})}", "text": ""},
+            )
+        if not verify_password(password, user.password_hash):
+            if settings.login_verbose_errors:
+                return _render_auth_login(
+                    request,
+                    next_url=next,
+                    username=raw,
+                    status_code=400,
+                    toast="密码错误。",
+                    error_code="wrong_password",
+                    error_message="密码错误。",
+                    field_errors={"password": "密码错误。"},
+                )
+            return _render_auth_login(
+                request,
+                next_url=next,
+                username=raw,
+                status_code=400,
+                toast="账号或密码错误。",
+                error_code="auth_failed",
+                error_message="账号或密码错误。",
+                action_hint={"label": "去注册", "href": f"/auth/register?{urlencode({'next': next})}", "text": ""},
             )
 
     sess = new_session_for_user(user.id, user.username)
@@ -406,71 +536,90 @@ def auth_login_post(request: Request, username: str = Form(...), password: str =
 def auth_register(request: Request, next: str = "/", toast: str | None = None, username: str | None = None):
     if request.state.user_username:
         return _redirect(_safe_next(next))
-    return templates.TemplateResponse(
+    return _render_auth_register(
         request,
-        "auth_register.html",
-        {
-            "title": "注册",
-            "toast": (toast or "").strip(),
-            "next": _safe_next(next),
-            "username": (username or "").strip(),
-        },
+        next_url=next,
+        username=(username or "").strip(),
+        toast=(toast or "").strip(),
     )
 
 
 @app.post("/auth/register", response_class=HTMLResponse)
 def auth_register_post(
     request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    password2: str = Form(...),
+    username: str = Form(""),
+    password: str = Form(""),
+    password2: str = Form(""),
     next: str = Form("/"),
 ):
     next = _safe_next(next)
     raw, norm = _norm_username(username)
     if not raw:
-        return templates.TemplateResponse(
+        return _render_auth_register(
             request,
-            "auth_register.html",
-            {"title": "注册", "toast": "请输入账号。", "next": next, "username": raw},
+            next_url=next,
+            username=raw,
             status_code=400,
+            toast="请输入账号。",
+            error_code="username_required",
+            error_message="请输入账号。",
+            field_errors={"username": "请填写账号。"},
         )
     if len(raw) > 64:
-        return templates.TemplateResponse(
+        return _render_auth_register(
             request,
-            "auth_register.html",
-            {"title": "注册", "toast": "账号太长（最多 64 字）。", "next": next, "username": raw},
+            next_url=next,
+            username=raw,
             status_code=400,
+            toast="账号最多 64 字。",
+            error_code="username_too_long",
+            error_message="账号最多 64 字。",
+            field_errors={"username": "账号最多 64 字。"},
         )
     if not password or len(password) < 4:
-        return templates.TemplateResponse(
+        return _render_auth_register(
             request,
-            "auth_register.html",
-            {"title": "注册", "toast": "密码至少 4 位。", "next": next, "username": raw},
+            next_url=next,
+            username=raw,
             status_code=400,
+            toast="密码至少 4 位",
+            error_code="password_too_short",
+            error_message="密码至少 4 位",
+            field_errors={"password": "密码至少 4 位。"},
         )
     if password != password2:
-        return templates.TemplateResponse(
+        return _render_auth_register(
             request,
-            "auth_register.html",
-            {"title": "注册", "toast": "两次输入的密码不一致。", "next": next, "username": raw},
+            next_url=next,
+            username=raw,
             status_code=400,
+            toast="两次密码不一致。",
+            error_code="password_mismatch",
+            error_message="两次密码不一致。",
+            field_errors={"password2": "两次密码不一致。"},
         )
 
     with get_auth_session() as session:
         existed = session.query(AuthUser).filter(AuthUser.username_norm == norm).first()
         if existed:
-            return templates.TemplateResponse(
+            return _render_auth_register(
                 request,
-                "auth_register.html",
-                {"title": "注册", "toast": "该账号已存在，请换一个。", "next": next, "username": raw},
+                next_url=next,
+                username=raw,
                 status_code=400,
+                toast="账号已被使用。",
+                error_code="username_taken",
+                error_message="账号已被使用。",
+                field_errors={"username": "账号已被使用。"},
+                action_hint={"label": "去登录", "href": f"/auth/login?{urlencode({'next': next})}", "text": ""},
             )
         user = AuthUser(username=raw, username_norm=norm, password_hash=hash_password(password))
         session.add(user)
         session.flush()
         uid = int(user.id)
         display = user.username
+
+    _ensure_onboarding_state_for_user(user_id=uid, username_norm=norm, activate=True)
 
     sess = new_session_for_user(uid, display)
     token = encode_session(sess)
@@ -854,7 +1003,12 @@ def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request, deck_id: int | None = None, toast: str | None = None):
+def home(
+    request: Request,
+    deck_id: int | None = None,
+    toast: str | None = None,
+    onboarding_retry: int = 0,
+):
     if getattr(request.state, "ui_mode", _UI_MODE_SELF) == _UI_MODE_PARENT:
         now = _utcnow()
         with get_session() as session:
@@ -896,6 +1050,11 @@ def home(request: Request, deck_id: int | None = None, toast: str | None = None)
         deck_id = None
     now = _utcnow()
     settings = get_settings()
+    onboarding_self_active, onboarding_self_stage = _self_onboarding_hint(request)
+    if onboarding_self_active and onboarding_self_stage:
+        sid = _recommended_source_id_for_stage(_UI_MODE_SELF, onboarding_self_stage)
+        wait_sec = 6.0 if int(onboarding_retry or 0) > 0 else 0.6
+        _prime_onboarding_source(sid, wait_sec=wait_sec, seed_count=20)
     with get_session() as session:
         plan = _ensure_default_plan(session)
         daily_new_limit = int(plan.daily_new_limit or 20)
@@ -1011,6 +1170,8 @@ def home(request: Request, deck_id: int | None = None, toast: str | None = None)
             "suspend_new_when_due_over": suspend_new_when_due_over,
             "quick_add_count": quick_add_count,
             "selected_deck_label": selected_deck_label,
+            "onboarding_self_active": onboarding_self_active,
+            "onboarding_self_stage": onboarding_self_stage,
         },
     )
 
@@ -1398,6 +1559,21 @@ def worksheets_page(request: Request, toast: str | None = None):
     if blocked is not None:
         return blocked
 
+    onboarding_hide_parent_generate_btn = False
+    try:
+        payload = _build_onboarding_payload(request)
+        current = payload.get("current_step") if isinstance(payload, dict) else None
+        key = str((current or {}).get("key") or "")
+        href = str((current or {}).get("href") or "")
+        onboarding_hide_parent_generate_btn = bool(
+            payload.get("enabled")
+            and payload.get("show")
+            and key == "parent_generate_sheet"
+            and href.startswith("/worksheets")
+        )
+    except Exception:
+        onboarding_hide_parent_generate_btn = False
+
     with get_session() as session:
         parent = _ensure_parent_settings(session)
         stage = (parent.stage or "junior").strip().lower()
@@ -1412,8 +1588,174 @@ def worksheets_page(request: Request, toast: str | None = None):
             "stage": stage,
             "stage_label": _stage_label(stage),
             "daily_words": daily_words,
+            "onboarding_hide_parent_generate_btn": onboarding_hide_parent_generate_btn,
         },
     )
+
+
+def _parent_recommended_source_id(stage: str) -> str:
+    return "gen_primary_1200" if (stage or "").strip().lower() == "primary" else "gen_xsc_2000"
+
+
+async def _load_wordbook_rows_with_timeout(source, timeout_sec: float) -> tuple[list[dict[str, str]], list[str]]:
+    timeout_sec = max(1.0, float(timeout_sec))
+    return await asyncio.wait_for(load_rows(source, force_download=False), timeout=timeout_sec)
+
+
+_WORDBOOK_IMPORT_LOCK = threading.Lock()
+_WORDBOOK_IMPORT_INFLIGHT: set[str] = set()
+
+
+def _seed_plan_from_source(source_id: str, *, count: int = 20) -> bool:
+    try:
+        source = get_source(source_id)
+    except Exception:
+        return False
+
+    deck_name = (source.default_deck or "").strip()
+    if not deck_name:
+        return False
+
+    try:
+        count2 = max(1, min(100, int(count)))
+    except Exception:
+        count2 = 20
+
+    with get_session() as session:
+        deck = session.query(Deck).filter(Deck.name == deck_name).first()
+        if deck is None:
+            return False
+
+        existing = int(
+            session.query(func.count(SrsCard.word_id))
+            .join(DeckWord, DeckWord.word_id == SrsCard.word_id)
+            .filter(DeckWord.deck_id == int(deck.id))
+            .scalar()
+            or 0
+        )
+        if existing > 0:
+            return False
+
+        try:
+            _name, added, _remaining = _add_next_words_to_plan(session, deck_id=int(deck.id), count=count2)
+            return int(added or 0) > 0
+        except Exception:
+            return False
+
+
+def _queue_source_wordbook_import(source_id: str) -> None:
+    sid = (source_id or "").strip()
+    if not sid:
+        return
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return
+
+    with _WORDBOOK_IMPORT_LOCK:
+        if sid in _WORDBOOK_IMPORT_INFLIGHT:
+            return
+        _WORDBOOK_IMPORT_INFLIGHT.add(sid)
+
+    def _worker() -> None:
+        try:
+            _ensure_source_wordbook_imported(sid, timeout_sec=90.0)
+            _seed_plan_from_source(sid, count=20)
+        finally:
+            with _WORDBOOK_IMPORT_LOCK:
+                _WORDBOOK_IMPORT_INFLIGHT.discard(sid)
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+def _prime_onboarding_source(source_id: str, *, wait_sec: float = 0.6, seed_count: int = 20) -> None:
+    sid = (source_id or "").strip()
+    if not sid:
+        return
+    try:
+        wait_sec = max(0.2, min(float(wait_sec), 12.0))
+    except Exception:
+        wait_sec = 0.6
+    try:
+        seed_count = max(1, min(int(seed_count), 100))
+    except Exception:
+        seed_count = 20
+
+    ready, _deck_name = _ensure_source_wordbook_imported(sid, timeout_sec=wait_sec)
+    if not ready:
+        _queue_source_wordbook_import(sid)
+    _seed_plan_from_source(sid, count=seed_count)
+
+
+def _ensure_source_wordbook_imported(source_id: str, *, timeout_sec: float = 8.0) -> tuple[bool, str]:
+    try:
+        source = get_source(source_id)
+    except Exception:
+        return False, ""
+
+    deck = (source.default_deck or "").strip()
+    if deck:
+        with get_session() as session:
+            d = session.query(Deck).filter(Deck.name == deck).first()
+            if d is not None:
+                has_link = session.query(DeckWord.word_id).filter(DeckWord.deck_id == int(d.id)).limit(1).first()
+                if has_link is not None:
+                    return True, deck
+
+    # Tests should stay fully offline and deterministic.
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return False, deck
+
+    try:
+        try:
+            asyncio.get_running_loop()
+            has_running_loop = True
+        except RuntimeError:
+            has_running_loop = False
+
+        if not has_running_loop:
+            rows, _warnings = asyncio.run(_load_wordbook_rows_with_timeout(source, timeout_sec=timeout_sec))
+        else:
+            holder: dict[str, tuple[list[dict[str, str]], list[str]]] = {}
+            error_holder: dict[str, Exception] = {}
+
+            def _runner() -> None:
+                try:
+                    holder["data"] = asyncio.run(_load_wordbook_rows_with_timeout(source, timeout_sec=timeout_sec))
+                except Exception as exc:
+                    error_holder["err"] = exc
+
+            worker = threading.Thread(target=_runner, daemon=True)
+            worker.start()
+            worker.join(timeout=max(1.0, float(timeout_sec)) + 1.0)
+            if worker.is_alive():
+                return False, deck
+            if "err" in error_holder:
+                raise error_holder["err"]
+            rows, _warnings = holder.get("data", ([], []))
+    except Exception:
+        return False, deck
+
+    if not rows:
+        return False, deck
+
+    merged_tags = _merge_tags(source.default_tags, "")
+    for r in rows:
+        r["deck"] = (r.get("deck") or "").strip() or source.default_deck
+        r["tags"] = _merge_tags(r.get("tags", ""), merged_tags)
+    rows = _dedupe_import_rows(rows)
+
+    errors: list[str] = []
+    _inserted, _updated, _linked, _skipped, errors = _apply_rows_to_db(rows, on_conflict="skip", errors=errors)
+    _ = errors
+    return True, deck
+
+
+def _ensure_parent_bootstrap_wordbook(stage: str) -> tuple[bool, str]:
+    stage2 = (stage or "").strip().lower()
+    if stage2 not in {"primary", "junior"}:
+        stage2 = "junior"
+
+    source_id = _parent_recommended_source_id(stage2)
+    return _ensure_source_wordbook_imported(source_id, timeout_sec=8.0)
 
 
 @app.post("/worksheets/extract", response_class=HTMLResponse)
@@ -1431,6 +1773,15 @@ def worksheets_generate_today(request: Request, question_types: list[str] = Form
     blocked = _require_parent_mode_for_worksheets(request)
     if blocked is not None:
         return blocked
+
+    with get_session() as session:
+        parent0 = _ensure_parent_settings(session)
+        stage0 = (parent0.stage or "junior").strip().lower()
+        if stage0 not in {"primary", "junior"}:
+            stage0 = "junior"
+        has_any_word = session.query(Word.id).limit(1).first() is not None
+    if not has_any_word:
+        _ensure_parent_bootstrap_wordbook(stage0)
 
     with get_session() as session:
         parent = _ensure_parent_settings(session)
@@ -1538,7 +1889,7 @@ def worksheets_generate_today(request: Request, question_types: list[str] = Form
 
         if not picked:
             msg = "今天没有可生成作业的单词。先去“词书库”导入词书，或先在自学模式积累学习记录。"
-            return _redirect("/?" + urlencode({"toast": msg}))
+            return _redirect("/worksheets?" + urlencode({"toast": msg}))
 
         plan = _ensure_default_plan(session)
         fetched = session.query(Word).filter(Word.id.in_(picked)).all()
@@ -1563,7 +1914,7 @@ def worksheets_generate_today(request: Request, question_types: list[str] = Form
 
         if not words:
             msg = "今天没有可生成作业的单词（选中的词条不存在或已被删除）。"
-            return _redirect("/?" + urlencode({"toast": msg}))
+            return _redirect("/worksheets?" + urlencode({"toast": msg}))
 
         has_missing_def = any(not str(w.get("definition_short") or "").strip() for w in words)
         if has_missing_def and "mcq" in cleaned_qt:
@@ -2380,6 +2731,7 @@ def settings_page(request: Request, toast: str | None = None):
                 if mistakes_pref.default_target_count is not None
                 else 10
             ),
+            "onboarding_enabled": 1 if s.onboarding_enabled else 0,
             "toast": (toast or "").strip(),
         },
     )
@@ -2579,6 +2931,718 @@ def update_parent_settings(
         row.target_deck_ids_json = json.dumps(cleaned_target_ids, ensure_ascii=False)
 
     return _redirect("/settings?" + urlencode({"toast": "已保存家长模式设置"}))
+
+
+_ONBOARDING_GUIDE_VERSION = 2
+_ONBOARDING_STATUS_ACTIVE = "active"
+_ONBOARDING_STATUS_SNOOZED = "snoozed"
+_ONBOARDING_STATUS_DISMISSED = "dismissed"
+_ONBOARDING_STATUS_DONE = "done"
+_ONBOARDING_CHOOSE_ROLE_PATH = "/onboarding/choose_role"
+_ONBOARDING_CHOOSE_STAGE_PATH = "/onboarding/choose_stage"
+_ONBOARDING_SPRITE = {"enabled": True, "pulse_ms": 1400, "travel_ms": 260}
+_ONBOARDING_STATUSES = {
+    _ONBOARDING_STATUS_ACTIVE,
+    _ONBOARDING_STATUS_SNOOZED,
+    _ONBOARDING_STATUS_DISMISSED,
+    _ONBOARDING_STATUS_DONE,
+}
+
+_ONBOARDING_STEP_DEFS: dict[str, list[dict[str, str]]] = {
+    "self": [
+        {
+            "key": "self_first_review",
+            "title": "开始一次学习",
+            "desc": "系统已按阶段准备词汇，先完成一轮评分。",
+            "href": "/review",
+            "target_selector": '[data-guide-anchor="self-first-review"]',
+            "placement": "bottom",
+        },
+        {
+            "key": "self_try_mistakes",
+            "title": "试一次错词练习",
+            "desc": "到错词篮生成一篇短文练习。",
+            "href": "/mistakes",
+            "target_selector": '[data-guide-anchor="self-try-mistakes"]',
+            "placement": "bottom",
+        },
+        {
+            "key": "self_view_dashboard",
+            "title": "查看学习进度",
+            "desc": "打开看板，查看掌握率和高频错词。",
+            "href": "/settings",
+            "target_selector": '[data-guide-anchor="open-dashboard"]',
+            "placement": "top",
+        },
+    ],
+    "parent": [
+        {
+            "key": "parent_switch_mode",
+            "title": "切换到家长模式",
+            "desc": "在“我的”里切换谁在用。",
+            "href": "/settings",
+            "target_selector": '[data-guide-anchor="parent-switch-mode"]',
+            "placement": "bottom",
+        },
+        {
+            "key": "parent_generate_sheet",
+            "title": "生成今日作业",
+            "desc": "先生成一份今日作业并打印。",
+            "href": "/worksheets",
+            "target_selector": '[data-guide-anchor="parent-generate-sheet"]',
+            "placement": "bottom",
+        },
+        {
+            "key": "parent_grade_sheet",
+            "title": "提交一次批改",
+            "desc": "勾选错词后提交，系统会自动安排复习。",
+            "href": "/worksheets",
+            "target_selector": '[data-guide-anchor="parent-grade-sheet"]',
+            "placement": "top",
+        },
+        {
+            "key": "parent_view_dashboard",
+            "title": "查看学习进度",
+            "desc": "在看板里查看复习与错词变化。",
+            "href": "/settings",
+            "target_selector": '[data-guide-anchor="open-dashboard"]',
+            "placement": "top",
+        },
+    ],
+}
+
+
+def _normalize_onboarding_status(status: str | None) -> str:
+    s = (status or "").strip().lower()
+    return s if s in _ONBOARDING_STATUSES else _ONBOARDING_STATUS_ACTIVE
+
+
+def _normalize_onboarding_flow(mode: str | None) -> str:
+    m = (mode or "").strip().lower()
+    return _UI_MODE_PARENT if m == _UI_MODE_PARENT else _UI_MODE_SELF
+
+
+def _normalize_onboarding_self_stage(stage: str | None) -> str:
+    s = (stage or "").strip().lower()
+    if s in {"primary", "junior", "senior", "cet4", "cet6", "kaoyan"}:
+        return s
+    return "junior"
+
+
+def _normalize_onboarding_parent_stage(stage: str | None) -> str:
+    s = (stage or "").strip().lower()
+    return "primary" if s == "primary" else "junior"
+
+
+def _onboarding_stage_options(flow: str) -> list[dict[str, str]]:
+    if flow == _UI_MODE_PARENT:
+        return [
+            {"value": "primary", "label": "小学"},
+            {"value": "junior", "label": "初中"},
+        ]
+    return [
+        {"value": "primary", "label": "小学"},
+        {"value": "junior", "label": "初中"},
+        {"value": "senior", "label": "高中"},
+        {"value": "cet4", "label": "四级"},
+        {"value": "cet6", "label": "六级"},
+        {"value": "kaoyan", "label": "考研"},
+    ]
+
+
+def _recommended_source_id_for_stage(flow: str, stage: str) -> str:
+    flow2 = _normalize_onboarding_flow(flow)
+    if flow2 == _UI_MODE_PARENT:
+        return "gen_primary_1200" if _normalize_onboarding_parent_stage(stage) == "primary" else "gen_xsc_2000"
+    stage2 = _normalize_onboarding_self_stage(stage)
+    if stage2 == "primary":
+        return "gen_primary_1200"
+    if stage2 == "junior":
+        return "gen_xsc_2000"
+    if stage2 == "senior":
+        return "ecdict_gk"
+    if stage2 == "cet4":
+        return "ecdict_cet4"
+    if stage2 == "cet6":
+        return "ecdict_cet6"
+    if stage2 == "kaoyan":
+        return "ecdict_ky"
+    return "gen_xsc_2000"
+
+
+def _read_onboarding_role_choice(username_norm: str) -> str | None:
+    uname = (username_norm or "").strip().lower()
+    if not uname:
+        return None
+    with get_auth_session() as session:
+        rows = (
+            session.query(AuthEvent.meta_json)
+            .filter(
+                AuthEvent.username_norm == uname,
+                AuthEvent.kind == "action",
+                AuthEvent.path == _ONBOARDING_CHOOSE_ROLE_PATH,
+            )
+            .order_by(AuthEvent.id.desc())
+            .limit(8)
+            .all()
+        )
+    for (meta_json,) in rows:
+        meta = _safe_json_dict(meta_json)
+        role = str(meta.get("role") or "").strip().lower()
+        if role in {_UI_MODE_PARENT, _UI_MODE_SELF}:
+            return role
+    return None
+
+
+def _record_onboarding_role_choice(*, user_id: int, username_norm: str, role: str) -> None:
+    role2 = _normalize_onboarding_flow(role)
+    _log_auth_event(
+        user_id=int(user_id),
+        username=username_norm,
+        kind="action",
+        path=_ONBOARDING_CHOOSE_ROLE_PATH,
+        method="POST",
+        status_code=200,
+        duration_ms=0,
+        meta={"role": role2},
+    )
+
+
+def _read_onboarding_stage_choice(username_norm: str, *, flow: str) -> str | None:
+    uname = (username_norm or "").strip().lower()
+    if not uname:
+        return None
+    flow2 = _normalize_onboarding_flow(flow)
+    with get_auth_session() as session:
+        rows = (
+            session.query(AuthEvent.meta_json)
+            .filter(
+                AuthEvent.username_norm == uname,
+                AuthEvent.kind == "action",
+                AuthEvent.path == _ONBOARDING_CHOOSE_STAGE_PATH,
+            )
+            .order_by(AuthEvent.id.desc())
+            .limit(12)
+            .all()
+        )
+    for (meta_json,) in rows:
+        meta = _safe_json_dict(meta_json)
+        role = _normalize_onboarding_flow(meta.get("role"))
+        if role != flow2:
+            continue
+        stage_raw = str(meta.get("stage") or "").strip().lower()
+        if role == _UI_MODE_PARENT:
+            return _normalize_onboarding_parent_stage(stage_raw)
+        return _normalize_onboarding_self_stage(stage_raw)
+    return None
+
+
+def _record_onboarding_stage_choice(*, user_id: int, username_norm: str, flow: str, stage: str) -> None:
+    role2 = _normalize_onboarding_flow(flow)
+    stage2 = _normalize_onboarding_parent_stage(stage) if role2 == _UI_MODE_PARENT else _normalize_onboarding_self_stage(stage)
+    _log_auth_event(
+        user_id=int(user_id),
+        username=username_norm,
+        kind="action",
+        path=_ONBOARDING_CHOOSE_STAGE_PATH,
+        method="POST",
+        status_code=200,
+        duration_ms=0,
+        meta={"role": role2, "stage": stage2},
+    )
+
+
+def _apply_onboarding_stage_preferences(*, username_norm: str, flow: str, stage: str) -> None:
+    flow2 = _normalize_onboarding_flow(flow)
+    source_id = _recommended_source_id_for_stage(flow2, stage)
+    # 阶段选择后尽量先同步准备一轮，减少新手引导里“连续刷新多次才可用”的体感。
+    ready, _deck_name = _ensure_source_wordbook_imported(source_id, timeout_sec=4.0)
+    if not ready:
+        _queue_source_wordbook_import(source_id)
+    _seed_plan_from_source(source_id, count=20)
+    deck_name = ""
+    try:
+        deck_name = str(get_source(source_id).default_deck or "").strip()
+    except Exception:
+        deck_name = ""
+
+    with get_session() as session:
+        deck_id: int | None = None
+        if deck_name:
+            d = session.query(Deck).filter(Deck.name == deck_name).first()
+            if d is not None:
+                deck_id = int(d.id)
+
+        if flow2 == _UI_MODE_PARENT:
+            parent = _ensure_parent_settings(session)
+            parent.stage = _normalize_onboarding_parent_stage(stage)
+            if deck_id is not None:
+                target_ids = _safe_json_list_int(parent.target_deck_ids_json)
+                if deck_id not in target_ids:
+                    target_ids.append(deck_id)
+                parent.target_deck_ids_json = json.dumps(target_ids, ensure_ascii=False)
+        else:
+            pref = _ensure_mistake_practice_settings(session, username_norm)
+            stage2 = _normalize_onboarding_self_stage(stage)
+            level = stage2 if stage2 in {"junior", "senior", "cet4", "cet6", "kaoyan"} else "junior"
+            pref.default_level = level
+            if deck_id is not None:
+                try:
+                    _add_next_words_to_plan(session, deck_id=deck_id, count=20)
+                except Exception:
+                    pass
+
+
+def _safe_json_list_int(raw: str | None) -> list[int]:
+    try:
+        arr = json.loads(raw or "[]")
+    except Exception:
+        return []
+    if not isinstance(arr, list):
+        return []
+    out: list[int] = []
+    for v in arr:
+        try:
+            n = int(v)
+        except Exception:
+            continue
+        if n > 0 and n not in out:
+            out.append(n)
+    return out
+
+
+def _resolve_onboarding_flow(request: Request, *, username_norm: str) -> tuple[str, str, bool]:
+    entry_role = _read_onboarding_role_choice(username_norm)
+    if entry_role in {_UI_MODE_PARENT, _UI_MODE_SELF}:
+        return entry_role, entry_role, True
+    flow = _normalize_onboarding_flow(_read_ui_mode(request))
+    return flow, "", False
+
+
+def _self_onboarding_hint(request: Request) -> tuple[bool, str]:
+    settings = get_settings()
+    if not bool(settings.onboarding_enabled):
+        return False, ""
+
+    username = getattr(request.state, "user_username", None)
+    user_id = getattr(request.state, "user_id", None)
+    if not username or user_id is None:
+        return False, ""
+
+    _ = user_id
+    try:
+        payload = _build_onboarding_payload(request)
+    except HTTPException:
+        return False, ""
+    except Exception:
+        return False, ""
+
+    if not bool(payload.get("enabled")) or not bool(payload.get("show")):
+        return False, ""
+    flow = _normalize_onboarding_flow(str(payload.get("flow") or ""))
+    if flow != _UI_MODE_SELF:
+        return False, ""
+    if bool(payload.get("role_selection_required")) or bool(payload.get("stage_selection_required")):
+        return False, ""
+    stage = _normalize_onboarding_self_stage(str(payload.get("selected_stage") or ""))
+    return True, stage
+
+
+def _build_current_step(steps: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for s in steps:
+        if not bool(s.get("done")):
+            return {
+                "key": str(s.get("key") or ""),
+                "title": str(s.get("title") or ""),
+                "desc": str(s.get("desc") or ""),
+                "href": str(s.get("href") or "/"),
+                "target_selector": str(s.get("target_selector") or ""),
+                "placement": str(s.get("placement") or "bottom"),
+            }
+    return None
+
+
+def _has_learning_data_for_current_user() -> bool:
+    with get_session() as session:
+        if session.query(Deck.id).limit(1).first():
+            return True
+        if session.query(SrsReviewLog.id).limit(1).first():
+            return True
+        if session.query(Simulation.id).limit(1).first():
+            return True
+        if session.query(Worksheet.id).limit(1).first():
+            return True
+        if session.query(Mistake.id).limit(1).first():
+            return True
+    return False
+
+
+def _ensure_onboarding_state_for_user(*, user_id: int, username_norm: str, activate: bool = False) -> None:
+    now = _utcnow()
+    with get_auth_session() as session:
+        row = session.query(AuthOnboardingState).filter(AuthOnboardingState.user_id == int(user_id)).first()
+        if row is None:
+            default_done = (not activate) and _has_learning_data_for_current_user()
+            status = _ONBOARDING_STATUS_ACTIVE if activate or (not default_done) else _ONBOARDING_STATUS_DONE
+            row = AuthOnboardingState(
+                user_id=int(user_id),
+                username_norm=(username_norm or "").strip().lower(),
+                guide_version=_ONBOARDING_GUIDE_VERSION,
+                status=status,
+            )
+            if status == _ONBOARDING_STATUS_DONE:
+                row.completed_at = now
+            session.add(row)
+            return
+
+        row.username_norm = (username_norm or "").strip().lower()
+        row.status = _normalize_onboarding_status(row.status)
+        if int(row.guide_version or 0) != _ONBOARDING_GUIDE_VERSION:
+            row.guide_version = _ONBOARDING_GUIDE_VERSION
+            if row.status in {_ONBOARDING_STATUS_ACTIVE, _ONBOARDING_STATUS_SNOOZED}:
+                row.status = _ONBOARDING_STATUS_ACTIVE
+                row.completed_at = None
+                row.snooze_until = None
+
+
+def _has_dashboard_view_event(username_norm: str) -> bool:
+    with get_auth_session() as session:
+        row = (
+            session.query(AuthEvent.id)
+            .filter(
+                AuthEvent.username_norm == (username_norm or "").strip().lower(),
+                AuthEvent.path.like("/dashboard%"),
+            )
+            .limit(1)
+            .first()
+        )
+    return row is not None
+
+
+def _compute_onboarding_steps(
+    flow: str,
+    *,
+    username_norm: str,
+    is_parent_mode: bool,
+    selected_stage: str | None = None,
+) -> list[dict[str, Any]]:
+    mode2 = _UI_MODE_PARENT if flow == _UI_MODE_PARENT else _UI_MODE_SELF
+    defs = list(_ONBOARDING_STEP_DEFS["parent" if mode2 == _UI_MODE_PARENT else "self"])
+    _ = selected_stage
+
+    with get_session() as session:
+        has_review = session.query(SrsReviewLog.id).limit(1).first() is not None
+        has_simulation = session.query(Simulation.id).limit(1).first() is not None
+        has_mistake = session.query(Mistake.id).limit(1).first() is not None
+        has_today_sheet = session.query(Worksheet.id).filter(Worksheet.mode == "today").limit(1).first() is not None
+
+        graded_once = False
+        for (meta_json,) in session.query(Worksheet.meta_json).order_by(Worksheet.id.desc()).limit(120).all():
+            meta = _safe_json_dict(meta_json)
+            if meta.get("graded_at"):
+                graded_once = True
+                break
+
+    viewed_dashboard = _has_dashboard_view_event(username_norm)
+
+    done_map: dict[str, bool] = {
+        "self_first_review": has_review,
+        "self_try_mistakes": has_simulation,
+        "self_view_dashboard": viewed_dashboard,
+        "parent_switch_mode": bool(is_parent_mode),
+        "parent_generate_sheet": has_today_sheet,
+        "parent_grade_sheet": graded_once,
+        "parent_view_dashboard": viewed_dashboard,
+    }
+
+    out: list[dict[str, Any]] = []
+    for it in defs:
+        key = str(it.get("key") or "")
+        title = str(it.get("title") or "")
+        desc = str(it.get("desc") or "")
+        href = str(it.get("href") or "/")
+        target_selector = str(it.get("target_selector") or "")
+        placement = str(it.get("placement") or "bottom")
+        if key == "self_try_mistakes" and mode2 == _UI_MODE_SELF and not has_mistake:
+            title = "先积累错词"
+            desc = "先在学习页把不认识的词标记出来，再来生成错词练习。"
+            href = "/review"
+            target_selector = '[data-guide-anchor="self-first-review"]'
+            placement = "bottom"
+        if key == "parent_generate_sheet" and mode2 == _UI_MODE_PARENT:
+            desc = "点击“生成今日作业”即可。"
+        out.append(
+            {
+                "key": key,
+                "title": title,
+                "desc": desc,
+                "href": href,
+                "target_selector": target_selector,
+                "placement": placement,
+                "done": bool(done_map.get(key, False)),
+            }
+        )
+    return out
+
+
+def _build_onboarding_payload(request: Request) -> dict[str, Any]:
+    settings = get_settings()
+    username = getattr(request.state, "user_username", None)
+    user_id = getattr(request.state, "user_id", None)
+    if not username or user_id is None:
+        raise HTTPException(status_code=401, detail="not logged in")
+
+    username_norm = str(username).strip().lower()
+    if not settings.onboarding_enabled:
+        return {
+            "enabled": False,
+            "status": "disabled",
+            "guide_version": _ONBOARDING_GUIDE_VERSION,
+            "mode": _read_ui_mode(request),
+            "flow": _normalize_onboarding_flow(_read_ui_mode(request)),
+            "entry_role": "",
+            "selected_stage": "",
+            "stage_options": [],
+            "steps": [],
+            "summary": {"done": 0, "total": 0, "percent": 0},
+            "next_step": None,
+            "current_step": None,
+            "role_selection_required": False,
+            "stage_selection_required": False,
+            "sprite": {"enabled": False, "pulse_ms": 0, "travel_ms": 0},
+            "show": False,
+            "updated_at": _utcnow().isoformat(),
+        }
+
+    _ensure_onboarding_state_for_user(user_id=int(user_id), username_norm=username_norm, activate=False)
+    mode = _read_ui_mode(request)
+    flow, entry_role, has_role_choice = _resolve_onboarding_flow(request, username_norm=username_norm)
+    selected_stage = _read_onboarding_stage_choice(username_norm, flow=flow) if has_role_choice else None
+    stage_options = _onboarding_stage_options(flow)
+    is_parent_mode = mode == _UI_MODE_PARENT
+    steps = _compute_onboarding_steps(
+        flow,
+        username_norm=username_norm,
+        is_parent_mode=is_parent_mode,
+        selected_stage=selected_stage,
+    )
+    done_count = sum(1 for s in steps if s.get("done"))
+    total_count = len(steps)
+    percent = int(round(done_count * 100 / total_count)) if total_count > 0 else 0
+    all_done = total_count > 0 and done_count == total_count
+
+    now = _utcnow()
+    with get_auth_session() as session:
+        row = session.query(AuthOnboardingState).filter(AuthOnboardingState.user_id == int(user_id)).first()
+        if row is None:
+            row = AuthOnboardingState(
+                user_id=int(user_id),
+                username_norm=username_norm,
+                guide_version=_ONBOARDING_GUIDE_VERSION,
+                status=_ONBOARDING_STATUS_ACTIVE,
+            )
+            session.add(row)
+        row.username_norm = username_norm
+        row.status = _normalize_onboarding_status(row.status)
+        if int(row.guide_version or 0) != _ONBOARDING_GUIDE_VERSION:
+            row.guide_version = _ONBOARDING_GUIDE_VERSION
+            if row.status in {_ONBOARDING_STATUS_ACTIVE, _ONBOARDING_STATUS_SNOOZED}:
+                row.status = _ONBOARDING_STATUS_ACTIVE
+                row.completed_at = None
+                row.snooze_until = None
+
+        if row.status == _ONBOARDING_STATUS_SNOOZED and row.snooze_until and row.snooze_until <= now:
+            row.status = _ONBOARDING_STATUS_ACTIVE
+            row.snooze_until = None
+
+        role_selection_required = row.status == _ONBOARDING_STATUS_ACTIVE and (not has_role_choice)
+        stage_selection_required = row.status == _ONBOARDING_STATUS_ACTIVE and has_role_choice and (not selected_stage)
+
+        if row.status == _ONBOARDING_STATUS_ACTIVE and (not role_selection_required) and (not stage_selection_required) and all_done:
+            row.status = _ONBOARDING_STATUS_DONE
+            row.completed_at = now
+            row.snooze_until = None
+
+        status = _normalize_onboarding_status(row.status)
+        snooze_until = row.snooze_until
+        completed_at = row.completed_at
+        updated_at = row.updated_at or now
+
+    role_selection_required = status == _ONBOARDING_STATUS_ACTIVE and (not has_role_choice)
+    stage_selection_required = status == _ONBOARDING_STATUS_ACTIVE and has_role_choice and (not selected_stage)
+    if role_selection_required:
+        current_step = {
+            "key": "choose_role",
+            "title": "先选身份",
+            "desc": "请选择你现在使用的是学生还是家长。",
+            "href": "/settings",
+            "target_selector": "",
+            "placement": "bottom",
+        }
+    elif stage_selection_required:
+        current_step = {
+            "key": "choose_stage",
+            "title": "再选学习阶段",
+            "desc": "按你或孩子当前阶段选择，系统会自动准备对应词汇。",
+            "href": "/library",
+            "target_selector": "",
+            "placement": "bottom",
+        }
+    else:
+        current_step = _build_current_step(steps)
+    next_step = current_step
+    show = status == _ONBOARDING_STATUS_ACTIVE
+    if status == _ONBOARDING_STATUS_SNOOZED and snooze_until and snooze_until > now:
+        show = False
+    if status in {_ONBOARDING_STATUS_DISMISSED, _ONBOARDING_STATUS_DONE}:
+        show = False
+
+    return {
+        "enabled": True,
+        "status": status,
+        "guide_version": _ONBOARDING_GUIDE_VERSION,
+        "mode": mode,
+        "flow": flow,
+        "entry_role": entry_role,
+        "selected_stage": selected_stage or "",
+        "stage_options": stage_options,
+        "steps": steps,
+        "summary": {"done": done_count, "total": total_count, "percent": percent},
+        "next_step": next_step,
+        "current_step": current_step,
+        "role_selection_required": role_selection_required,
+        "stage_selection_required": stage_selection_required,
+        "sprite": dict(_ONBOARDING_SPRITE),
+        "show": show,
+        "snooze_until": snooze_until.isoformat() if snooze_until else "",
+        "completed_at": completed_at.isoformat() if completed_at else "",
+        "updated_at": updated_at.isoformat() if updated_at else now.isoformat(),
+    }
+
+
+@app.get("/api/onboarding/state", response_class=JSONResponse)
+def api_onboarding_state(request: Request):
+    return JSONResponse(content=_build_onboarding_payload(request))
+
+
+@app.post("/api/onboarding/action", response_class=JSONResponse)
+async def api_onboarding_action(request: Request):
+    settings = get_settings()
+    username = getattr(request.state, "user_username", None)
+    user_id = getattr(request.state, "user_id", None)
+    if not username or user_id is None:
+        raise HTTPException(status_code=401, detail="not logged in")
+    if not settings.onboarding_enabled:
+        return JSONResponse(content=_build_onboarding_payload(request))
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    action = str(payload.get("action") or "").strip().lower()
+    role_raw = str(payload.get("role") or "").strip().lower()
+    stage_raw = str(payload.get("stage") or "").strip().lower()
+    hours_raw = payload.get("hours")
+    try:
+        hours = int(hours_raw)
+    except Exception:
+        hours = 24
+    hours = max(1, min(168, hours))
+
+    username_norm = str(username).strip().lower()
+    _ensure_onboarding_state_for_user(user_id=int(user_id), username_norm=username_norm, activate=False)
+
+    now = _utcnow()
+    selected_role: str | None = None
+    selected_stage: str | None = None
+    selected_flow: str = _normalize_onboarding_flow(request.state.ui_mode if hasattr(request.state, "ui_mode") else _UI_MODE_SELF)
+    stage_flow = selected_flow
+    stage_has_role_choice = False
+    if action == "choose_stage":
+        stage_flow, _entry_role, stage_has_role_choice = _resolve_onboarding_flow(request, username_norm=username_norm)
+        stage_flow = _normalize_onboarding_flow(stage_flow)
+    with get_auth_session() as session:
+        row = session.query(AuthOnboardingState).filter(AuthOnboardingState.user_id == int(user_id)).first()
+        if row is None:
+            row = AuthOnboardingState(
+                user_id=int(user_id),
+                username_norm=username_norm,
+                guide_version=_ONBOARDING_GUIDE_VERSION,
+                status=_ONBOARDING_STATUS_ACTIVE,
+            )
+            session.add(row)
+
+        row.status = _normalize_onboarding_status(row.status)
+        if action == "choose_role":
+            role = _normalize_onboarding_flow(role_raw)
+            if role_raw not in {_UI_MODE_SELF, _UI_MODE_PARENT}:
+                raise HTTPException(status_code=400, detail="unsupported role")
+            row.status = _ONBOARDING_STATUS_ACTIVE
+            row.snooze_until = None
+            row.completed_at = None
+            row.guide_version = _ONBOARDING_GUIDE_VERSION
+            selected_role = role
+            selected_flow = role
+        elif action == "choose_stage":
+            if not stage_has_role_choice:
+                raise HTTPException(status_code=400, detail="role required first")
+            if stage_flow == _UI_MODE_PARENT:
+                stage = _normalize_onboarding_parent_stage(stage_raw)
+                if stage_raw not in {"primary", "junior"}:
+                    raise HTTPException(status_code=400, detail="unsupported stage")
+            else:
+                stage = _normalize_onboarding_self_stage(stage_raw)
+                if stage_raw not in {"primary", "junior", "senior", "cet4", "cet6", "kaoyan"}:
+                    raise HTTPException(status_code=400, detail="unsupported stage")
+            row.status = _ONBOARDING_STATUS_ACTIVE
+            row.snooze_until = None
+            row.completed_at = None
+            row.guide_version = _ONBOARDING_GUIDE_VERSION
+            selected_stage = stage
+            selected_flow = stage_flow
+        elif action == "snooze":
+            row.status = _ONBOARDING_STATUS_SNOOZED
+            row.snooze_until = now + timedelta(hours=hours)
+        elif action == "dismiss":
+            row.status = _ONBOARDING_STATUS_DISMISSED
+            row.completed_at = now
+            row.snooze_until = None
+        elif action == "restart":
+            row.status = _ONBOARDING_STATUS_ACTIVE
+            row.snooze_until = None
+            row.completed_at = None
+            row.guide_version = _ONBOARDING_GUIDE_VERSION
+        else:
+            raise HTTPException(status_code=400, detail="unsupported action")
+
+    if selected_role:
+        _record_onboarding_role_choice(user_id=int(user_id), username_norm=username_norm, role=selected_role)
+        request.state.ui_mode = selected_role
+        resp = JSONResponse(content=_build_onboarding_payload(request))
+        _set_ui_mode_cookie(resp, request, selected_role)
+        return resp
+
+    if selected_stage:
+        _record_onboarding_stage_choice(
+            user_id=int(user_id),
+            username_norm=username_norm,
+            flow=selected_flow,
+            stage=selected_stage,
+        )
+        _apply_onboarding_stage_preferences(
+            username_norm=username_norm,
+            flow=selected_flow,
+            stage=selected_stage,
+        )
+        request.state.ui_mode = selected_flow
+        resp = JSONResponse(content=_build_onboarding_payload(request))
+        _set_ui_mode_cookie(resp, request, selected_flow)
+        return resp
+
+    return JSONResponse(content=_build_onboarding_payload(request))
 
 
 def _norm_days_param(days: Any) -> int:
@@ -3539,8 +4603,11 @@ def deck_detail(request: Request, deck_id: int, toast: str | None = None):
 
 
 @app.get("/library", response_class=HTMLResponse)
-def wordbook_library(request: Request):
+def wordbook_library(request: Request, source_id: str | None = None):
     sources = list_sources()
+    source_hint = (source_id or "").strip()
+    if source_hint:
+        sources = sorted(sources, key=lambda s: (0 if s.id == source_hint else 1, s.name))
     groups = [
         ("家长/中小学生（推荐）", [s for s in sources if str(getattr(s, "kind", "")).strip() == "generated_subset"]),
         ("考试词汇（ECDICT）", [s for s in sources if str(getattr(s, "kind", "")).strip() == "ecdict_tag"]),
@@ -3554,6 +4621,7 @@ def wordbook_library(request: Request):
             "sources": sources,
             "groups": groups,
             "sources_note_path": "docs/WORDBOOK_SOURCES.md",
+            "source_id": source_hint,
         },
     )
 
@@ -4105,11 +5173,21 @@ def delete_word(word_id: int):
 
 
 @app.get("/review", response_class=HTMLResponse)
-def review(request: Request, deck_id: int | None = None, toast: str | None = None):
+def review(
+    request: Request,
+    deck_id: int | None = None,
+    toast: str | None = None,
+    onboarding_retry: int = 0,
+):
     if deck_id == 0:
         deck_id = None
     now = _utcnow()
     settings = get_settings()
+    onboarding_self_active, onboarding_self_stage = _self_onboarding_hint(request)
+    if onboarding_self_active and onboarding_self_stage:
+        sid = _recommended_source_id_for_stage(_UI_MODE_SELF, onboarding_self_stage)
+        wait_sec = 6.0 if int(onboarding_retry or 0) > 0 else 0.6
+        _prime_onboarding_source(sid, wait_sec=wait_sec, seed_count=20)
     prefetch_limit = 120
     with get_session() as session:
         decks = session.query(Deck).order_by(Deck.name.asc()).all()
@@ -4258,6 +5336,8 @@ def review(request: Request, deck_id: int | None = None, toast: str | None = Non
             "new_paused": bool(plan_state.get("new_paused")),
             "state_map": {1: "Learning", 2: "Review", 3: "Relearning"},
             "prefetch_cards_json": json.dumps(prefetch_cards, ensure_ascii=False),
+            "onboarding_self_active": onboarding_self_active,
+            "onboarding_self_stage": onboarding_self_stage,
         },
     )
 

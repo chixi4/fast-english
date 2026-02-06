@@ -23,7 +23,7 @@
       <div class="card-v">学习进度</div>
       <div class="muted">查看已掌握 / 高频错词 / 近两周复习。</div>
       <div class="actions mt-12">
-        <a class="btn primary" href="/dashboard">打开看板</a>
+        <a class="btn primary" data-guide-anchor="open-dashboard" href="/dashboard">打开看板</a>
       </div>
     </div>
 
@@ -52,7 +52,7 @@
               <span class="mode-switch-sub">自己复习</span>
             </span>
           </label>
-          <label class="mode-switch-item">
+          <label class="mode-switch-item" data-guide-anchor="parent-switch-mode">
             <input type="radio" name="mode" value="parent" {% if is_parent_mode %}checked{% endif %} onchange="this.form.submit()" />
             <span class="mode-switch-chip">
               <span class="mode-switch-title">家长模式</span>
@@ -62,6 +62,19 @@
         </div>
       </form>
     </div>
+
+    {% if onboarding_enabled %}
+      <div class="card" id="onboardingSettingsCard">
+        <div class="card-k">新手引导</div>
+        <div class="card-v">使用进度</div>
+        <div id="onboardingSettingsSummary" class="muted">正在读取当前进度…</div>
+        <div class="actions mt-10">
+          <button class="btn subtle" type="button" data-onboarding-action="restart">重新开始</button>
+          <button class="btn subtle" type="button" data-onboarding-action="snooze">稍后提醒</button>
+          <button class="btn subtle" type="button" data-onboarding-action="dismiss">关闭引导</button>
+        </div>
+      </div>
+    {% endif %}
 
     {% if not is_parent_mode %}
       <div class="card">
