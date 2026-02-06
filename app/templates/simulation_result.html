@@ -7,14 +7,14 @@
     <div class="card">
       <div class="muted">已回写复习：<span class="mono">{{ reviewed|length }}</span> 个词。</div>
       {% if needs_relearn and needs_relearn|length > 0 %}
-        <div class="muted" style="margin-top: 8px;">
+        <div class="muted mt-8">
           需要回炉：
           {% for w in needs_relearn %}
             <span class="mono">{{ w.term }}</span>{% if not loop.last %}、{% endif %}
           {% endfor %}
         </div>
       {% endif %}
-      <div class="actions" style="margin-top: 10px;">
+      <div class="actions mt-10">
         <a class="btn primary" href="/review">去复习</a>
         <a class="btn" href="/mistakes">看错词篮</a>
       </div>
@@ -41,7 +41,7 @@
       </div>
       <div class="muted">你的选择：{% if q.user_answer_label %}{{ q.user_answer_label }}{% else %}-{% endif %} {{ q.user_choice_text | kw }}</div>
       <div class="muted">正确答案：{{ q.answer_label }} {{ q.answer_choice_text | kw }}</div>
-      <div class="q-choices" style="margin-top: 10px;">
+      <div class="q-choices mt-10">
         {% set labels = ["A", "B", "C", "D"] %}
         {% for c in q.choices %}
           {% set cls = "choice" %}

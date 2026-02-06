@@ -1,27 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
   <h1>错词篮</h1>
-  <p class="muted">按单词聚合：生成短文 + 题目，在语境中巩固</p>
-
-  <form class="row" method="get" action="/mistakes" style="margin-top: 8px;">
-    <input type="hidden" name="level" value="{{ selected_level }}" />
-    <input type="hidden" name="target_count" value="{{ target_count }}" />
-    <input type="hidden" name="length_mode" value="{{ length_mode }}" />
-    <label class="muted">排序
-      <select name="sort" onchange="this.form.submit()">
-        <option value="freq" {% if sort != 'time' %}selected{% endif %}>按频率</option>
-        <option value="time" {% if sort == 'time' %}selected{% endif %}>按时间</option>
-      </select>
-    </label>
-    <label class="check" style="margin: 0;">
-      <input type="checkbox" name="include_once" value="1" {% if include_once %}checked{% endif %} onchange="this.form.submit()" />
-      <span>包含一次错词</span>
-    </label>
-  </form>
+  <p class="muted">按单词聚合生成短文与题目，在语境中巩固高频错词。</p>
 
   {% if error %}
     <div class="card">
-      <div class="row" style="margin: 0;">
+      <div class="row m-0">
         <span class="badge bad">生成失败</span>
         <span class="muted">{{ error }}</span>
       </div>
@@ -31,48 +15,61 @@
   {% if items|length == 0 %}
     <div class="card">
       <div class="big">还没有错词</div>
-      <p class="muted">先去“今日学习”背词，标记为“不认识”后会自动收集</p>
+      <p class="muted">先去“今日学习”背词，标记为“不认识”后会自动收集。</p>
       <div class="actions">
         <a class="btn primary" href="/review">去学习</a>
       </div>
     </div>
   {% else %}
-    <form class="stack" id="generateForm" method="post" action="/simulations/generate" hx-boost="false">
-      <label>难度
-        <select name="level" id="levelSelect">
-          {% for lv in levels %}
-            <option value="{{ lv }}" {% if selected_level == lv %}selected{% endif %}>{{ level_labels.get(lv, lv) }}</option>
-          {% endfor %}
-        </select>
-      </label>
+    <div class="card mistakes-generate-card">
+      <div class="card-k">自动生成</div>
+      <div class="mistakes-main-title">一键生成短文练习</div>
+      <p class="muted">默认自动选词并生成短文与题目；只有需要精细控制时再展开高级设置。</p>
 
-      <label>目标词数量
-        <input type="number" name="target_count" id="targetCount" value="{{ target_count }}" min="6" max="14" />
-      </label>
+      <form class="stack mistakes-primary-form" id="generateForm" method="post" action="/simulations/generate" hx-boost="false">
+        <input type="hidden" name="level" value="{{ selected_level }}" />
+        <input type="hidden" name="target_count" id="generateTargetCount" value="{{ target_count }}" />
+        <input type="hidden" name="length_mode" value="{{ length_mode }}" />
+        <input type="hidden" name="word_ids" id="word_ids" value="" />
+        <button class="btn primary" id="generateBtn" type="submit">生成短文练习</button>
+      </form>
 
-      <label>篇幅
-        <select name="length_mode">
-          <option value="standard" {% if length_mode == "standard" %}selected{% endif %}>标准</option>
-          <option value="long" {% if length_mode == "long" %}selected{% endif %}>更长</option>
-        </select>
-      </label>
+      <details id="advancedConfig" class="mistakes-advanced mt-12">
+        <summary class="muted">高级设置（仅当前页）</summary>
+        <form class="stack mt-10" id="mistakesOptionsForm" method="get" action="/mistakes">
+          <label>难度
+            <select name="level" id="levelSelect">
+              <option value="auto" {% if level_control_value == "auto" %}selected{% endif %}>自动（按错词词书推断）</option>
+              {% for lv in levels %}
+                <option value="{{ lv }}" {% if level_control_value == lv %}selected{% endif %}>{{ level_labels.get(lv, lv) }}</option>
+              {% endfor %}
+            </select>
+          </label>
 
-      <input type="hidden" name="word_ids" id="word_ids" value="" />
-      <button class="btn primary" id="generateBtn" type="submit">生成短文</button>
+          <label>篇幅
+            <select name="length_mode" id="lengthModeSelect">
+              <option value="standard" {% if length_mode == "standard" %}selected{% endif %}>标准</option>
+              <option value="long" {% if length_mode == "long" %}selected{% endif %}>更长</option>
+            </select>
+          </label>
 
-      <details id="manualPicker">
-        <summary class="muted">手动挑词（可选）</summary>
-        <div class="picker-list" role="listbox" aria-multiselectable="true">
-          {% for item in items %}
-            <div class="picker-row" role="option" tabindex="0" aria-selected="false" data-word-id="{{ item.word.id }}">
-              <div class="picker-term mono">{{ item.word.term }}</div>
-              <div class="picker-def">{{ item.word.definition }}</div>
-              <div class="picker-meta muted">×{{ item.wrong_events }}{% if item.last_wrong_at %} · {{ item.last_wrong_at.strftime("%m-%d %H:%M") }}{% endif %}</div>
-            </div>
-          {% endfor %}
-        </div>
+          <button class="btn" type="submit">应用高级设置</button>
+        </form>
+
+        <details id="manualPicker" class="mt-10">
+          <summary class="muted">手动挑词（可选）</summary>
+          <div class="picker-list" role="listbox" aria-multiselectable="true">
+            {% for item in items %}
+              <div class="picker-row" role="option" tabindex="0" aria-selected="false" data-word-id="{{ item.word.id }}">
+                <div class="picker-term mono">{{ item.word.term }}</div>
+                <div class="picker-def">{{ item.word.definition }}</div>
+                <div class="picker-meta muted">×{{ item.wrong_events }}{% if item.last_wrong_at %} · {{ item.last_wrong_at.strftime("%m-%d %H:%M") }}{% endif %}</div>
+              </div>
+            {% endfor %}
+          </div>
+        </details>
       </details>
-    </form>
+    </div>
 
     <div id="loadingOverlay" class="overlay hidden" aria-live="polite" aria-busy="true">
       <div class="ai-river" aria-hidden="true">
@@ -80,12 +77,12 @@
       </div>
 
       <div class="card overlay-card overlay-foreground">
-        <div class="row" style="margin: 0;">
+        <div class="row m-0">
           <div class="spinner" aria-hidden="true"></div>
           <div>
-            <div class="big" style="font-size: 26px;">生成中...</div>
+            <div class="big overlay-title">生成中...</div>
             <div id="loadingNote" class="muted">请稍候</div>
-            <div id="loadingActions" class="actions" style="display:none;margin-top:12px;">
+            <div id="loadingActions" class="actions hidden mt-12">
               <button class="btn" type="button" id="loadingCloseBtn">关闭</button>
               <button class="btn primary" type="button" id="loadingRetryBtn">重试</button>
             </div>
@@ -104,8 +101,7 @@
         const closeBtn = document.getElementById("loadingCloseBtn");
         const retryBtn = document.getElementById("loadingRetryBtn");
         const btn = document.getElementById("generateBtn");
-        const levelSelect = document.getElementById("levelSelect");
-        const targetCount = document.getElementById("targetCount");
+        const generateTargetCount = document.getElementById("generateTargetCount");
         if (!form || !overlay) return;
 
         let streamStartedDelta = false;
@@ -142,17 +138,6 @@
                 toggleRow(row);
               }
             });
-          });
-        }
-
-        const defaults = { junior: 8, senior: 9, cet4: 10, cet6: 10, kaoyan: 12 };
-        let kTouched = false;
-        if (targetCount) targetCount.addEventListener("input", () => { kTouched = true; });
-        if (levelSelect && targetCount) {
-          levelSelect.addEventListener("change", () => {
-            if (kTouched) return;
-            const v = (levelSelect.value || "").toLowerCase();
-            targetCount.value = String(defaults[v] || 10);
           });
         }
 
@@ -371,7 +356,7 @@
           const reader = resp.body.getReader();
           const decoder = new TextDecoder();
           let buf = "";
-          riverEnqueueSystem("已连接服务器，等待 AI 开始输出…\n");
+          riverEnqueueSystem("已连接服务器，等待 AI 开始输出...\n");
 
           while (true) {
             const { value, done } = await reader.read();
@@ -400,7 +385,7 @@
                     riverStartedDelta = true;
                     streamStartedDelta = true;
                     dlog("first delta received");
-                    if (note) note.textContent = "AI 生成中…";
+                    if (note) note.textContent = "AI 生成中...";
                   }
                   riverAppend(msg.c);
                 } else if (msg.t === "note" && typeof msg.msg === "string") {
@@ -413,7 +398,7 @@
                   // Stop the fake typing loop before leaving this page.
                   riverFlushSystem();
                   riverStopTyping();
-                  if (note) note.textContent = "打开题目…";
+                  if (note) note.textContent = "打开题目...";
                   // Use a single hard navigation to avoid any chance of double-refresh.
                   try { streamAbortController?.abort(); } catch {}
                   window.location.replace(url);
@@ -429,11 +414,11 @@
 
         function setOverlayError(errText) {
           if (note) note.textContent = errText;
-          if (actions) actions.style.display = "flex";
+          if (actions) actions.classList.remove("hidden");
         }
 
         function clearOverlayError() {
-          if (actions) actions.style.display = "none";
+          if (actions) actions.classList.add("hidden");
         }
 
         function startGenerate() {
@@ -445,10 +430,10 @@
 
           if (note) {
             if (ids.length) {
-              note.textContent = `选词：${ids.length}个`;
+              note.textContent = `选词：${ids.length} 个`;
             } else {
-              const k = (document.getElementById("targetCount")?.value || "").trim();
-              note.textContent = k ? `自动选词：${k}个` : "自动选词";
+              const k = (generateTargetCount?.value || "").trim();
+              note.textContent = k ? `自动选词：${k} 个` : "自动选词";
             }
           }
 
@@ -457,7 +442,7 @@
           if (btn) btn.disabled = true;
           if (riverEl) riverEl.textContent = "";
 
-          // UX: show "已选词汇" first, then (if still waiting) switch to "正在请求AI……"
+          // UX: 先显示本地选词状态，随后由流式状态覆盖。
           // (Intentionally no timer here: keep the local hint until we receive the first streamed delta.)
 
           const supportsStreaming = !!(window.fetch && window.ReadableStream && window.TextDecoder);
@@ -523,3 +508,4 @@
     </script>
   {% endif %}
 {% endblock %}
+

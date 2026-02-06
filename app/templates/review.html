@@ -8,7 +8,7 @@
 
   {% if new_paused %}
     <div class="card">
-      <div class="row" style="margin: 0;">
+      <div class="row m-0">
         <span class="badge warn">积压</span>
         <span class="muted">到期复习较多，今天已自动暂停新词，先把复习做完。</span>
       </div>
@@ -29,7 +29,7 @@
       {% if deck_id %}
         <form class="row" method="post" action="/plan/add">
           <input type="hidden" name="deck_id" value="{{ deck_id }}" />
-          <input type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" style="max-width: 120px;" />
+          <input class="review-count-input" type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" />
           <input type="hidden" name="return_to" value="review" />
           <button class="btn primary" type="submit">加入并开始</button>
           <a class="btn" href="/decks/{{ deck_id }}">词书详情</a>
@@ -65,9 +65,9 @@
       <div class="review-card" id="reviewCard" data-revealed="0">
         <div class="review-term big mono">{{ word.term }}</div>
 
-        <div id="answer" class="review-answer" style="width: 100%;">
+        <div id="answer" class="review-answer w-full">
           {% if chapter %}
-            <div class="muted" style="margin-bottom: 8px;">章节：<span class="mono">{{ chapter }}</span></div>
+            <div class="muted answer-chapter">章节：<span class="mono">{{ chapter }}</span></div>
           {% endif %}
           {% if word_phonetic %}
             <div class="review-phonetic">{{ word_phonetic }}</div>
@@ -76,9 +76,9 @@
             <div class="review-def">{{ word_definition_text }}</div>
           {% endif %}
           {% if word.example %}
-            <div class="example" style="font-size: 15px; margin-bottom: 16px;">{{ word.example }}</div>
+            <div class="example answer-example">{{ word.example }}</div>
           {% endif %}
-          <div class="muted" style="margin-bottom: 16px;">
+          <div class="muted answer-meta">
             <span class="mono">{{ state_map.get(card.state, card.state) }}</span> | 正确/错误：{{ word.correct_count }}/{{ word.wrong_count }}
           </div>
         </div>
@@ -188,12 +188,12 @@
         const renderAnswer = (c) => {
           if (!answer) return;
           const parts = [];
-          if (c.chapter) parts.push(`<div class="muted" style="margin-bottom: 8px;">章节：<span class="mono">${escapeHtml(c.chapter)}</span></div>`);
+          if (c.chapter) parts.push(`<div class="muted answer-chapter">章节：<span class="mono">${escapeHtml(c.chapter)}</span></div>`);
           if (c.phonetic) parts.push(`<div class="review-phonetic">${escapeHtml(c.phonetic)}</div>`);
           if (c.definition_text) parts.push(`<div class="review-def">${escapeHtml(c.definition_text)}</div>`);
-          if (c.example) parts.push(`<div class="example" style="font-size: 15px; margin-bottom: 16px;">${escapeHtml(c.example)}</div>`);
+          if (c.example) parts.push(`<div class="example answer-example">${escapeHtml(c.example)}</div>`);
           parts.push(
-            `<div class="muted" style="margin-bottom: 16px;">` +
+            `<div class="muted answer-meta">` +
               `<span class="mono">${escapeHtml(stateLabel(c.state))}</span> | 正确/错误：${escapeHtml(String(c.correct_count))}/${escapeHtml(String(c.wrong_count))}` +
             `</div>`
           );
@@ -260,8 +260,8 @@
           const qs = deckId ? `?deck_id=${encodeURIComponent(deckId)}` : '';
           card.innerHTML =
             '<div class="big">已学完</div>' +
-            '<div class="muted" style="margin-top: 8px;">今天到期的卡片已经完成。若刚刚点了“不认识”，它可能会稍后再次出现。</div>' +
-            '<div class="actions" style="margin-top: 12px;">' +
+            '<div class="muted mt-8">今天到期的卡片已经完成。若刚刚点了“不认识”，它可能会稍后再次出现。</div>' +
+            '<div class="actions mt-12">' +
               '<a class="btn primary" href="/">返回主页</a>' +
               '<a class="btn" href="/review' + qs + '">刷新看看</a>' +
               '<a class="btn" href="/mistakes">错词篮</a>' +

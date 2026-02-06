@@ -109,8 +109,7 @@
     if (!el) return;
     el.innerHTML = '';
     const d = document.createElement('div');
-    d.className = 'muted';
-    d.style.padding = '10px 2px';
+    d.className = 'muted analytics-chart-fallback';
     d.textContent = text;
     el.appendChild(d);
   }
@@ -265,7 +264,7 @@
       top.className = 'analytics-error-top';
       const msg = document.createElement('div');
       msg.className = 'analytics-error-msg';
-      msg.textContent = `⚠ ${String(e?.msg ?? '')}`.trim();
+      msg.textContent = String(e?.msg ?? '');
       const when = document.createElement('div');
       when.className = 'muted analytics-error-when';
       when.textContent = String(e?.when ?? '');
@@ -664,9 +663,10 @@
             const items = Array.isArray(data?.pages) ? data.pages : [];
             const names = items.map((i) => i.path);
             const vals = items.map((i) => i.count);
+            const pageChartLeft = window.innerWidth <= 640 ? 86 : (window.innerWidth <= 1024 ? 104 : 120);
             ch.setOption(
               applyChartStyle({
-                grid: { left: 120, right: 18, top: 18, bottom: 18 },
+                grid: { left: pageChartLeft, right: 18, top: 18, bottom: 18 },
                 tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
                 xAxis: { type: 'value', axisLabel: { color: '#8e8e93' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
                 yAxis: {

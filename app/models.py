@@ -186,6 +186,27 @@ class ParentSettings(Base):
     frequency_deck: Mapped[Deck | None] = relationship(foreign_keys=[frequency_deck_id])
 
 
+class MistakePracticeSettings(Base):
+    __tablename__ = "mistake_practice_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_norm: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+
+    # "auto" | "junior" | "senior" | "cet4" | "cet6" | "kaoyan"
+    default_level: Mapped[str] = mapped_column(String(16), default="auto")
+    # "standard" | "long"
+    default_length_mode: Mapped[str] = mapped_column(String(16), default="standard")
+    # 0 | 1
+    default_include_once: Mapped[int] = mapped_column(Integer, default=0)
+    # 0 | 1
+    use_fixed_target_count: Mapped[int] = mapped_column(Integer, default=0)
+    # NULL when use_fixed_target_count=0
+    default_target_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class Worksheet(Base):
     __tablename__ = "worksheets"
 

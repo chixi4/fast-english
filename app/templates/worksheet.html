@@ -1,37 +1,37 @@
 {% extends "base.html" %}
 {% block content %}
   <div class="no-print">
-    <div class="actions" style="margin-top: 6px;">
-      <a class="btn" href="/worksheets">← 返回作业</a>
-      <button class="btn primary" type="button" onclick="window.print()">打印</button>
+    <div class="actions mt-6">
+      <a class="btn subtle" href="/worksheets">← 返回作业</a>
+      <button class="btn primary btn-emphasis" type="button" onclick="window.print()">打印</button>
       {% if view != 'grading' %}
         {% if layout == 'standard' %}
-          <a class="btn" href="/worksheets/{{ worksheet_id }}?view=grading&amp;layout=standard">批改模式</a>
+          <a class="btn subtle" href="/worksheets/{{ worksheet_id }}?view=grading&amp;layout=standard">批改模式</a>
         {% else %}
-          <a class="btn" href="/worksheets/{{ worksheet_id }}?view=grading">批改模式</a>
+          <a class="btn subtle" href="/worksheets/{{ worksheet_id }}?view=grading">批改模式</a>
         {% endif %}
       {% else %}
         {% if layout == 'standard' %}
-          <a class="btn" href="/worksheets/{{ worksheet_id }}?layout=standard">作业视图</a>
+          <a class="btn subtle" href="/worksheets/{{ worksheet_id }}?layout=standard">作业视图</a>
         {% else %}
-          <a class="btn" href="/worksheets/{{ worksheet_id }}">作业视图</a>
+          <a class="btn subtle" href="/worksheets/{{ worksheet_id }}">作业视图</a>
         {% endif %}
       {% endif %}
       {% if layout != 'standard' %}
         {% if view == 'grading' %}
-          <a class="btn" href="/worksheets/{{ worksheet_id }}?view=grading&amp;layout=standard">标准分页</a>
+          <a class="btn subtle" href="/worksheets/{{ worksheet_id }}?view=grading&amp;layout=standard">标准分页</a>
         {% else %}
-          <a class="btn" href="/worksheets/{{ worksheet_id }}?layout=standard">标准分页</a>
+          <a class="btn subtle" href="/worksheets/{{ worksheet_id }}?layout=standard">标准分页</a>
         {% endif %}
       {% else %}
         {% if view == 'grading' %}
-          <a class="btn" href="/worksheets/{{ worksheet_id }}?view=grading">省纸版</a>
+          <a class="btn subtle" href="/worksheets/{{ worksheet_id }}?view=grading">省纸版</a>
         {% else %}
-          <a class="btn" href="/worksheets/{{ worksheet_id }}">省纸版</a>
+          <a class="btn subtle" href="/worksheets/{{ worksheet_id }}">省纸版</a>
         {% endif %}
       {% endif %}
     </div>
-    <div class="muted" style="margin-top: 8px;">打印建议：关闭“页眉页脚”（否则会出现网址/页码/日期）。</div>
+    <div class="muted mt-8">打印建议：关闭“页眉页脚”（否则会出现网址/页码/日期）。</div>
   </div>
 
   {% if toast %}
@@ -39,7 +39,7 @@
   {% endif %}
 
   <div class="worksheet-sheet{% if layout == 'standard' %} layout-standard{% endif %}{% if view == 'grading' %} grading-view{% endif %}">
-    <h1 class="worksheet-title" style="margin-top: 8px;">{{ title }}</h1>
+    <h1 class="worksheet-title mt-8">{{ title }}</h1>
     <div class="worksheet-fields">
       <div class="worksheet-field">姓名：<span class="worksheet-line"></span></div>
       <div class="worksheet-field">日期：<span class="worksheet-line">{{ created_at.strftime("%Y-%m-%d") if created_at else "" }}</span></div>
@@ -54,9 +54,9 @@
     </div>
 
     {% if warnings and warnings|length > 0 %}
-      <div class="card no-print" style="margin-top: 12px;">
+      <div class="card no-print mt-12">
         <div class="card-k">提示</div>
-        <div class="muted" style="margin-top: 6px;">
+        <div class="muted mt-6">
           {% for w in warnings %}
             <div>· {{ w }}</div>
           {% endfor %}
@@ -65,16 +65,16 @@
     {% endif %}
 
     <div class="worksheet-questions">
-      <div class="no-print" style="margin-top: 12px;">
+      <div class="no-print mt-12">
         <h2>本次词汇（仅家长预览，不打印）</h2>
         {% if missing_def_count and missing_def_count > 0 %}
-          <div class="muted" style="margin-top: 6px;">缺少中文释义：<span class="mono">{{ missing_def_count }}</span> 个（已自动降级题型）。</div>
+          <div class="muted mt-6">缺少中文释义：<span class="mono">{{ missing_def_count }}</span> 个（已自动降级题型）。</div>
         {% endif %}
         <table class="worksheet-table">
           <thead>
             <tr>
-              <th style="width: 44px;">#</th>
-              <th style="width: 28%;">单词</th>
+              <th class="table-col-44">#</th>
+              <th class="table-col-28">单词</th>
               <th>释义（简）</th>
             </tr>
           </thead>
@@ -99,9 +99,9 @@
         <table class="worksheet-table">
           <thead>
             <tr>
-              <th style="width: 44px;">#</th>
+              <th class="table-col-44">#</th>
               <th>中文提示</th>
-              <th style="width: 48%;">英文</th>
+              <th class="table-col-48">英文</th>
             </tr>
           </thead>
           <tbody>
@@ -163,7 +163,7 @@
                 <div>D. {{ q.choices[3] }}</div>
               </div>
               {% if q.target_term %}
-                <div class="muted no-print" style="margin-top: 6px;">关联词：<span class="mono">{{ q.target_term }}</span></div>
+                <div class="muted no-print mt-6">关联词：<span class="mono">{{ q.target_term }}</span></div>
               {% endif %}
             </div>
           {% endfor %}
@@ -173,7 +173,7 @@
 
     <div class="worksheet-break no-print"></div>
 
-    <div class="card no-print" style="margin-top: 16px;">
+    <div class="card no-print mt-16">
       <div class="card-k">答案（仅网页显示）</div>
       <div class="muted">批改时对照纸质作业，错的在下面勾上提交。</div>
       <div class="worksheet-answers">
@@ -185,21 +185,21 @@
           </div>
         {% endif %}
         {% if "mcq" in question_types %}
-          <div{% if "spelling" in question_types %} style="margin-top: 8px;"{% endif %}><strong>选择题：</strong>
+          <div{% if "spelling" in question_types %} class="mt-8"{% endif %}><strong>选择题：</strong>
             {% for a in mcq_answers %}
               {{ loop.index }}={{ a }}{% if not loop.last %} · {% endif %}
             {% endfor %}
           </div>
         {% endif %}
         {% if "cloze" in question_types %}
-          <div style="margin-top: 8px;"><strong>填空：</strong>
+          <div class="mt-8"><strong>填空：</strong>
             {% for a in cloze_answers %}
               {{ loop.index }}={{ a }}{% if not loop.last %} · {% endif %}
             {% endfor %}
           </div>
         {% endif %}
         {% if "reading" in question_types %}
-          <div style="margin-top: 8px;"><strong>阅读：</strong>
+          <div class="mt-8"><strong>阅读：</strong>
             {% for a in reading_answers %}
               {{ loop.index }}={{ a }}{% if not loop.last %} · {% endif %}
             {% endfor %}
@@ -208,10 +208,10 @@
       </div>
     </div>
 
-    <div class="card no-print" style="margin-top: 12px;">
+    <div class="card no-print mt-12">
       <div class="card-k">勾错词并提交</div>
       {% if already_graded %}
-        <div class="muted" style="margin-top: 6px;">此作业已提交过一次。如需重新统计，建议生成新作业。</div>
+        <div class="muted mt-6">此作业已提交过一次。如需重新统计，建议生成新作业。</div>
       {% else %}
         {% if view == 'grading' and layout == 'standard' %}
           {% set grade_action = "/worksheets/" ~ worksheet_id ~ "/grade?view=grading&layout=standard" %}
@@ -222,9 +222,9 @@
         {% else %}
           {% set grade_action = "/worksheets/" ~ worksheet_id ~ "/grade" %}
         {% endif %}
-        <form class="stack" method="post" action="{{ grade_action }}" style="margin-top: 10px;">
+        <form class="stack mt-10" method="post" action="{{ grade_action }}">
           <div class="muted">勾选“这次不会 / 拼错”的单词：</div>
-          <div class="check-grid" style="margin-top: 8px;">
+          <div class="check-grid mt-8">
             {% for w in words %}
               <label class="check">
                 <input type="checkbox" name="wrong_word_ids" value="{{ w.word_id }}" />
