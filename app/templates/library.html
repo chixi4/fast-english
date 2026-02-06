@@ -2,7 +2,7 @@
 {% block content %}
   <h1 class="title-accent">词书库</h1>
 
-  <div class="card" style="margin-top: 12px;">
+  <div class="card mt-12">
     <div class="card-k">怎么选</div>
     <div class="muted">
       如果你是家长：优先导入「小学核心/小升初」一类的“高频精选”，再在“家长模式设置”里选好课本词表/目标词库。
@@ -21,10 +21,10 @@
           <div class="library-row">
             <div class="deck-title">
               <strong>{{ s.name }}</strong>
-              <div class="muted" style="margin-top: 6px;">{{ s.description }}</div>
-              <div class="muted" style="margin-top: 6px; font-size: 12px;">许可：{{ s.license }}</div>
+              <div class="muted mt-6">{{ s.description }}</div>
+              <div class="muted mt-6 fs-12">许可：{{ s.license }}</div>
             </div>
-            <form method="post" action="/library/import" style="margin:0;">
+            <form class="m-0" method="post" action="/library/import">
               <input type="hidden" name="source_id" value="{{ s.id }}" />
               <input type="hidden" name="deck_name" value="{{ s.default_deck }}" />
               <input type="hidden" name="default_tags" value="{{ s.default_tags }}" />

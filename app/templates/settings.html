@@ -3,11 +3,11 @@
   <h1>我的</h1>
   {% set is_parent_mode = request.state.ui_mode == 'parent' %}
 
-  <div class="card" style="margin-top: 12px;">
+  <div class="card mt-12">
     <div class="card-k">当前账号</div>
     <div class="card-v">@{{ request.state.user_username }}</div>
-    <div class="actions" style="margin-top: 12px;">
-      <form method="post" action="/auth/logout" style="margin:0;">
+    <div class="actions mt-12">
+      <form class="m-0" method="post" action="/auth/logout">
         <button class="btn" type="submit">退出登录</button>
       </form>
     </div>
@@ -20,9 +20,9 @@
   <div class="cards">
     <div class="card">
       <div class="card-k">学习看板</div>
-      <div class="card-v">{% if is_parent_mode %}学习进度{% else %}学习进度{% endif %}</div>
+      <div class="card-v">学习进度</div>
       <div class="muted">查看已掌握 / 高频错词 / 近两周复习。</div>
-      <div class="actions" style="margin-top: 12px;">
+      <div class="actions mt-12">
         <a class="btn primary" href="/dashboard">打开看板</a>
       </div>
     </div>
@@ -39,16 +39,27 @@
     {% endif %}
 
     <div class="card">
-      <div class="card-k">谁在用</div>
-      <div class="card-v">{% if is_parent_mode %}家长帮孩子学{% else %}自己学{% endif %}</div>
-      <div class="muted">切换后主页与导航会自动调整。</div>
-      <form class="stack" method="post" action="/settings/mode" style="margin-top: 10px;" hx-boost="false">
-        <div class="radio-row">
-          <label class="radio"><input type="radio" name="mode" value="parent" {% if is_parent_mode %}checked{% endif %}/>家长帮孩子学（打印作业）</label>
-          <label class="radio"><input type="radio" name="mode" value="self" {% if not is_parent_mode %}checked{% endif %}/>自己学（屏幕复习）</label>
-        </div>
+      <div class="card-k">使用模式</div>
+      <div class="card-v">{% if is_parent_mode %}家长模式{% else %}自学模式{% endif %}</div>
+      <div class="muted">切换后首页与导航会自动调整。</div>
+      <form class="mode-switch-form" method="post" action="/settings/mode" hx-boost="false">
         <input type="hidden" name="return_to" value="/settings" />
-        <button class="btn primary" type="submit">保存</button>
+        <div class="mode-switch-group" role="radiogroup" aria-label="使用模式">
+          <label class="mode-switch-item">
+            <input type="radio" name="mode" value="self" {% if not is_parent_mode %}checked{% endif %} onchange="this.form.submit()" />
+            <span class="mode-switch-chip">
+              <span class="mode-switch-title">自学模式</span>
+              <span class="mode-switch-sub">自己复习</span>
+            </span>
+          </label>
+          <label class="mode-switch-item">
+            <input type="radio" name="mode" value="parent" {% if is_parent_mode %}checked{% endif %} onchange="this.form.submit()" />
+            <span class="mode-switch-chip">
+              <span class="mode-switch-title">家长模式</span>
+              <span class="mode-switch-sub">打印作业</span>
+            </span>
+          </label>
+        </div>
       </form>
     </div>
 
@@ -56,7 +67,7 @@
       <div class="card">
         <div class="card-k">学习计划</div>
         <div class="card-v">{{ plan_daily_new_limit }}/天</div>
-        <form class="stack" method="post" action="/settings/plan" style="margin-top: 10px;">
+        <form class="stack mt-10" method="post" action="/settings/plan">
           <label>每日新词上限
             <input type="number" name="daily_new_limit" min="1" max="200" value="{{ plan_daily_new_limit }}" />
           </label>
@@ -70,26 +81,85 @@
           <button class="btn primary" type="submit">保存</button>
         </form>
       </div>
+
+      <div class="card">
+        <div class="card-k">错词篮默认设置</div>
+        <div class="card-v">一键生成偏好</div>
+        <div class="muted">这里是默认值；错词篮页面的高级设置只对当前页生效，不会写回默认值。</div>
+        <form class="stack mt-10" method="post" action="/settings/mistakes">
+          <label>默认难度
+            <select name="default_level">
+              <option value="auto" {% if mistake_default_level == "auto" %}selected{% endif %}>自动（按错词词书推断）</option>
+              <option value="junior" {% if mistake_default_level == "junior" %}selected{% endif %}>初中</option>
+              <option value="senior" {% if mistake_default_level == "senior" %}selected{% endif %}>高中</option>
+              <option value="cet4" {% if mistake_default_level == "cet4" %}selected{% endif %}>CET4</option>
+              <option value="cet6" {% if mistake_default_level == "cet6" %}selected{% endif %}>CET6</option>
+              <option value="kaoyan" {% if mistake_default_level == "kaoyan" %}selected{% endif %}>考研</option>
+            </select>
+          </label>
+          <label>默认篇幅
+            <select name="default_length_mode">
+              <option value="standard" {% if mistake_default_length_mode != "long" %}selected{% endif %}>标准</option>
+              <option value="long" {% if mistake_default_length_mode == "long" %}selected{% endif %}>更长</option>
+            </select>
+          </label>
+          <label>纳入范围
+            <select name="default_include_once">
+              <option value="0" {% if not mistake_default_include_once %}selected{% endif %}>仅错 2 次及以上（推荐）</option>
+              <option value="1" {% if mistake_default_include_once %}selected{% endif %}>包含错 1 次</option>
+            </select>
+          </label>
+          <label>词数策略
+            <select name="use_fixed_target_count" id="mistakeUseFixedTargetCount">
+              <option value="0" {% if not mistake_use_fixed_target_count %}selected{% endif %}>按难度自动词数（推荐）</option>
+              <option value="1" {% if mistake_use_fixed_target_count %}selected{% endif %}>固定词数</option>
+            </select>
+          </label>
+          <label>默认词数
+            <input
+              type="number"
+              name="default_target_count"
+              id="mistakeDefaultTargetCount"
+              min="6"
+              max="14"
+              value="{{ mistake_default_target_count }}"
+              {% if not mistake_use_fixed_target_count %}disabled{% endif %}
+            />
+          </label>
+          <button class="btn primary btn-emphasis" type="submit">保存默认值</button>
+        </form>
+      </div>
     {% endif %}
 
     <div class="card">
-      <div class="card-k">家长模式</div>
-      <div class="card-v">打印作业给孩子做</div>
-      <form class="stack" method="post" action="/settings/parent" style="margin-top: 10px;">
-        <div class="muted">流程：粘贴 → 识别生词 → 生成作业 → 打印 → 勾错词</div>
-        <label>孩子阶段
-          <div class="radio-row" style="margin-top: 6px;">
-            <label class="radio"><input type="radio" name="stage" value="primary" {% if parent_stage == 'primary' %}checked{% endif %}/>小学</label>
-            <label class="radio"><input type="radio" name="stage" value="junior" {% if parent_stage != 'primary' %}checked{% endif %}/>初中</label>
-          </div>
-        </label>
+      <div class="card-k">家长模式设置</div>
+      <div class="card-v">生成并打印作业</div>
+      <form class="stack mt-10" method="post" action="/settings/parent">
+        <div class="muted">流程：粘贴文本 → 识词 → 生成作业 → 打印 → 勾错词</div>
+        <div class="muted mt-8">孩子阶段</div>
+        <div class="mode-switch-group stage-switch-group" role="radiogroup" aria-label="孩子阶段">
+          <label class="mode-switch-item">
+            <input type="radio" name="stage" value="primary" {% if parent_stage == 'primary' %}checked{% endif %} />
+            <span class="mode-switch-chip">
+              <span class="mode-switch-title">小学</span>
+              <span class="mode-switch-sub">基础词汇</span>
+            </span>
+          </label>
+          <label class="mode-switch-item">
+            <input type="radio" name="stage" value="junior" {% if parent_stage != 'primary' %}checked{% endif %} />
+            <span class="mode-switch-chip">
+              <span class="mode-switch-title">初中</span>
+              <span class="mode-switch-sub">中考词汇</span>
+            </span>
+          </label>
+        </div>
         <label>从文本提取时：每日推荐词量
           <input type="number" name="daily_words" min="1" max="60" value="{{ parent_daily_words }}" />
         </label>
 
-        <details class="deck-picker" style="margin-top: 8px;">
+        <details class="deck-picker mt-8">
           <summary class="deck-picker-summary">课本/目标词库（可选，建议一次设置好）</summary>
-          <div class="card" style="margin-top: 10px;">
+          <div class="card mt-10">
             <label>课本词表（可选，用于标注“课本内/外”）
               <select name="textbook_deck_id">
                 <option value="0" {% if not parent_textbook_deck_id %}selected{% endif %}>不设置</option>
@@ -99,7 +169,7 @@
               </select>
             </label>
 
-            <label style="margin-top: 10px;">词频词表（可选，用于标注“高频”）
+            <label class="mt-10">词频词表（可选，用于标注“高频”）
               <select name="frequency_deck_id">
                 <option value="0" {% if not parent_frequency_deck_id %}selected{% endif %}>不设置</option>
                 {% for d in parent_frequency_deck_candidates %}
@@ -108,10 +178,10 @@
               </select>
             </label>
 
-            <div style="margin-top: 12px;">
+            <div class="mt-12">
               <div class="muted">目标词库（可选）：用于标注“目标内 / 常考”</div>
               {% if parent_target_deck_candidates and parent_target_deck_candidates|length > 0 %}
-                <div class="check-grid" style="margin-top: 8px;">
+                <div class="check-grid mt-8">
                   {% for d in parent_target_deck_candidates %}
                     <label class="check">
                       <input type="checkbox" name="target_deck_ids" value="{{ d.id }}" {% if d.id in parent_target_deck_ids %}checked{% endif %} />
@@ -120,27 +190,46 @@
                   {% endfor %}
                 </div>
               {% else %}
-                <div class="muted" style="margin-top: 8px;">暂无可选目标词库：先去“词书”或“词书库”导入（如 中考词汇 / 高频 10k）。</div>
+                <div class="muted mt-8">暂无可选目标词库：先去“词书”或“词书库”导入（如 中考词汇 / 高频 10k）。</div>
               {% endif %}
             </div>
           </div>
         </details>
 
-        <button class="btn primary" type="submit">保存家长模式设置</button>
+        <button class="btn primary btn-emphasis" type="submit">保存设置</button>
       </form>
     </div>
 
     {% if not is_parent_mode %}
       <div class="card">
         <div class="card-k">高级</div>
-        <div class="card-v">Tools</div>
+        <div class="card-v">工具</div>
         <div class="actions">
-          <a class="btn" href="/words">单词库</a>
-          <a class="btn" href="/simulations">实战短文</a>
+          <a class="btn subtle" href="/words">单词库</a>
+          <a class="btn subtle" href="/simulations">实战短文</a>
         </div>
       </div>
     {% endif %}
   </div>
+
+  <script>
+    (() => {
+      const useFixed = document.getElementById("mistakeUseFixedTargetCount");
+      const target = document.getElementById("mistakeDefaultTargetCount");
+      if (!useFixed || !target) return;
+
+      const sync = () => {
+        const on = String(useFixed.value || "0") === "1";
+        target.disabled = !on;
+        if (!on) return;
+        const n = Number(target.value || "10");
+        if (!Number.isFinite(n)) target.value = "10";
+      };
+
+      useFixed.addEventListener("change", sync);
+      sync();
+    })();
+  </script>
 
   <div class="fullbleed divider-tail"></div>
 {% endblock %}

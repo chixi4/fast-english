@@ -4,7 +4,7 @@
     <div class="analytics-top">
       <div class="analytics-top-left">
         <div class="analytics-title">
-          <div class="analytics-title-main">📊 数据中心</div>
+          <div class="analytics-title-main">数据中心</div>
           <div class="muted analytics-title-sub">
             最近 {{ days }} 天（自 {{ cutoff.strftime("%Y-%m-%d") }}）· {% if is_admin %}全站{% else %}个人{% endif %}
           </div>
@@ -42,31 +42,31 @@
     <div class="analytics-metrics">
       {% set ov = dashboard.overview %}
       <div class="analytics-metric" data-metric="active_users">
-        <div class="analytics-metric-k">{{ ov.active_users.icon }} {{ ov.active_users.label }}</div>
+        <div class="analytics-metric-k">{{ ov.active_users.label }}</div>
         <div class="analytics-metric-v" data-value>{{ ov.active_users.value }}</div>
         <div class="analytics-metric-delta trend-{{ ov.active_users.trend }}" data-delta>{{ ov.active_users.delta }}</div>
       </div>
 
       <div class="analytics-metric" data-metric="total_events">
-        <div class="analytics-metric-k">{{ ov.total_events.icon }} {{ ov.total_events.label }}</div>
+        <div class="analytics-metric-k">{{ ov.total_events.label }}</div>
         <div class="analytics-metric-v" data-value data-format="int">{{ "{:,}".format(ov.total_events.value) }}</div>
         <div class="analytics-metric-delta trend-{{ ov.total_events.trend }}" data-delta>{{ ov.total_events.delta }}</div>
       </div>
 
       <div class="analytics-metric" data-metric="review_count">
-        <div class="analytics-metric-k">{{ ov.review_count.icon }} {{ ov.review_count.label }}</div>
+        <div class="analytics-metric-k">{{ ov.review_count.label }}</div>
         <div class="analytics-metric-v" data-value data-format="int">{{ "{:,}".format(ov.review_count.value) }}</div>
         <div class="analytics-metric-delta trend-{{ ov.review_count.trend }}" data-delta>{{ ov.review_count.delta }}</div>
       </div>
 
       <div class="analytics-metric" data-metric="error_rate">
-        <div class="analytics-metric-k">{{ ov.error_rate.icon }} {{ ov.error_rate.label }}</div>
+        <div class="analytics-metric-k">{{ ov.error_rate.label }}</div>
         <div class="analytics-metric-v" data-value data-format="pct">{{ (ov.error_rate.value * 100) | round(1) }}%</div>
         <div class="analytics-metric-delta trend-{{ ov.error_rate.trend }}" data-delta>{{ ov.error_rate.delta }}</div>
       </div>
 
       <div class="analytics-metric" data-metric="avg_response">
-        <div class="analytics-metric-k">{{ ov.avg_response.icon }} {{ ov.avg_response.label }}</div>
+        <div class="analytics-metric-k">{{ ov.avg_response.label }}</div>
         <div class="analytics-metric-v" data-value data-format="ms">{{ ov.avg_response.value }}ms</div>
         <div class="analytics-metric-delta trend-{{ ov.avg_response.trend }}" data-delta>{{ ov.avg_response.delta }}</div>
       </div>
@@ -74,18 +74,18 @@
 
     <div class="analytics-grid two">
       <section class="analytics-panel">
-        <header class="analytics-panel-h">📈 活跃趋势</header>
+        <header class="analytics-panel-h">活跃趋势</header>
         <div class="analytics-chart" data-chart="trend"></div>
       </section>
       <section class="analytics-panel">
-        <header class="analytics-panel-h">🕐 24小时分布</header>
+        <header class="analytics-panel-h">24小时分布</header>
         <div class="analytics-chart" data-chart="hours"></div>
       </section>
     </div>
 
     <div class="analytics-grid two">
       <section class="analytics-panel">
-        <header class="analytics-panel-h">🔴 实时活动流</header>
+        <header class="analytics-panel-h">实时活动流</header>
         <div class="analytics-list" data-analytics-activity data-analytics-scroll="activity">
           {% for a in dashboard.activity %}
             <div class="analytics-activity-item">
@@ -103,7 +103,7 @@
       </section>
 
       <section class="analytics-panel">
-        <header class="analytics-panel-h">👤 用户排行</header>
+        <header class="analytics-panel-h">用户排行</header>
         <div class="analytics-list" data-analytics-ranking data-analytics-scroll="ranking">
           {% for u in dashboard.ranking %}
             <div class="analytics-rank-item">
@@ -136,7 +136,7 @@
     </div>
 
     <section class="analytics-panel">
-      <header class="analytics-panel-h">📚 学习数据</header>
+      <header class="analytics-panel-h">学习数据</header>
       <div class="analytics-grid three analytics-learning-grid">
         <div class="analytics-panel analytics-panel-inset">
           <header class="analytics-panel-h small">评分分布</header>
@@ -164,7 +164,7 @@
     </section>
 
     <section class="analytics-panel">
-      <header class="analytics-panel-h">🗺️ 用户旅程（功能漏斗）</header>
+      <header class="analytics-panel-h">用户旅程（功能漏斗）</header>
       {% if is_admin %}
         <div class="analytics-funnel-head">
           <div class="muted analytics-funnel-note">
@@ -202,7 +202,7 @@
 
     <div class="analytics-grid two">
       <section class="analytics-panel">
-        <header class="analytics-panel-h">📅 留存分析</header>
+        <header class="analytics-panel-h">留存分析</header>
         {% if is_admin %}
           <div class="analytics-retention">
             <table class="table analytics-table" data-analytics-retention-table>
@@ -250,14 +250,14 @@
       </section>
 
       <section class="analytics-panel">
-        <header class="analytics-panel-h">📊 页面热度</header>
+        <header class="analytics-panel-h">页面热度</header>
         <div class="analytics-chart small" data-chart="pages"></div>
       </section>
     </div>
 
     <div class="analytics-grid two">
       <section class="analytics-panel">
-        <header class="analytics-panel-h">⚡ 性能监控</header>
+        <header class="analytics-panel-h">性能监控</header>
         <div class="analytics-chart" data-chart="perf"></div>
         <div class="muted analytics-perf-kpi" data-analytics-perf-kpi>
           P50: {{ dashboard.performance.p50_ms }}ms · P95: {{ dashboard.performance.p95_ms }}ms · P99: {{ dashboard.performance.p99_ms }}ms
@@ -276,12 +276,12 @@
       </section>
 
       <section class="analytics-panel">
-        <header class="analytics-panel-h">🐛 错误追踪</header>
+        <header class="analytics-panel-h">错误追踪</header>
         <div class="analytics-list" data-analytics-errors data-analytics-scroll="errors">
           {% for e in dashboard.errors %}
             <div class="analytics-error-item">
               <div class="analytics-error-top">
-                <div class="analytics-error-msg">⚠ {{ e.msg }}</div>
+                <div class="analytics-error-msg">{{ e.msg }}</div>
                 <div class="muted analytics-error-when">{{ e.when }}</div>
               </div>
               {% if e.where %}
@@ -297,7 +297,7 @@
     </div>
 
     <section class="analytics-panel">
-      <header class="analytics-panel-h">🔍 设备 & 环境</header>
+      <header class="analytics-panel-h">设备与环境</header>
       <div class="analytics-grid four">
         <div class="analytics-panel analytics-panel-inset">
           <header class="analytics-panel-h small">屏幕尺寸</header>

@@ -17,7 +17,7 @@
       <div class="review-card" id="reviewCard" data-revealed="0">
         <div class="review-term big mono">{{ word.term }}</div>
 
-        <div id="answer" class="review-answer" style="width: 100%;">
+        <div id="answer" class="review-answer w-full">
           {% if word_phonetic %}
             <div class="review-phonetic">{{ word_phonetic }}</div>
           {% endif %}
@@ -27,9 +27,9 @@
             <div class="review-def">{{ word.definition }}</div>
           {% endif %}
           {% if word.example %}
-            <div class="example" style="font-size: 15px; margin-bottom: 16px;">{{ word.example }}</div>
+            <div class="example answer-example">{{ word.example }}</div>
           {% endif %}
-          <div class="muted" style="margin-bottom: 16px;">
+          <div class="muted answer-meta">
             <span>还剩：<span class="mono">{{ remaining }}</span> / <span class="mono">{{ total }}</span></span>
           </div>
         </div>
@@ -132,7 +132,7 @@
             if (w.phonetic) parts.push(`<div class="review-phonetic">${escapeHtml(normalizeNewlines(w.phonetic))}</div>`);
             const def = (w.definition_text || w.definition || '');
             if (def) parts.push(`<div class="review-def">${escapeHtml(normalizeNewlines(def))}</div>`);
-            if (w.example) parts.push(`<div class="example" style="font-size: 15px; margin-bottom: 16px;">${escapeHtml(normalizeNewlines(w.example))}</div>`);
+            if (w.example) parts.push(`<div class="example answer-example">${escapeHtml(normalizeNewlines(w.example))}</div>`);
             answer.innerHTML = parts.join('');
           }
           if (rateForm) rateForm.action = `/simulations/${simId}/retest/${w.word_id}`;

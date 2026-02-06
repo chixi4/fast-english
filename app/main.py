@@ -43,6 +43,7 @@ from app.models import (
     Deck,
     DeckWord,
     Mistake,
+    MistakePracticeSettings,
     ParentSettings,
     Plan,
     PlanDeck,
@@ -340,6 +341,12 @@ def _clear_session_cookie(resp: Response) -> None:
 def _norm_username(username: str) -> tuple[str, str]:
     raw = (username or "").strip()
     return raw, raw.lower()
+
+
+def _request_owner_norm(request: Request) -> str:
+    username = getattr(request.state, "user_username", None)
+    norm = (username or "").strip().lower()
+    return norm or "__default__"
 
 
 def _safe_next(next_url: str | None) -> str:
@@ -699,6 +706,24 @@ def _ensure_parent_settings(session) -> ParentSettings:
         textbook_deck_id=textbook_id,
         target_deck_ids_json=json.dumps(target_ids, ensure_ascii=False),
         frequency_deck_id=freq_id,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _ensure_mistake_practice_settings(session, owner_norm: str) -> MistakePracticeSettings:
+    owner = (owner_norm or "").strip().lower() or "__default__"
+    row = session.query(MistakePracticeSettings).filter(MistakePracticeSettings.owner_norm == owner).first()
+    if row:
+        return row
+    row = MistakePracticeSettings(
+        owner_norm=owner,
+        default_level="auto",
+        default_length_mode="standard",
+        default_include_once=0,
+        use_fixed_target_count=0,
+        default_target_count=None,
     )
     session.add(row)
     session.flush()
@@ -2425,9 +2450,11 @@ def worksheet_grade(
 def settings_page(request: Request, toast: str | None = None):
     s = get_settings()
     ai_status = "Mock（离线演示）" if s.ai_mock else ("已配置" if s.ai_api_key else "未配置")
+    owner_norm = _request_owner_norm(request)
     with get_session() as session:
         plan = _ensure_default_plan(session)
         parent = _ensure_parent_settings(session)
+        mistakes_pref = _ensure_mistake_practice_settings(session, owner_norm)
         decks = session.query(Deck).order_by(Deck.name.asc()).all()
         word_count = int(session.query(Word).count())
         deck_count = int(session.query(Deck).count())
@@ -2467,6 +2494,15 @@ def settings_page(request: Request, toast: str | None = None):
             "decks": decks,
             "parent_target_deck_candidates": target_candidates,
             "parent_frequency_deck_candidates": freq_candidates,
+            "mistake_default_level": (mistakes_pref.default_level or "auto"),
+            "mistake_default_length_mode": (mistakes_pref.default_length_mode or "standard"),
+            "mistake_default_include_once": 1 if int(mistakes_pref.default_include_once or 0) == 1 else 0,
+            "mistake_use_fixed_target_count": 1 if int(mistakes_pref.use_fixed_target_count or 0) == 1 else 0,
+            "mistake_default_target_count": (
+                int(mistakes_pref.default_target_count)
+                if mistakes_pref.default_target_count is not None
+                else 10
+            ),
             "toast": (toast or "").strip(),
         },
     )
@@ -2586,6 +2622,45 @@ def update_plan_settings(
     if (return_to or "").strip().lower() in {"home", "today", "/"}:
         return _redirect("/?" + urlencode(msg))
     return _redirect("/settings?" + urlencode(msg))
+
+
+@app.post("/settings/mistakes")
+def update_mistake_settings(
+    request: Request,
+    default_level: str = Form("auto"),
+    default_length_mode: str = Form("standard"),
+    default_include_once: int = Form(0),
+    use_fixed_target_count: int = Form(0),
+    default_target_count: int | None = Form(None),
+):
+    level_raw = (default_level or "auto").strip().lower()
+    allowed_levels = {"auto", *set(LEVEL_GUIDE.keys())}
+    level_value = level_raw if level_raw in allowed_levels else "auto"
+
+    length_raw = (default_length_mode or "standard").strip().lower()
+    length_value = length_raw if length_raw in {"standard", "long"} else "standard"
+
+    include_once_value = 1 if int(default_include_once or 0) == 1 else 0
+    use_fixed_value = 1 if int(use_fixed_target_count or 0) == 1 else 0
+
+    target_value: int | None = None
+    if use_fixed_value == 1:
+        try:
+            n = int(default_target_count) if default_target_count is not None else 10
+        except Exception:
+            n = 10
+        target_value = max(6, min(14, n))
+
+    owner_norm = _request_owner_norm(request)
+    with get_session() as session:
+        row = _ensure_mistake_practice_settings(session, owner_norm)
+        row.default_level = level_value
+        row.default_length_mode = length_value
+        row.default_include_once = include_once_value
+        row.use_fixed_target_count = use_fixed_value
+        row.default_target_count = target_value if use_fixed_value == 1 else None
+
+    return _redirect("/settings?" + urlencode({"toast": "已保存错词篮默认设置"}))
 
 
 @app.post("/settings/parent")
@@ -4513,6 +4588,7 @@ def mistakes(
     length_mode: str = "standard",
     sort: str = "freq",
     include_once: int = 0,
+    use_fixed_target_count: int | None = None,
     error: str | None = None,
 ):
     def _default_k(lv: str) -> int:
@@ -4527,7 +4603,13 @@ def mistakes(
         mode = (mode or "standard").strip().lower()
         return mode if mode in {"standard", "long"} else "standard"
 
-    selected_length_mode = _norm_length_mode(length_mode)
+    query_keys = request.query_params.keys()
+    has_level = "level" in query_keys
+    has_target_count = "target_count" in query_keys
+    has_length_mode = "length_mode" in query_keys
+    has_include_once = "include_once" in query_keys
+    has_sort = "sort" in query_keys
+    has_use_fixed_target_count = "use_fixed_target_count" in query_keys
 
     with get_session() as session:
         def _guess_level_from_deck_name(name: str) -> str | None:
@@ -4547,17 +4629,43 @@ def mistakes(
                 return "kaoyan"
             return None
 
-        include_once = 1 if int(include_once or 0) == 1 else 0
-        min_events = 1 if include_once == 1 else 2
-        sort2 = (sort or "freq").strip().lower()
+        owner_norm = _request_owner_norm(request)
+        pref = _ensure_mistake_practice_settings(session, owner_norm)
+
+        pref_level = (pref.default_level or "auto").strip().lower()
+        if pref_level not in {"auto", *set(LEVEL_GUIDE.keys())}:
+            pref_level = "auto"
+        pref_length_mode = _norm_length_mode(pref.default_length_mode or "standard")
+        pref_include_once = 1 if int(pref.default_include_once or 0) == 1 else 0
+        pref_use_fixed_target_count = 1 if int(pref.use_fixed_target_count or 0) == 1 else 0
+
+        pref_target_count: int | None = None
+        if pref.default_target_count is not None:
+            try:
+                pref_target_count = max(6, min(14, int(pref.default_target_count)))
+            except Exception:
+                pref_target_count = None
+
+        if has_include_once:
+            include_once_effective = 1 if int(include_once or 0) == 1 else 0
+        else:
+            include_once_effective = pref_include_once
+
+        sort2 = (sort or "freq").strip().lower() if has_sort else "freq"
         sort2 = sort2 if sort2 in {"freq", "time"} else "freq"
+
+        if has_use_fixed_target_count:
+            use_fixed_target_count_effective = 1 if int(use_fixed_target_count or 0) == 1 else 0
+        else:
+            use_fixed_target_count_effective = pref_use_fixed_target_count
+
+        min_events = 1 if include_once_effective == 1 else 2
 
         items = _query_mistake_aggregates(session, min_events=min_events, sort=sort2, limit=240)
 
-        # For level default, use the most common deck among mistakes.
+        # For auto level mode, use the most common deck among mistakes.
         guessed_level: str | None = None
-        if level is None and items:
-            # Find the most common deck among current mistakes and map it to a level.
+        if items:
             deck_row = (
                 session.query(Deck.name, func.count(Mistake.id))
                 .join(DeckWord, DeckWord.deck_id == Deck.id)
@@ -4569,15 +4677,23 @@ def mistakes(
             if deck_row and deck_row[0]:
                 guessed_level = _guess_level_from_deck_name(str(deck_row[0]))
 
-    selected_level = _norm_level(level or guessed_level)
-    if target_count is None:
-        selected_target_count = _default_k(selected_level)
-    else:
+    level_control_value = (level or "").strip().lower() if has_level else pref_level
+    if level_control_value not in {"auto", *set(LEVEL_GUIDE.keys())}:
+        level_control_value = "auto"
+    selected_level = _norm_level(guessed_level if level_control_value == "auto" else level_control_value)
+
+    selected_length_mode = _norm_length_mode(length_mode if has_length_mode else pref_length_mode)
+
+    if has_target_count:
         try:
             selected_target_count = int(target_count)
         except Exception:
             selected_target_count = _default_k(selected_level)
         selected_target_count = max(6, min(14, selected_target_count))
+    elif use_fixed_target_count_effective == 1 and pref_target_count is not None:
+        selected_target_count = pref_target_count
+    else:
+        selected_target_count = _default_k(selected_level)
 
     return templates.TemplateResponse(
         request,
@@ -4589,8 +4705,10 @@ def mistakes(
             "selected_level": selected_level,
             "target_count": selected_target_count,
             "length_mode": selected_length_mode,
+            "level_control_value": level_control_value,
+            "use_fixed_target_count": use_fixed_target_count_effective,
             "sort": sort2,
-            "include_once": include_once,
+            "include_once": include_once_effective,
             "error": (error or "").strip(),
         },
     )
