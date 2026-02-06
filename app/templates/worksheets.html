@@ -9,7 +9,7 @@
   <div class="cards">
     <div class="card">
       <div class="card-k">使用步骤</div>
-      <div class="card-v">粘贴文本 → 识别生词 → 生成作业 → 打印给孩子做 → 勾错词</div>
+      <div class="card-v">生成作业 → 打印给孩子做 → 勾错词</div>
       <div class="muted">家长用网页生成并打印，孩子只做纸质作业。</div>
       <div class="actions mt-10">
         <a class="btn subtle" href="/settings">家长模式设置</a>
@@ -18,21 +18,11 @@
     </div>
 
     <div class="card">
-      <div class="card-k">从课文识别生词（推荐）</div>
-      <form class="stack mt-10" method="post" action="/worksheets/extract">
-        <label>粘贴课文/阅读材料
-          <textarea class="paste-area" name="source_text" rows="7" placeholder="例如：课文、绘本、阅读材料...">{{ source_text or '' }}</textarea>
-        </label>
-        <button class="btn primary" type="submit">识别生词</button>
-      </form>
+      <div class="card-k">打印今日作业</div>
+      <div class="muted">系统会按“到期复习 + 补新词”自动生成一张作业。</div>
       <div class="muted mt-10">
         阶段：{{ stage_label }} · 每日推荐词量：{{ daily_words }}
       </div>
-    </div>
-
-    <div class="card">
-      <div class="card-k">打印今日作业</div>
-      <div class="muted">不粘贴文本：系统按“到期复习 + 补新词”自动生成一张作业。</div>
       <form id="generateTodayForm" class="mt-10" method="post" action="/worksheets/generate_today" hx-boost="false">
         {% set qt_default = ["spelling", "mcq", "reading"] if stage == "primary" else ["spelling", "mcq", "cloze", "reading"] %}
         <div class="muted">题型（不确定就保持默认）：</div>
@@ -58,86 +48,6 @@
       </form>
     </div>
   </div>
-
-  {% if extract %}
-    <div class="fullbleed divider-bar"></div>
-    <h2 class="today-section-title">识别结果</h2>
-
-    <div class="card">
-      <div class="muted">
-        找到词条：<span class="mono">{{ extract.found_count }}</span>，
-        未收录：<span class="mono">{{ extract.missing_count }}</span>
-      </div>
-
-      {% if extract.error %}
-        <div class="muted mt-10">{{ extract.error }}</div>
-      {% endif %}
-
-      {% if extract["items"] and extract["items"]|length > 0 %}
-        <form class="stack mt-12" id="generateWorksheetForm" method="post" action="/worksheets/generate" hx-boost="false">
-          <input type="hidden" name="stage" value="{{ stage }}" />
-          <input type="hidden" name="mode" value="extract" />
-
-          <div class="check-grid mt-8">
-            {% for it in extract["items"] %}
-              <label class="check">
-                <input type="checkbox" name="word_ids" value="{{ it.word_id }}" {% if it.recommended %}checked{% endif %} />
-                <span>
-                  <span class="mono">{{ it.term }}</span>
-                  {% if it.textbook %}<span class="pill">课本内</span>{% endif %}
-                  {% if it.in_targets and it.in_targets|length > 0 %}
-                    <span class="pill ok">目标</span>
-                  {% endif %}
-                  {% if it.missing_def %}
-                    <span class="pill">缺释义</span>
-                  {% endif %}
-                  {% if it.freq_rank %}
-                    <span class="pill">高频#{{ it.freq_rank }}</span>
-                  {% endif %}
-                  <div class="muted" style="margin-top: 4px;">
-                    {{ it.definition_short if it.definition_short else "（未收录释义）" }}
-                    {% if it.in_targets and it.in_targets|length > 0 %}
-                      · {{ it.in_targets|join(' / ') }}
-                    {% endif %}
-                  </div>
-                </span>
-              </label>
-            {% endfor %}
-          </div>
-
-          <div class="actions mt-12">
-            <button class="btn primary btn-emphasis" id="generateWorksheetBtn" type="submit">生成作业（可打印）</button>
-            <a class="btn subtle" href="/worksheets">清空本次结果</a>
-          </div>
-          <div class="muted mt-10">已按推荐自动勾选，可手动增减。</div>
-
-          {% set qt_default2 = ["spelling", "mcq", "reading"] if stage == "primary" else ["spelling", "mcq", "cloze", "reading"] %}
-          <div class="fullbleed divider-bar" style="margin-top: 14px;"></div>
-          <div class="muted">题型（不确定就保持默认）：</div>
-          <div class="check-grid mt-8">
-            <label class="check">
-              <input type="checkbox" name="question_types" value="spelling" {% if "spelling" in qt_default2 %}checked{% endif %} />
-              <span>拼写（看中文写英文）</span>
-            </label>
-            <label class="check">
-              <input type="checkbox" name="question_types" value="mcq" {% if "mcq" in qt_default2 %}checked{% endif %} />
-              <span>选择（英译中）</span>
-            </label>
-            <label class="check">
-              <input type="checkbox" name="question_types" value="cloze" {% if "cloze" in qt_default2 %}checked{% endif %} />
-              <span>填空（词库填入）</span>
-            </label>
-            <label class="check">
-              <input type="checkbox" name="question_types" value="reading" {% if "reading" in qt_default2 %}checked{% endif %} />
-              <span>阅读（短文+选择）</span>
-            </label>
-          </div>
-        </form>
-      {% else %}
-        <div class="muted mt-10">没有可用词条（先导入词书，如“中考词汇/高频 10k”）。</div>
-      {% endif %}
-    </div>
-  {% endif %}
 
   <div id="worksheetLoadingOverlay" class="overlay hidden" aria-live="polite" aria-busy="true">
     <div class="ai-river" aria-hidden="true">
@@ -229,7 +139,6 @@
       };
 
       bind("generateTodayForm", "generateTodayBtn", "正在生成今日作业…");
-      bind("generateWorksheetForm", "generateWorksheetBtn", "正在生成作业…");
 
       // If the page is restored from bfcache, ensure the overlay is hidden and buttons are usable.
       window.addEventListener("pageshow", () => {
@@ -237,9 +146,7 @@
           if (overlay) overlay.classList.add("hidden");
           stopRiver();
           const b1 = document.getElementById("generateTodayBtn");
-          const b2 = document.getElementById("generateWorksheetBtn");
           if (b1) b1.disabled = false;
-          if (b2) b2.disabled = false;
         } catch {}
       });
     })();
@@ -252,7 +159,7 @@
       {% for w in worksheets %}
         <a class="card link-card" href="/worksheets/{{ w.id }}">
           <div class="card-k">{{ w.title or ("作业 #" ~ w.id) }}</div>
-          {% set mode_label = "文本" if w.mode == "extract" else ("今日" if w.mode == "today" else w.mode) %}
+          {% set mode_label = "今日" if w.mode == "today" else ("旧版" if w.mode == "extract" else w.mode) %}
           {% set stage_label2 = "小学" if w.stage == "primary" else "初中" %}
           <div class="muted">{{ w.created_at.strftime("%Y-%m-%d %H:%M") if w.created_at else "" }} · {{ mode_label }} · {{ stage_label2 }}</div>
         </a>

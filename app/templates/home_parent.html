@@ -9,7 +9,7 @@
   {% if word_count == 0 %}
     <div class="card">
       <div class="big">先导入词书</div>
-      <p class="muted">建议先导入“中考词汇/高频 10k”，或直接在“作业”粘贴文本提取生词。</p>
+      <p class="muted">建议先导入“中考词汇/高频 10k”，再直接生成并打印作业。</p>
       <div class="actions">
         <a class="btn primary" href="/library">去导入</a>
         <a class="btn subtle" href="/worksheets">去作业</a>
@@ -33,7 +33,7 @@
       <form id="parentGenerateTodayForm" class="m-0" method="post" action="/worksheets/generate_today" hx-boost="false">
         <button class="btn primary btn-emphasis" id="parentGenerateTodayBtn" type="submit">生成今日作业并打印</button>
       </form>
-      <a class="btn subtle" href="/worksheets">从文本生成</a>
+      <a class="btn subtle" href="/worksheets">查看作业记录</a>
     </div>
 
     {% if pending_ws %}
