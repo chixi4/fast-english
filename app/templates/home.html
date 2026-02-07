@@ -12,8 +12,7 @@
         <div class="big">开始一次学习</div>
         <div class="muted">系统正在准备阶段词汇，通常只需几秒。</div>
         <div class="actions">
-          <a class="btn primary" data-guide-anchor="self-first-review" hx-boost="false" href="/review?onboarding_retry=1">开始一次学习</a>
-          <a class="btn" hx-boost="false" href="/?onboarding_retry=1">重试准备</a>
+          <a class="btn primary" data-guide-anchor="self-first-review-home" data-onboarding-start="1" data-loading-label="正在进入学习..." href="/review">开始一次学习</a>
         </div>
       {% else %}
         <div class="big">开始背词</div>
@@ -29,8 +28,7 @@
         <div class="big">开始一次学习</div>
         <p class="muted">系统正在把阶段词汇加入学习计划，通常只需几秒。</p>
         <div class="actions">
-          <a class="btn primary" data-guide-anchor="self-first-review" hx-boost="false" href="/review?onboarding_retry=1">开始一次学习</a>
-          <a class="btn" hx-boost="false" href="/?onboarding_retry=1">重试准备</a>
+          <a class="btn primary" data-guide-anchor="self-first-review-home" data-onboarding-start="1" data-loading-label="正在进入学习..." href="/review">开始一次学习</a>
         </div>
       {% else %}
         <div class="big">开始学习</div>
@@ -67,65 +65,80 @@
       {% endif %}
     </div>
   {% else %}
-    <div class="only-desktop">
-      <form class="row" method="get" action="/">
-        <select class="native-select" name="deck_id" onchange="this.form.submit()">
-          <option value="0">全部词书</option>
-          {% for d in decks %}
-            <option value="{{ d.id }}" {% if deck_id == d.id %}selected{% endif %}>{{ d.name }}</option>
-          {% endfor %}
-        </select>
-        <div class="muted">预计用时：<span class="mono">{{ est_minutes }}</span> 分钟</div>
-      </form>
-    </div>
-
-    <div class="only-mobile">
-      <details class="deck-picker" id="deckPicker">
-        <summary class="deck-picker-summary">{{ selected_deck_label }}</summary>
-        <div class="deck-picker-menu" role="listbox" aria-label="选择词书">
-          <a class="deck-picker-item" href="/?deck_id=0">全部词书</a>
-          {% for d in decks %}
-            <a class="deck-picker-item" href="/?deck_id={{ d.id }}">{{ d.name }}</a>
-          {% endfor %}
-        </div>
-      </details>
-      <div class="muted mt-10">预计用时：<span class="mono">{{ est_minutes }}</span> 分钟</div>
-    </div>
-
-    <div class="fullbleed divider-bar"></div>
-
-    <h2 class="today-section-title">今天待学</h2>
-    {% if new_paused %}
-      <div class="card m-0 keep-gutter">
-        <div class="row m-0">
-          <span class="badge warn">积压</span>
-          <span class="muted">到期复习较多，今天已自动暂停新词，先把复习做完。</span>
+    {% if onboarding_home_compact %}
+      <div class="card onboarding-home-task-card">
+        <div class="card-k">新手引导</div>
+        <div class="big">开始一次学习</div>
+        <div class="muted">先完成一轮评分，系统再带你进入错词练习。</div>
+        <div class="actions mt-12">
+          {% if deck_id %}
+            <a class="btn primary" data-guide-anchor="self-first-review-home" data-onboarding-start="1" data-loading-label="正在进入学习..." href="/review?deck_id={{ deck_id }}">开始一次学习</a>
+          {% else %}
+            <a class="btn primary" data-guide-anchor="self-first-review-home" data-onboarding-start="1" data-loading-label="正在进入学习..." href="/review">开始一次学习</a>
+          {% endif %}
         </div>
       </div>
-    {% elif postponed_new and postponed_new > 0 %}
-      <div class="card m-0 keep-gutter">
-        <div class="row m-0">
-          <span class="badge">已顺延</span>
-          <span class="muted">超过上限的新词已顺延到明天：{{ postponed_new }} 个。</span>
+    {% else %}
+      <div class="only-desktop">
+        <form class="row" method="get" action="/">
+          <select class="native-select" name="deck_id" onchange="this.form.submit()">
+            <option value="0">全部词书</option>
+            {% for d in decks %}
+              <option value="{{ d.id }}" {% if deck_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="muted">预计用时：<span class="mono">{{ est_minutes }}</span> 分钟</div>
+        </form>
+      </div>
+
+      <div class="only-mobile">
+        <details class="deck-picker" id="deckPicker">
+          <summary class="deck-picker-summary">{{ selected_deck_label }}</summary>
+          <div class="deck-picker-menu" role="listbox" aria-label="选择词书">
+            <a class="deck-picker-item" href="/?deck_id=0">全部词书</a>
+            {% for d in decks %}
+              <a class="deck-picker-item" href="/?deck_id={{ d.id }}">{{ d.name }}</a>
+            {% endfor %}
+          </div>
+        </details>
+        <div class="muted mt-10">预计用时：<span class="mono">{{ est_minutes }}</span> 分钟</div>
+      </div>
+
+      <div class="fullbleed divider-bar"></div>
+
+      <h2 class="today-section-title">今天待学</h2>
+      {% if new_paused %}
+        <div class="card m-0 keep-gutter">
+          <div class="row m-0">
+            <span class="badge warn">积压</span>
+            <span class="muted">到期复习较多，今天已自动暂停新词，先把复习做完。</span>
+          </div>
+        </div>
+      {% elif postponed_new and postponed_new > 0 %}
+        <div class="card m-0 keep-gutter">
+          <div class="row m-0">
+            <span class="badge">已顺延</span>
+            <span class="muted">超过上限的新词已顺延到明天：{{ postponed_new }} 个。</span>
+          </div>
+        </div>
+      {% endif %}
+      <div class="card today-summary-card m-0 keep-gutter">
+        <div class="card-v">{{ due_count }}</div>
+        <div class="muted">
+          今日：复习 <span class="mono">{{ due_review_today }}</span> + 新词 <span class="mono">{{ due_new_today }}</span>
+          · 到期总数 <span class="mono">{{ due_total }}</span>
+          · 计划内总卡片 <span class="mono">{{ total }}</span>
+        </div>
+        <div class="actions mt-12">
+          {% if deck_id %}
+            <a class="btn primary" data-guide-anchor="self-first-review-home" href="/review?deck_id={{ deck_id }}">开始学习</a>
+          {% else %}
+            <a class="btn primary" data-guide-anchor="self-first-review-home" href="/review">开始学习</a>
+          {% endif %}
         </div>
       </div>
+
+      <div class="fullbleed divider-tail"></div>
     {% endif %}
-    <div class="card today-summary-card m-0 keep-gutter">
-      <div class="card-v">{{ due_count }}</div>
-      <div class="muted">
-        今日：复习 <span class="mono">{{ due_review_today }}</span> + 新词 <span class="mono">{{ due_new_today }}</span>
-        · 到期总数 <span class="mono">{{ due_total }}</span>
-        · 计划内总卡片 <span class="mono">{{ total }}</span>
-      </div>
-      <div class="actions mt-12">
-        {% if deck_id %}
-          <a class="btn primary" data-guide-anchor="self-first-review" href="/review?deck_id={{ deck_id }}">开始学习</a>
-        {% else %}
-          <a class="btn primary" data-guide-anchor="self-first-review" href="/review">开始学习</a>
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="fullbleed divider-tail"></div>
   {% endif %}
 {% endblock %}

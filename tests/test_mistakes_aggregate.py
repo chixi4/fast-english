@@ -3,7 +3,15 @@ from __future__ import annotations
 from datetime import datetime
 
 from app.db import get_session
-from app.models import Mistake, MistakePracticeSettings, Word
+from app.models import Mistake, MistakePracticeSettings, SrsReviewLog, Word
+
+
+def _register(client, username: str, password: str = "pass1234"):
+    return client.post(
+        "/auth/register",
+        data={"username": username, "password": password, "password2": password, "next": "/"},
+        follow_redirects=False,
+    )
 
 
 def test_mistake_aggregate_sorting_and_threshold(main_module):
@@ -66,3 +74,30 @@ def test_mistakes_page_uses_saved_defaults_when_query_absent(client):
     assert 'name="level" value="cet4"' in html
     assert 'name="target_count" id="generateTargetCount" value="11"' in html
     assert 'name="length_mode" value="long"' in html
+
+
+def test_mistakes_empty_state_shows_onboarding_relax_once_action(client):
+    reg = _register(client, "mistake_onboarding_user")
+    assert reg.status_code == 303
+    choose_role = client.post("/api/onboarding/action", json={"action": "choose_role", "role": "self"})
+    assert choose_role.status_code == 200
+    choose_stage = client.post("/api/onboarding/action", json={"action": "choose_stage", "stage": "junior"})
+    assert choose_stage.status_code == 200
+
+    with get_session() as session:
+        w = Word(term="mistake_once_only", definition="定义", example="")
+        session.add(w)
+        session.flush()
+        session.add(Mistake(word_id=int(w.id)))
+        # 先完成学生第一步，确保当前引导步骤推进到 self_try_mistakes。
+        session.add(SrsReviewLog(word_id=int(w.id), rating=3, reviewed_at=datetime(2026, 2, 7, 0, 0, 0), duration_ms=900))
+
+    resp = client.get("/mistakes", follow_redirects=False)
+    assert resp.status_code in {302, 303, 307}
+    assert (resp.headers.get("location") or "").startswith("/mistakes?include_once=1&from_onboarding=1")
+
+    final = client.get("/mistakes?include_once=1&from_onboarding=1")
+    assert final.status_code == 200
+    html = final.text
+    assert "按当前错词开始练习（本次含错1次）" not in html
+    assert "高级设置（仅当前页）" not in html
