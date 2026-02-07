@@ -623,7 +623,11 @@ def auth_register_post(
 
     sess = new_session_for_user(uid, display)
     token = encode_session(sess)
-    resp = _redirect(next)
+    next_with_onboarding = next
+    if get_settings().onboarding_enabled:
+        sep = "&" if "?" in next_with_onboarding else "?"
+        next_with_onboarding = f"{next_with_onboarding}{sep}onboarding_entry=1"
+    resp = _redirect(next_with_onboarding)
     _set_session_cookie(resp, request, token)
     return resp
 
@@ -1051,10 +1055,44 @@ def home(
     now = _utcnow()
     settings = get_settings()
     onboarding_self_active, onboarding_self_stage = _self_onboarding_hint(request)
+    onboarding_home_compact = False
+    onboarding_redirect_target = ""
+    if bool(settings.onboarding_enabled):
+        username = getattr(request.state, "user_username", None)
+        user_id = getattr(request.state, "user_id", None)
+        if username and user_id is not None:
+            try:
+                payload = _build_onboarding_payload(request)
+                current = payload.get("current_step") if isinstance(payload, dict) else None
+                current_key = str(current.get("key") or "") if isinstance(current, dict) else ""
+                current_href = str(current.get("href") or "").strip() if isinstance(current, dict) else ""
+                onboarding_home_compact = bool(
+                    payload.get("show")
+                    and isinstance(current, dict)
+                    and current_key == "self_first_review"
+                )
+                if (
+                    bool(payload.get("enabled"))
+                    and bool(payload.get("show"))
+                    and _normalize_onboarding_flow(str(payload.get("flow") or "")) == _UI_MODE_SELF
+                ):
+                    if current_key in {"self_try_mistakes", "self_view_dashboard"} and current_href.startswith("/"):
+                        onboarding_redirect_target = current_href
+                    else:
+                        onboarding_redirect_target = "/review"
+            except Exception:
+                onboarding_home_compact = False
+                onboarding_redirect_target = ""
     if onboarding_self_active and onboarding_self_stage:
         sid = _recommended_source_id_for_stage(_UI_MODE_SELF, onboarding_self_stage)
-        wait_sec = 6.0 if int(onboarding_retry or 0) > 0 else 0.6
+        wait_sec = 1.2 if int(onboarding_retry or 0) > 0 else 0.25
         _prime_onboarding_source(sid, wait_sec=wait_sec, seed_count=20)
+    if onboarding_redirect_target:
+        target = onboarding_redirect_target
+        if target.startswith("/review") and int(onboarding_retry or 0) > 0 and "onboarding_retry=" not in target:
+            sep = "&" if "?" in target else "?"
+            target = f"{target}{sep}onboarding_retry=1"
+        return _redirect(target)
     with get_session() as session:
         plan = _ensure_default_plan(session)
         daily_new_limit = int(plan.daily_new_limit or 20)
@@ -1135,9 +1173,21 @@ def home(
         due_new_today = min(due_new_total, int(plan_state.get("effective_new_limit") or 0))
         due_today = due_review_today + due_new_today
         due_total = due_review_total + due_new_total
+        # Keep homepage focused on active progress; bootstrap/empty states are served on /review.
+        home_redirect_to_review = bool(word_count <= 0 or total <= 0)
 
         mistake_count = int(session.query(Mistake).count())
         sim_count = int(session.query(Simulation).count())
+
+    if home_redirect_to_review:
+        qs: dict[str, str] = {}
+        if deck_id is not None:
+            qs["deck_id"] = str(int(deck_id))
+        if (toast or "").strip():
+            qs["toast"] = (toast or "").strip()
+        if int(onboarding_retry or 0) > 0:
+            qs["onboarding_retry"] = "1"
+        return _redirect("/review" + (("?" + urlencode(qs)) if qs else ""))
 
     est_minutes = max(1, int(round(due_today * 0.25))) if total > 0 else 0
 
@@ -1172,6 +1222,7 @@ def home(
             "selected_deck_label": selected_deck_label,
             "onboarding_self_active": onboarding_self_active,
             "onboarding_self_stage": onboarding_self_stage,
+            "onboarding_home_compact": onboarding_home_compact,
         },
     )
 
@@ -2970,13 +3021,13 @@ _ONBOARDING_STEP_DEFS: dict[str, list[dict[str, str]]] = {
             "title": "开始一次学习",
             "desc": "系统已按阶段准备词汇，先完成一轮评分。",
             "href": "/review",
-            "target_selector": '[data-guide-anchor="self-first-review"]',
+            "target_selector": '[data-guide-anchor="self-first-review-home"]',
             "placement": "bottom",
         },
         {
             "key": "self_try_mistakes",
-            "title": "试一次错词练习",
-            "desc": "到错词篮生成一篇短文练习。",
+            "title": "进入错词篮练习",
+            "desc": "到错词篮直接生成一篇短文练习。",
             "href": "/mistakes",
             "target_selector": '[data-guide-anchor="self-try-mistakes"]',
             "placement": "bottom",
@@ -3083,6 +3134,47 @@ def _recommended_source_id_for_stage(flow: str, stage: str) -> str:
     if stage2 == "kaoyan":
         return "ecdict_ky"
     return "gen_xsc_2000"
+
+
+def _onboarding_next_href(flow: str) -> str:
+    flow2 = _normalize_onboarding_flow(flow)
+    return "/worksheets" if flow2 == _UI_MODE_PARENT else "/review"
+
+
+def _onboarding_prep_state(flow: str, selected_stage: str | None) -> tuple[str, int]:
+    flow2 = _normalize_onboarding_flow(flow)
+    if flow2 != _UI_MODE_SELF:
+        return "ready", 0
+
+    stage2 = _normalize_onboarding_self_stage(selected_stage)
+    source_id = _recommended_source_id_for_stage(flow2, stage2)
+    ready, _deck_name = _source_wordbook_ready(source_id)
+
+    has_cards = False
+    try:
+        source = get_source(source_id)
+        default_deck = (source.default_deck or "").strip()
+    except Exception:
+        default_deck = ""
+
+    if default_deck:
+        with get_session() as session:
+            deck = session.query(Deck.id).filter(Deck.name == default_deck).first()
+            if deck is not None:
+                deck_id = int(deck[0])
+                has_cards = (
+                    session.query(SrsCard.word_id)
+                    .join(DeckWord, DeckWord.word_id == SrsCard.word_id)
+                    .filter(DeckWord.deck_id == deck_id)
+                    .limit(1)
+                    .first()
+                    is not None
+                )
+    if ready and has_cards:
+        return "ready", 0
+    if ready and not has_cards:
+        return "warming", 1800
+    return "warming", 4500
 
 
 def _read_onboarding_role_choice(username_norm: str) -> str | None:
@@ -3349,7 +3441,13 @@ def _compute_onboarding_steps(
     with get_session() as session:
         has_review = session.query(SrsReviewLog.id).limit(1).first() is not None
         has_simulation = session.query(Simulation.id).limit(1).first() is not None
-        has_mistake = session.query(Mistake.id).limit(1).first() is not None
+        owner_norm = (username_norm or "").strip().lower() or "__default__"
+        pref = _ensure_mistake_practice_settings(session, owner_norm)
+        pref_include_once = 1 if int(pref.default_include_once or 0) == 1 else 0
+        mistake_stats = _mistake_visibility_stats(session, include_once=pref_include_once)
+        mistake_visible_count = int(mistake_stats.get("visible_count") or 0)
+        mistake_once_only_count = int(mistake_stats.get("once_only_count") or 0)
+        mistake_total_count = int(mistake_stats.get("total_count") or 0)
         has_today_sheet = session.query(Worksheet.id).filter(Worksheet.mode == "today").limit(1).first() is not None
 
         graded_once = False
@@ -3379,12 +3477,19 @@ def _compute_onboarding_steps(
         href = str(it.get("href") or "/")
         target_selector = str(it.get("target_selector") or "")
         placement = str(it.get("placement") or "bottom")
-        if key == "self_try_mistakes" and mode2 == _UI_MODE_SELF and not has_mistake:
-            title = "先积累错词"
-            desc = "先在学习页把不认识的词标记出来，再来生成错词练习。"
-            href = "/review"
-            target_selector = '[data-guide-anchor="self-first-review"]'
-            placement = "bottom"
+        if key == "self_try_mistakes" and mode2 == _UI_MODE_SELF and mistake_visible_count <= 0:
+            if mistake_total_count <= 0:
+                title = "先积累错词"
+                desc = "先在学习页把不认识的词标记出来，再来生成错词练习。"
+                href = "/review"
+                target_selector = '[data-guide-anchor="self-first-review-home"]'
+                placement = "bottom"
+            elif mistake_once_only_count > 0:
+                title = "进入错词篮练习"
+                desc = "当前错词多为错1次，先按当前错词练一次（本次含错1次）。"
+                href = "/mistakes?include_once=1&from_onboarding=1"
+                target_selector = '[data-guide-anchor="self-try-mistakes"]'
+                placement = "bottom"
         if key == "parent_generate_sheet" and mode2 == _UI_MODE_PARENT:
             desc = "点击“生成今日作业”即可。"
         out.append(
@@ -3426,6 +3531,9 @@ def _build_onboarding_payload(request: Request) -> dict[str, Any]:
             "role_selection_required": False,
             "stage_selection_required": False,
             "sprite": {"enabled": False, "pulse_ms": 0, "travel_ms": 0},
+            "next_href": "",
+            "prep_status": "ready",
+            "prep_eta_ms": 0,
             "show": False,
             "updated_at": _utcnow().isoformat(),
         }
@@ -3507,6 +3615,23 @@ def _build_onboarding_payload(request: Request) -> dict[str, Any]:
     else:
         current_step = _build_current_step(steps)
     next_step = current_step
+
+    next_href = ""
+    prep_status = "ready"
+    prep_eta_ms = 0
+    if (not role_selection_required) and has_role_choice:
+        next_href = _onboarding_next_href(flow)
+        if selected_stage:
+            prep_status, prep_eta_ms = _onboarding_prep_state(flow, selected_stage)
+
+    if (
+        current_step
+        and str(current_step.get("key") or "") == "self_first_review"
+        and prep_status == "warming"
+    ):
+        current_step = dict(current_step)
+        current_step["desc"] = "正在准备阶段词汇，通常几秒内完成，将自动进入学习。"
+        next_step = current_step
     show = status == _ONBOARDING_STATUS_ACTIVE
     if status == _ONBOARDING_STATUS_SNOOZED and snooze_until and snooze_until > now:
         show = False
@@ -3529,6 +3654,9 @@ def _build_onboarding_payload(request: Request) -> dict[str, Any]:
         "role_selection_required": role_selection_required,
         "stage_selection_required": stage_selection_required,
         "sprite": dict(_ONBOARDING_SPRITE),
+        "next_href": next_href,
+        "prep_status": prep_status,
+        "prep_eta_ms": int(max(0, prep_eta_ms)),
         "show": show,
         "snooze_until": snooze_until.isoformat() if snooze_until else "",
         "completed_at": completed_at.isoformat() if completed_at else "",
@@ -3653,6 +3781,12 @@ async def api_onboarding_action(request: Request):
             flow=selected_flow,
             stage=selected_stage,
         )
+        if selected_flow == _UI_MODE_SELF:
+            sid = _recommended_source_id_for_stage(selected_flow, selected_stage)
+            warm_wait = 2.2
+            if selected_stage in {"cet6", "kaoyan"}:
+                warm_wait = 3.0
+            _prime_onboarding_source(sid, wait_sec=warm_wait, seed_count=40)
         request.state.ui_mode = selected_flow
         resp = JSONResponse(content=_build_onboarding_payload(request))
         _set_ui_mode_cookie(resp, request, selected_flow)
@@ -5200,12 +5334,30 @@ def review(
     now = _utcnow()
     settings = get_settings()
     onboarding_self_active, onboarding_self_stage = _self_onboarding_hint(request)
+    review_mistakes_href = "/mistakes"
     if onboarding_self_active and onboarding_self_stage:
         sid = _recommended_source_id_for_stage(_UI_MODE_SELF, onboarding_self_stage)
-        wait_sec = 6.0 if int(onboarding_retry or 0) > 0 else 0.6
+        wait_sec = 0.9 if int(onboarding_retry or 0) > 0 else 0.25
         _prime_onboarding_source(sid, wait_sec=wait_sec, seed_count=20)
+    onboarding_prep_status = "ready"
+    onboarding_review_warming = False
+    if onboarding_self_active and onboarding_self_stage:
+        try:
+            onboarding_prep_status, _ = _onboarding_prep_state(_UI_MODE_SELF, onboarding_self_stage)
+        except Exception:
+            onboarding_prep_status = "ready"
     prefetch_limit = 120
     with get_session() as session:
+        if onboarding_self_active:
+            owner_norm = _request_owner_norm(request)
+            pref = _ensure_mistake_practice_settings(session, owner_norm)
+            pref_include_once = 1 if int(pref.default_include_once or 0) == 1 else 0
+            mistake_stats = _mistake_visibility_stats(session, include_once=pref_include_once)
+            if (
+                int(mistake_stats.get("visible_count") or 0) <= 0
+                and int(mistake_stats.get("once_only_count") or 0) > 0
+            ):
+                review_mistakes_href = "/mistakes?include_once=1&from_onboarding=1"
         decks = session.query(Deck).order_by(Deck.name.asc()).all()
         plan = _ensure_default_plan(session)
         plan_state = _apply_daily_new_limit(
@@ -5244,6 +5396,11 @@ def review(
         due_new_total = int(base_q.filter(SrsCard.due_at <= now, SrsCard.last_reviewed_at.is_(None)).count())
         due_review_today = due_review_total if review_limit <= 0 else min(due_review_total, review_limit)
         due_new_today = min(due_new_total, int(plan_state.get("effective_new_limit") or 0))
+        if onboarding_self_active and due_new_total > 0 and due_new_today <= 0:
+            plan_daily_new = int(plan.daily_new_limit or 20)
+            warmup_limit = plan_daily_new if plan_daily_new > 0 else 20
+            warmup_limit = max(8, min(40, int(warmup_limit)))
+            due_new_today = min(due_new_total, warmup_limit)
         due_today = due_review_today + due_new_today
 
         if deck_id is not None:
@@ -5289,6 +5446,58 @@ def review(
                 )
             prefetch_rows = list(review_rows) + list(new_rows)
 
+        if not prefetch_rows and onboarding_self_active and onboarding_self_stage:
+            fallback_source_id = _recommended_source_id_for_stage(_UI_MODE_SELF, onboarding_self_stage)
+            fallback_deck_name = ""
+            try:
+                fallback_deck_name = str(get_source(fallback_source_id).default_deck or "").strip()
+            except Exception:
+                fallback_deck_name = ""
+
+            fallback_deck_id: int | None = None
+            if fallback_deck_name:
+                drow = session.query(Deck.id).filter(Deck.name == fallback_deck_name).first()
+                if drow is not None:
+                    fallback_deck_id = int(drow[0])
+
+            effective_deck_id = int(deck_id) if deck_id is not None else fallback_deck_id
+            if effective_deck_id is not None:
+                fallback_q = (
+                    session.query(Word, SrsCard, DeckWord.chapter)
+                    .join(SrsCard, SrsCard.word_id == Word.id)
+                    .join(DeckWord, DeckWord.word_id == Word.id)
+                    .filter(DeckWord.deck_id == effective_deck_id)
+                )
+                fallback_rows = (
+                    fallback_q.filter(SrsCard.last_reviewed_at.is_(None))
+                    .order_by(SrsCard.due_at.asc(), SrsCard.created_at.asc(), Word.term.asc())
+                    .limit(prefetch_limit)
+                    .all()
+                )
+                if not fallback_rows:
+                    fallback_rows = (
+                        fallback_q.order_by(SrsCard.due_at.asc(), Word.term.asc())
+                        .limit(prefetch_limit)
+                        .all()
+                    )
+                prefetch_rows = list(fallback_rows)
+                if prefetch_rows:
+                    due_today = max(int(due_today or 0), min(len(prefetch_rows), prefetch_limit))
+                    if deck_id is None:
+                        deck_id = effective_deck_id
+                        base_q = (
+                            session.query(Word, SrsCard)
+                            .join(SrsCard, SrsCard.word_id == Word.id)
+                            .join(DeckWord, DeckWord.word_id == Word.id)
+                            .filter(DeckWord.deck_id == deck_id)
+                        )
+                        deck = session.get(Deck, deck_id)
+                        if deck is not None:
+                            deck_name = deck.name
+                        deck_word_count = int(
+                            session.query(func.count(DeckWord.word_id)).filter(DeckWord.deck_id == deck_id).scalar() or 0
+                        )
+
         due_pair = None
         if prefetch_rows:
             if deck_id is not None:
@@ -5305,6 +5514,8 @@ def review(
         ).first() or (0, 0)
         total = int(total or 0)
         due_count = int(min(int(due_count or 0), due_today))
+        if onboarding_self_active and prefetch_rows and due_count <= 0:
+            due_count = min(len(prefetch_rows), max(1, int(due_today or len(prefetch_rows))))
 
         next_pair = base_q.filter(SrsCard.due_at > now).order_by(SrsCard.due_at.asc()).first()
         next_due_at = next_pair[1].due_at if next_pair else None
@@ -5316,6 +5527,12 @@ def review(
         if word is not None and deck_id is not None:
             link = session.query(DeckWord).filter(DeckWord.deck_id == deck_id, DeckWord.word_id == word.id).first()
             chapter = link.chapter if link else ""
+        onboarding_review_warming = bool(
+            onboarding_self_active
+            and onboarding_self_stage
+            and word is None
+            and onboarding_prep_status == "warming"
+        )
 
     word_phonetic, word_definition_text = _word_display_parts(word)
 
@@ -5354,6 +5571,9 @@ def review(
             "prefetch_cards_json": json.dumps(prefetch_cards, ensure_ascii=False),
             "onboarding_self_active": onboarding_self_active,
             "onboarding_self_stage": onboarding_self_stage,
+            "onboarding_prep_status": onboarding_prep_status,
+            "onboarding_review_warming": onboarding_review_warming,
+            "review_mistakes_href": review_mistakes_href,
         },
     )
 
@@ -5480,7 +5700,7 @@ async def api_analytics_events(request: Request):
         ctx: dict[str, Any] = {}
     elif isinstance(payload, dict):
         events = payload.get("events") or []
-        ctx = {k: payload.get(k) for k in ("sid", "pid", "url", "page") if k in payload}
+        ctx = {k: payload.get(k) for k in ("sid", "pid", "url", "page", "diag") if k in payload}
     else:
         events = []
         ctx = {}
@@ -5494,11 +5714,17 @@ async def api_analytics_events(request: Request):
         if not isinstance(ev, dict):
             continue
         path = str(ev.get("path") or request.url.path or "/")
+        diag_flag = 0
+        try:
+            diag_flag = 1 if int(ctx.get("diag") or 0) == 1 else 0
+        except Exception:
+            diag_flag = 0
+        kind = "client_diag" if diag_flag == 1 else "client"
         meta = {"ctx": ctx, "ev": ev}
         _log_auth_event(
             user_id=user_id,
             username=username,
-            kind="client",
+            kind=kind,
             path=path,
             method="POST",
             status_code=200,
@@ -5508,6 +5734,74 @@ async def api_analytics_events(request: Request):
         stored += 1
 
     return {"ok": True, "stored": stored}
+
+
+@app.get("/api/diagnostics/nav", response_class=JSONResponse)
+def api_diagnostics_nav(request: Request, minutes: int = 60, limit: int = 1200):
+    username = getattr(request.state, "user_username", None)
+    user_id = getattr(request.state, "user_id", None)
+    if not username or user_id is None:
+        raise HTTPException(status_code=401, detail="not logged in")
+
+    minutes = max(5, min(int(minutes or 60), 24 * 60))
+    limit = max(50, min(int(limit or 1200), 4000))
+    since = _utcnow() - timedelta(minutes=minutes)
+
+    with get_auth_session() as session:
+        rows = (
+            session.query(AuthEvent)
+            .filter(
+                AuthEvent.user_id == int(user_id),
+                AuthEvent.kind.in_(["client_diag", "client"]),
+                AuthEvent.created_at >= since,
+            )
+            .order_by(AuthEvent.id.desc())
+            .limit(limit)
+            .all()
+        )
+
+    events: list[dict[str, Any]] = []
+    for row in reversed(rows):
+        meta = _safe_json_dict(row.meta_json)
+        ctx = meta.get("ctx") if isinstance(meta.get("ctx"), dict) else {}
+        ev = meta.get("ev") if isinstance(meta.get("ev"), dict) else {}
+        diag_flag = 1 if str(row.kind or "") == "client_diag" else 0
+        if not diag_flag:
+            try:
+                diag_flag = 1 if int((ctx or {}).get("diag") or 0) == 1 else 0
+            except Exception:
+                diag_flag = 0
+        if diag_flag != 1:
+            continue
+
+        events.append(
+            {
+                "id": int(row.id),
+                "ts": row.created_at.isoformat() if row.created_at else "",
+                "path": str(row.path or ""),
+                "kind": str(row.kind or ""),
+                "duration_ms": int(row.duration_ms or 0),
+                "ctx": ctx,
+                "event": ev,
+            }
+        )
+
+    sid = ""
+    pid = ""
+    if events:
+        tail_ctx = events[-1].get("ctx") or {}
+        sid = str(tail_ctx.get("sid") or "")
+        pid = str(tail_ctx.get("pid") or "")
+
+    return {
+        "ok": True,
+        "minutes": minutes,
+        "limit": limit,
+        "count": len(events),
+        "sid": sid,
+        "pid": pid,
+        "events": events,
+    }
 
 
 def _query_mistake_aggregates(
@@ -5553,6 +5847,33 @@ def _query_mistake_aggregates(
     return out
 
 
+def _mistake_visibility_stats(session, *, include_once: int) -> dict[str, int]:
+    include_once2 = 1 if int(include_once or 0) == 1 else 0
+    min_events = 1 if include_once2 == 1 else 2
+
+    agg = (
+        session.query(
+            Mistake.word_id.label("word_id"),
+            func.count(Mistake.id).label("wrong_events"),
+        )
+        .group_by(Mistake.word_id)
+        .subquery()
+    )
+
+    total_count = int(session.query(func.count(agg.c.word_id)).scalar() or 0)
+    once_only_count = int(
+        session.query(func.count(agg.c.word_id)).filter(agg.c.wrong_events == 1).scalar() or 0
+    )
+    visible_count = int(
+        session.query(func.count(agg.c.word_id)).filter(agg.c.wrong_events >= min_events).scalar() or 0
+    )
+    return {
+        "visible_count": visible_count,
+        "once_only_count": once_only_count,
+        "total_count": total_count,
+    }
+
+
 @app.get("/mistakes", response_class=HTMLResponse)
 def mistakes(
     request: Request,
@@ -5561,6 +5882,7 @@ def mistakes(
     length_mode: str = "standard",
     sort: str = "freq",
     include_once: int = 0,
+    from_onboarding: int = 0,
     use_fixed_target_count: int | None = None,
     error: str | None = None,
 ):
@@ -5635,6 +5957,9 @@ def mistakes(
         min_events = 1 if include_once_effective == 1 else 2
 
         items = _query_mistake_aggregates(session, min_events=min_events, sort=sort2, limit=240)
+        mistake_stats = _mistake_visibility_stats(session, include_once=include_once_effective)
+        mistake_visible_count = int(mistake_stats.get("visible_count") or 0)
+        mistake_once_only_count = int(mistake_stats.get("once_only_count") or 0)
 
         # For auto level mode, use the most common deck among mistakes.
         guessed_level: str | None = None
@@ -5668,6 +5993,29 @@ def mistakes(
     else:
         selected_target_count = _default_k(selected_level)
 
+    onboarding_self_active, _onboarding_self_stage = _self_onboarding_hint(request)
+    onboarding_mistakes_compact = False
+    if onboarding_self_active:
+        try:
+            payload = _build_onboarding_payload(request)
+            current = payload.get("current_step") if isinstance(payload, dict) else None
+            onboarding_mistakes_compact = bool(
+                payload.get("show")
+                and isinstance(current, dict)
+                and str(current.get("key") or "") == "self_try_mistakes"
+            )
+        except Exception:
+            onboarding_mistakes_compact = False
+    onboarding_relax_once_href = "/mistakes?include_once=1&from_onboarding=1"
+    from_onboarding2 = 1 if int(from_onboarding or 0) == 1 else 0
+    if (
+        onboarding_mistakes_compact
+        and include_once_effective != 1
+        and mistake_visible_count <= 0
+        and mistake_once_only_count > 0
+    ):
+        return _redirect(onboarding_relax_once_href)
+
     return templates.TemplateResponse(
         request,
         "mistakes.html",
@@ -5682,6 +6030,12 @@ def mistakes(
             "use_fixed_target_count": use_fixed_target_count_effective,
             "sort": sort2,
             "include_once": include_once_effective,
+            "onboarding_self_active": onboarding_self_active,
+            "mistake_once_only_count": mistake_once_only_count,
+            "mistake_visible_count": mistake_visible_count,
+            "onboarding_relax_once_href": onboarding_relax_once_href,
+            "onboarding_mistakes_compact": onboarding_mistakes_compact,
+            "from_onboarding": from_onboarding2,
             "error": (error or "").strip(),
         },
     )

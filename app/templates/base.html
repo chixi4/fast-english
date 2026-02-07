@@ -6,17 +6,28 @@
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#1c1c1e" />
     <title>{{ title or "迅捷单词" }}</title>
-    <link rel="stylesheet" href="/static/app.css?v={{ static_v() }}" />
     <script>
       // Used for CSS fallbacks (avoid first-paint native selects before we enhance them).
       document.documentElement.classList.add('js');
-      // If onboarding is active, hide content before first paint to avoid flashing full page.
+      // If onboarding is active, mark pending to smooth first-paint transitions.
       try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('onboarding_entry') === '1') {
+          window.sessionStorage.setItem('vs_onboarding_active', '1');
+          document.documentElement.classList.add('onboarding-entry-pending');
+          window.setTimeout(() => {
+            document.documentElement.classList.remove('onboarding-entry-pending');
+          }, 8000);
+          url.searchParams.delete('onboarding_entry');
+          const next = `${url.pathname}${url.search}${url.hash}` || '/';
+          window.history.replaceState(window.history.state, '', next);
+        }
         if (window.sessionStorage.getItem('vs_onboarding_active') === '1') {
           document.documentElement.classList.add('onboarding-pending');
         }
       } catch {}
     </script>
+    <link rel="stylesheet" href="/static/app.css?v={{ static_v() }}" />
     <script defer src="/static/htmx.min.js?v={{ static_v() }}"></script>
     <script defer src="/static/analytics_dashboard.js?v={{ static_v() }}"></script>
     <script defer src="/static/auth.js?v={{ static_v() }}"></script>
@@ -259,6 +270,38 @@
       (() => {
         const ENDPOINT = '/api/analytics/events';
         const SID_KEY = 'vs_sid';
+        const DIAG_KEY = 'vs_nav_diag';
+        const DIAG_STARTED_KEY = 'vs_nav_diag_started_at';
+        const DIAG_SEQ_KEY = 'vs_nav_diag_seq';
+
+        const applyDiagQuerySwitch = () => {
+          try {
+            const url = new URL(window.location.href);
+            const flag = String(url.searchParams.get('diag_nav') || '').trim();
+            if (flag !== '1' && flag !== '0') return;
+            if (flag === '1') {
+              localStorage.setItem(DIAG_KEY, '1');
+              sessionStorage.setItem(DIAG_STARTED_KEY, String(Date.now()));
+              sessionStorage.setItem(DIAG_SEQ_KEY, '0');
+            } else {
+              localStorage.removeItem(DIAG_KEY);
+              sessionStorage.removeItem(DIAG_STARTED_KEY);
+              sessionStorage.removeItem(DIAG_SEQ_KEY);
+            }
+            url.searchParams.delete('diag_nav');
+            const next = `${url.pathname}${url.search}${url.hash}`;
+            window.history.replaceState(window.history.state, '', next || '/');
+          } catch {}
+        };
+        applyDiagQuerySwitch();
+
+        const diagEnabled = (() => {
+          try {
+            return localStorage.getItem(DIAG_KEY) === '1';
+          } catch {
+            return false;
+          }
+        })();
 
         const safeText = (s, max = 80) => {
           const t = String(s || '').replace(/\s+/g, ' ').trim();
@@ -293,12 +336,43 @@
 
         const sid = getSid();
         const pid = randId();
+        const diagStartedAt = (() => {
+          const now = Date.now();
+          if (!diagEnabled) return now;
+          try {
+            const raw = Number(sessionStorage.getItem(DIAG_STARTED_KEY) || '0');
+            if (Number.isFinite(raw) && raw > 0) return raw;
+            sessionStorage.setItem(DIAG_STARTED_KEY, String(now));
+          } catch {}
+          return now;
+        })();
+        const nextDiagSeq = () => {
+          if (!diagEnabled) return 0;
+          try {
+            const cur = Number(sessionStorage.getItem(DIAG_SEQ_KEY) || '0');
+            const n = Number.isFinite(cur) ? (cur + 1) : 1;
+            sessionStorage.setItem(DIAG_SEQ_KEY, String(n));
+            return n;
+          } catch {
+            return 0;
+          }
+        };
+        const diagRelMs = () => {
+          if (!diagEnabled) return 0;
+          return Math.max(0, Date.now() - diagStartedAt);
+        };
 
         let q = [];
         let timer = null;
+        let lastRoute = `${window.location.pathname || '/'}${window.location.search || ''}`;
 
         const enqueue = (ev) => {
           try {
+            if (diagEnabled && ev && typeof ev === 'object') {
+              ev.diag_seq = nextDiagSeq();
+              ev.diag_rel_ms = diagRelMs();
+              ev.diag_route = `${window.location.pathname || '/'}${window.location.search || ''}`;
+            }
             q.push(ev);
             if (q.length >= 30) flush();
             else schedule();
@@ -322,6 +396,7 @@
             sid,
             pid,
             url: window.location.href,
+            diag: diagEnabled ? 1 : 0,
             events: batch,
           });
 
@@ -348,6 +423,24 @@
           if (document.visibilityState === 'hidden') flush();
         });
 
+        const trackRouteChange = (reason) => {
+          const cur = `${window.location.pathname || '/'}${window.location.search || ''}`;
+          if (cur === lastRoute) return;
+          enqueue({
+            t: 'route_change',
+            ts: Date.now(),
+            reason: safeText(reason, 24),
+            from: safeText(lastRoute, 240),
+            to: safeText(cur, 240),
+          });
+          lastRoute = cur;
+        };
+        window.addEventListener('popstate', () => trackRouteChange('popstate'));
+        window.addEventListener('hashchange', () => trackRouteChange('hashchange'));
+        document.addEventListener('htmx:pushedIntoHistory', () => trackRouteChange('htmx_push'));
+        document.addEventListener('htmx:replacedInHistory', () => trackRouteChange('htmx_replace'));
+        document.addEventListener('htmx:afterSwap', () => trackRouteChange('htmx_swap'));
+
         const elInfo = (el) => {
           if (!el || !(el instanceof Element)) return null;
           const tag = (el.tagName || '').toLowerCase();
@@ -373,6 +466,24 @@
             lang: navigator.language || '',
           },
         });
+        try {
+          const nav = performance.getEntriesByType('navigation')[0];
+          if (nav) {
+            enqueue({
+              t: 'nav_timing',
+              ts: Date.now(),
+              path: window.location.pathname || '/',
+              perf: {
+                type: safeText(nav.type || '', 24),
+                dns_ms: Math.round(Math.max(0, (nav.domainLookupEnd - nav.domainLookupStart) || 0)),
+                conn_ms: Math.round(Math.max(0, (nav.connectEnd - nav.connectStart) || 0)),
+                ttfb_ms: Math.round(Math.max(0, (nav.responseStart - nav.requestStart) || 0)),
+                dom_ready_ms: Math.round(Math.max(0, (nav.domContentLoadedEventEnd - nav.startTime) || 0)),
+                load_ms: Math.round(Math.max(0, (nav.loadEventEnd - nav.startTime) || 0)),
+              },
+            });
+          }
+        } catch {}
 
         // Clicks
         document.addEventListener('click', (e) => {

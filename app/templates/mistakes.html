@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
   <h1>错词篮</h1>
-  <p class="muted">按单词聚合生成短文与题目，在语境中巩固高频错词。</p>
+  {% if not onboarding_mistakes_compact %}
+    <p class="muted">按单词聚合生成短文与题目，在语境中巩固高频错词。</p>
+  {% endif %}
 
   {% if error %}
     <div class="card">
@@ -17,14 +19,21 @@
       <div class="big">还没有错词</div>
       <p class="muted">先去“今日学习”背词，标记为“不认识”后会自动收集。</p>
       <div class="actions">
-        <a class="btn primary" data-guide-anchor="self-first-review" href="/review">去学习</a>
+        {% if onboarding_self_active and mistake_once_only_count > 0 %}
+          <a class="btn primary" data-guide-anchor="self-try-mistakes" href="{{ onboarding_relax_once_href }}">按当前错词开始练习（本次含错1次）</a>
+        {% endif %}
+        <a class="btn" data-guide-anchor="self-first-review-home" href="/review">去学习</a>
       </div>
     </div>
   {% else %}
-    <div class="card mistakes-generate-card">
-      <div class="card-k">自动生成</div>
+    <div class="card mistakes-generate-card{% if onboarding_mistakes_compact %} onboarding-compact{% endif %}">
+      {% if not onboarding_mistakes_compact %}
+        <div class="card-k">自动生成</div>
+      {% endif %}
       <div class="mistakes-main-title">一键生成短文练习</div>
-      <p class="muted">默认自动选词并生成短文与题目；只有需要精细控制时再展开高级设置。</p>
+      {% if not onboarding_mistakes_compact %}
+        <p class="muted">默认自动选词并生成短文与题目；只有需要精细控制时再展开高级设置。</p>
+      {% endif %}
 
       <form class="stack mistakes-primary-form" id="generateForm" method="post" action="/simulations/generate" hx-boost="false">
         <input type="hidden" name="level" value="{{ selected_level }}" />
@@ -34,41 +43,43 @@
         <button class="btn primary" id="generateBtn" data-guide-anchor="self-try-mistakes" type="submit">生成短文练习</button>
       </form>
 
-      <details id="advancedConfig" class="mistakes-advanced mt-12">
-        <summary class="muted">高级设置（仅当前页）</summary>
-        <form class="stack mt-10" id="mistakesOptionsForm" method="get" action="/mistakes">
-          <label>难度
-            <select name="level" id="levelSelect">
-              <option value="auto" {% if level_control_value == "auto" %}selected{% endif %}>自动（按错词词书推断）</option>
-              {% for lv in levels %}
-                <option value="{{ lv }}" {% if level_control_value == lv %}selected{% endif %}>{{ level_labels.get(lv, lv) }}</option>
+      {% if not onboarding_mistakes_compact %}
+        <details id="advancedConfig" class="mistakes-advanced mt-12">
+          <summary class="muted">高级设置（仅当前页）</summary>
+          <form class="stack mt-10" id="mistakesOptionsForm" method="get" action="/mistakes">
+            <label>难度
+              <select name="level" id="levelSelect">
+                <option value="auto" {% if level_control_value == "auto" %}selected{% endif %}>自动（按错词词书推断）</option>
+                {% for lv in levels %}
+                  <option value="{{ lv }}" {% if level_control_value == lv %}selected{% endif %}>{{ level_labels.get(lv, lv) }}</option>
+                {% endfor %}
+              </select>
+            </label>
+
+            <label>篇幅
+              <select name="length_mode" id="lengthModeSelect">
+                <option value="standard" {% if length_mode == "standard" %}selected{% endif %}>标准</option>
+                <option value="long" {% if length_mode == "long" %}selected{% endif %}>更长</option>
+              </select>
+            </label>
+
+            <button class="btn" type="submit">应用高级设置</button>
+          </form>
+
+          <details id="manualPicker" class="mt-10">
+            <summary class="muted">手动挑词（可选）</summary>
+            <div class="picker-list" role="listbox" aria-multiselectable="true">
+              {% for item in items %}
+                <div class="picker-row" role="option" tabindex="0" aria-selected="false" data-word-id="{{ item.word.id }}">
+                  <div class="picker-term mono">{{ item.word.term }}</div>
+                  <div class="picker-def">{{ item.word.definition }}</div>
+                  <div class="picker-meta muted">×{{ item.wrong_events }}{% if item.last_wrong_at %} · {{ item.last_wrong_at.strftime("%m-%d %H:%M") }}{% endif %}</div>
+                </div>
               {% endfor %}
-            </select>
-          </label>
-
-          <label>篇幅
-            <select name="length_mode" id="lengthModeSelect">
-              <option value="standard" {% if length_mode == "standard" %}selected{% endif %}>标准</option>
-              <option value="long" {% if length_mode == "long" %}selected{% endif %}>更长</option>
-            </select>
-          </label>
-
-          <button class="btn" type="submit">应用高级设置</button>
-        </form>
-
-        <details id="manualPicker" class="mt-10">
-          <summary class="muted">手动挑词（可选）</summary>
-          <div class="picker-list" role="listbox" aria-multiselectable="true">
-            {% for item in items %}
-              <div class="picker-row" role="option" tabindex="0" aria-selected="false" data-word-id="{{ item.word.id }}">
-                <div class="picker-term mono">{{ item.word.term }}</div>
-                <div class="picker-def">{{ item.word.definition }}</div>
-                <div class="picker-meta muted">×{{ item.wrong_events }}{% if item.last_wrong_at %} · {{ item.last_wrong_at.strftime("%m-%d %H:%M") }}{% endif %}</div>
-              </div>
-            {% endfor %}
-          </div>
+            </div>
+          </details>
         </details>
-      </details>
+      {% endif %}
     </div>
 
     <div id="loadingOverlay" class="overlay hidden" aria-live="polite" aria-busy="true">

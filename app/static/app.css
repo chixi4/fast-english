@@ -16,6 +16,12 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+html.onboarding-entry-pending main#content {
+  visibility: hidden;
+}
+html.onboarding-entry-pending .topbar {
+  visibility: hidden;
+}
 html.onboarding-pending main#content {
   visibility: visible;
 }
@@ -365,6 +371,10 @@ h2 { margin: 18px 0 10px; font-size: 18px; color: var(--muted); }
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .btn:active { transform: translateY(1px); }
+.btn.is-loading {
+  opacity: 0.72;
+  pointer-events: none;
+}
 
 .actions { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
 .actions.actions-full { flex-direction: column; }
@@ -674,6 +684,9 @@ html.js select:not([data-native="1"]):not([data-vs-picker="1"]) {
 body.onboarding-screen-active #content .container > *:not(#onboardingGuideMount) {
   display: none !important;
 }
+body.onboarding-screen-active .topbar {
+  display: none !important;
+}
 body.onboarding-screen-active #onboardingGuideMount {
   margin-top: 0;
 }
@@ -734,6 +747,38 @@ body.onboarding-focus-active [data-onboarding-focus-current="1"].worksheet-gener
   top: calc(env(safe-area-inset-top, 0px) + 64px);
   right: 10px;
   z-index: 1201;
+}
+.onboarding-hud-pin {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  left: 10px;
+  z-index: 1201;
+  width: min(250px, calc(100vw - 62px));
+  pointer-events: none;
+}
+.onboarding-hud-pin .onboarding-hud-card {
+  margin: 0;
+  padding: 10px 10px 11px;
+  border-bottom: none;
+  background: rgba(28, 28, 30, 0.96);
+}
+.onboarding-hud-pin .actions,
+.onboarding-hud-pin .btn {
+  pointer-events: auto;
+}
+.onboarding-hud-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.onboarding-hud-desc {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+body.onboarding-hud-active #content .container {
+  padding-top: 76px;
 }
 .onboarding-stage-actions {
   display: grid;
@@ -842,6 +887,12 @@ body.onboarding-hide-parent-generate-btn [data-guide-anchor="parent-generate-she
   .onboarding-screen-card {
     margin: 0;
     min-height: calc(100vh - 150px);
+  }
+  .onboarding-hud-pin {
+    width: min(220px, calc(100vw - 62px));
+  }
+  body.onboarding-hud-active #content .container {
+    padding-top: 84px;
   }
   .onboarding-screen-step-card {
     min-height: 0;

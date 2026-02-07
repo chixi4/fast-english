@@ -76,6 +76,18 @@
       </div>
     {% endif %}
 
+    <div class="card" id="navDiagCard">
+      <div class="card-k">链路诊断</div>
+      <div class="card-v">点击与跳转追踪</div>
+      <div class="muted" id="navDiagStatus">当前：未开启</div>
+      <div class="muted mt-8">开启后会记录按钮点击、跳转链、网络耗时（仅技术字段，不含密码等敏感输入）。</div>
+      <div class="actions mt-10">
+        <a class="btn subtle" href="/settings?diag_nav=1">开启诊断</a>
+        <a class="btn subtle" href="/settings?diag_nav=0">关闭诊断</a>
+        <a class="btn subtle" href="/api/diagnostics/nav?minutes=60&limit=1600" target="_blank" rel="noreferrer">导出最近60分钟</a>
+      </div>
+    </div>
+
     {% if not is_parent_mode %}
       <div class="card">
         <div class="card-k">学习计划</div>
@@ -243,6 +255,15 @@
 
       useFixed.addEventListener("change", sync);
       sync();
+
+      const diagStatus = document.getElementById("navDiagStatus");
+      if (diagStatus) {
+        let on = false;
+        try {
+          on = window.localStorage.getItem("vs_nav_diag") === "1";
+        } catch {}
+        diagStatus.textContent = on ? "当前：已开启（建议复现 3-5 分钟后导出）" : "当前：未开启";
+      }
     })();
   </script>
 

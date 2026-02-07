@@ -18,16 +18,79 @@
   {% if word_count == 0 %}
     <div class="card">
       {% if onboarding_self_active %}
-        <div class="big">开始一次学习</div>
-        <div class="muted">系统正在准备阶段词汇，通常只需几秒。</div>
-        <div class="actions">
-          <a class="btn primary" data-guide-anchor="self-first-review" hx-boost="false" href="/review?onboarding_retry=1">开始一次学习</a>
-          <a class="btn" hx-boost="false" href="/?onboarding_retry=1">重试准备</a>
-        </div>
+        {% if onboarding_prep_status == "warming" %}
+          <div class="big">正在准备学习内容</div>
+          <div class="muted" id="onboardingWarmHint">阶段词汇即将就绪，将自动进入学习（最长约 10 秒）。</div>
+          <div class="actions">
+            <button class="btn primary is-loading" id="onboardingWarmLoadingBtn" type="button" disabled>正在准备中...</button>
+          </div>
+          <div class="actions hidden" id="onboardingWarmFallback">
+            <a class="btn primary" href="/review?onboarding_retry=1">重新尝试</a>
+            <a class="btn" href="/">返回首页</a>
+          </div>
+          <script>
+            (() => {
+              const key = 'vs_onboarding_review_warm_retry';
+              const hintEl = document.getElementById('onboardingWarmHint');
+              const fallbackEl = document.getElementById('onboardingWarmFallback');
+              const loadingBtn = document.getElementById('onboardingWarmLoadingBtn');
+              const revealFallback = () => {
+                if (hintEl) hintEl.textContent = '准备超时，请重试；如仍无变化可先返回首页。';
+                if (fallbackEl) fallbackEl.classList.remove('hidden');
+                if (loadingBtn) loadingBtn.classList.remove('is-loading');
+              };
+              let tries = 0;
+              try { tries = Number(sessionStorage.getItem(key) || '0') || 0; } catch {}
+              if (tries >= 8) {
+                revealFallback();
+                return;
+              }
+              let timedOut = false;
+              const poll = async () => {
+                if (timedOut) return;
+                tries += 1;
+                try { sessionStorage.setItem(key, String(tries)); } catch {}
+                let ready = false;
+                try {
+                  const resp = await fetch('/api/onboarding/state', {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json' },
+                  });
+                  if (resp.ok) {
+                    const data = await resp.json();
+                    ready = String(data?.prep_status || '').trim().toLowerCase() === 'ready';
+                  }
+                } catch {}
+                if (ready) {
+                  try { sessionStorage.removeItem(key); } catch {}
+                  window.location.href = '/review?onboarding_retry=1';
+                  return;
+                }
+                if (tries >= 8) {
+                  revealFallback();
+                  return;
+                }
+                setTimeout(poll, 900);
+              };
+              setTimeout(poll, 450);
+              setTimeout(() => {
+                timedOut = true;
+                revealFallback();
+              }, 10000);
+            })();
+          </script>
+        {% else %}
+          <div class="big">开始一次学习</div>
+          <div class="muted">系统正在准备阶段词汇，通常只需几秒。</div>
+          <div class="actions">
+            <a class="btn primary" data-guide-anchor="self-first-review-review" data-onboarding-start="1" data-loading-label="正在进入学习..." href="/review">开始一次学习</a>
+          </div>
+        {% endif %}
       {% else %}
         <div class="big">还没有单词</div>
         <div class="actions">
-          <a class="btn primary" data-guide-anchor="self-first-review" href="/library">导入词书</a>
+          <a class="btn primary" data-guide-anchor="self-first-review-review" href="/library">导入词书</a>
           <a class="btn" href="/words">高级导入</a>
         </div>
       {% endif %}
@@ -35,12 +98,75 @@
   {% elif total == 0 %}
     <div class="card">
       {% if onboarding_self_active %}
-        <div class="big">开始一次学习</div>
-        <div class="muted">系统正在把阶段词汇加入学习计划，通常只需几秒。</div>
-        <div class="actions">
-          <a class="btn primary" data-guide-anchor="self-first-review" hx-boost="false" href="/review?onboarding_retry=1">开始一次学习</a>
-          <a class="btn" hx-boost="false" href="/?onboarding_retry=1">重试准备</a>
-        </div>
+        {% if onboarding_prep_status == "warming" %}
+          <div class="big">正在准备学习内容</div>
+          <div class="muted" id="onboardingWarmHint">系统正在把阶段词汇加入学习计划（最长约 10 秒）。</div>
+          <div class="actions">
+            <button class="btn primary is-loading" id="onboardingWarmLoadingBtn" type="button" disabled>正在准备中...</button>
+          </div>
+          <div class="actions hidden" id="onboardingWarmFallback">
+            <a class="btn primary" href="/review?onboarding_retry=1">重新尝试</a>
+            <a class="btn" href="/">返回首页</a>
+          </div>
+          <script>
+            (() => {
+              const key = 'vs_onboarding_review_warm_retry';
+              const hintEl = document.getElementById('onboardingWarmHint');
+              const fallbackEl = document.getElementById('onboardingWarmFallback');
+              const loadingBtn = document.getElementById('onboardingWarmLoadingBtn');
+              const revealFallback = () => {
+                if (hintEl) hintEl.textContent = '准备超时，请重试；如仍无变化可先返回首页。';
+                if (fallbackEl) fallbackEl.classList.remove('hidden');
+                if (loadingBtn) loadingBtn.classList.remove('is-loading');
+              };
+              let tries = 0;
+              try { tries = Number(sessionStorage.getItem(key) || '0') || 0; } catch {}
+              if (tries >= 8) {
+                revealFallback();
+                return;
+              }
+              let timedOut = false;
+              const poll = async () => {
+                if (timedOut) return;
+                tries += 1;
+                try { sessionStorage.setItem(key, String(tries)); } catch {}
+                let ready = false;
+                try {
+                  const resp = await fetch('/api/onboarding/state', {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json' },
+                  });
+                  if (resp.ok) {
+                    const data = await resp.json();
+                    ready = String(data?.prep_status || '').trim().toLowerCase() === 'ready';
+                  }
+                } catch {}
+                if (ready) {
+                  try { sessionStorage.removeItem(key); } catch {}
+                  window.location.href = '/review?onboarding_retry=1';
+                  return;
+                }
+                if (tries >= 8) {
+                  revealFallback();
+                  return;
+                }
+                setTimeout(poll, 900);
+              };
+              setTimeout(poll, 450);
+              setTimeout(() => {
+                timedOut = true;
+                revealFallback();
+              }, 10000);
+            })();
+          </script>
+        {% else %}
+          <div class="big">开始一次学习</div>
+          <div class="muted">系统正在把阶段词汇加入学习计划，通常只需几秒。</div>
+          <div class="actions">
+            <a class="btn primary" data-guide-anchor="self-first-review-review" data-onboarding-start="1" data-loading-label="正在进入学习..." href="/review">开始一次学习</a>
+          </div>
+        {% endif %}
       {% else %}
         <div class="big">加入学习计划</div>
         {% if deck_id %}
@@ -48,7 +174,7 @@
             <input type="hidden" name="deck_id" value="{{ deck_id }}" />
             <input class="review-count-input" type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" />
             <input type="hidden" name="return_to" value="review" />
-            <button class="btn primary" data-guide-anchor="self-first-review" type="submit">加入并开始</button>
+            <button class="btn primary" data-guide-anchor="self-first-review-review" type="submit">加入并开始</button>
             <a class="btn" href="/decks/{{ deck_id }}">词书详情</a>
           </form>
         {% else %}
@@ -64,18 +190,84 @@
               <input type="number" name="count" value="{{ daily_new_limit }}" min="1" max="200" />
             </label>
             <input type="hidden" name="return_to" value="review" />
-            <button class="btn primary" data-guide-anchor="self-first-review" type="submit">开始学习</button>
+            <button class="btn primary" data-guide-anchor="self-first-review-review" type="submit">开始学习</button>
           </form>
         {% endif %}
       {% endif %}
     </div>
   {% elif not word %}
     <div class="card">
-      <div class="big">暂无到期卡片</div>
-      <div class="actions">
-        <a class="btn primary" data-guide-anchor="self-try-mistakes" href="/mistakes">错词篮</a>
-        <a class="btn" href="/">返回主页</a>
-      </div>
+      {% if onboarding_review_warming %}
+        <div class="big">正在准备学习内容</div>
+        <div class="muted" id="onboardingWarmHint">阶段词汇即将就绪，将自动进入学习（最长约 10 秒）。</div>
+        <div class="actions">
+          <button class="btn primary is-loading" id="onboardingWarmLoadingBtn" type="button" disabled>正在准备中...</button>
+        </div>
+        <div class="actions hidden" id="onboardingWarmFallback">
+          <a class="btn primary" href="/review?onboarding_retry=1">重新尝试</a>
+          <a class="btn" href="/">返回首页</a>
+        </div>
+        <script>
+          (() => {
+            const key = 'vs_onboarding_review_warm_retry';
+            const hintEl = document.getElementById('onboardingWarmHint');
+            const fallbackEl = document.getElementById('onboardingWarmFallback');
+            const loadingBtn = document.getElementById('onboardingWarmLoadingBtn');
+            const revealFallback = () => {
+              if (hintEl) {
+                hintEl.textContent = '准备超时，请重试；如仍无变化可先返回首页。';
+              }
+              if (fallbackEl) fallbackEl.classList.remove('hidden');
+              if (loadingBtn) loadingBtn.classList.remove('is-loading');
+            };
+            let tries = 0;
+            try { tries = Number(sessionStorage.getItem(key) || '0') || 0; } catch {}
+            if (tries >= 8) {
+              revealFallback();
+              return;
+            }
+            let timedOut = false;
+            const poll = async () => {
+              if (timedOut) return;
+              tries += 1;
+              try { sessionStorage.setItem(key, String(tries)); } catch {}
+              let ready = false;
+              try {
+                const resp = await fetch('/api/onboarding/state', {
+                  method: 'GET',
+                  credentials: 'same-origin',
+                  headers: { Accept: 'application/json' },
+                });
+                if (resp.ok) {
+                  const data = await resp.json();
+                  ready = String(data?.prep_status || '').trim().toLowerCase() === 'ready';
+                }
+              } catch {}
+              if (ready) {
+                try { sessionStorage.removeItem(key); } catch {}
+                window.location.href = '/review?onboarding_retry=1';
+                return;
+              }
+              if (tries >= 8) {
+                revealFallback();
+                return;
+              }
+              setTimeout(poll, 900);
+            };
+            setTimeout(poll, 450);
+            setTimeout(() => {
+              timedOut = true;
+              revealFallback();
+            }, 10000);
+          })();
+        </script>
+      {% else %}
+        <div class="big">暂无到期卡片</div>
+        <div class="actions">
+          <a class="btn primary" data-guide-anchor="self-try-mistakes" href="/mistakes">错词篮</a>
+          <a class="btn" href="/">返回主页</a>
+        </div>
+      {% endif %}
     </div>
   {% else %}
     <script type="application/json" id="reviewPrefetch">{{ prefetch_cards_json | safe }}</script>
@@ -105,7 +297,7 @@
       <div
         class="review-reveal-overlay"
         id="revealOverlay"
-        data-guide-anchor="self-first-review"
+        data-guide-anchor="self-first-review-review"
         role="button"
         tabindex="0"
         aria-label="点击显示答案"
@@ -144,6 +336,7 @@
 
     <script>
       (() => {
+        try { sessionStorage.removeItem('vs_onboarding_review_warm_retry'); } catch {}
         const revealOverlay = document.getElementById('revealOverlay');
         const reviewCard = document.getElementById('reviewCard');
         const prompt = document.getElementById('reviewPrompt');
@@ -283,13 +476,14 @@
           const card = document.createElement('div');
           card.className = 'card';
           const qs = deckId ? `?deck_id=${encodeURIComponent(deckId)}` : '';
+          const mistakesHref = {{ (review_mistakes_href or "/mistakes")|tojson }};
           card.innerHTML =
             '<div class="big">已学完</div>' +
             '<div class="muted mt-8">今天到期的卡片已经完成。若刚刚点了“不认识”，它可能会稍后再次出现。</div>' +
             '<div class="actions mt-12">' +
               '<a class="btn primary" href="/">返回主页</a>' +
               '<a class="btn" href="/review' + qs + '">刷新看看</a>' +
-              '<a class="btn" href="/mistakes">错词篮</a>' +
+              '<a class="btn" data-guide-anchor="self-try-mistakes" href="' + mistakesHref + '">错词篮</a>' +
             '</div>';
 
           const container = (stage && stage.parentElement) ? stage.parentElement : document.body;
