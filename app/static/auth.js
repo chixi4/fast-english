@@ -122,4 +122,28 @@
       });
     });
   });
+
+  // Fallback: if a swapped DOM misses direct binding, clicking eye still toggles password visibility.
+  document.addEventListener("click", (ev) => {
+    const toggle = ev.target instanceof Element ? ev.target.closest("[data-auth-pass-toggle]") : null;
+    if (!(toggle instanceof HTMLButtonElement)) return;
+    if (toggle.dataset.authToggleBound === "1") return;
+
+    const wrap = toggle.closest(".auth-pass-wrap");
+    const input = wrap ? wrap.querySelector("input") : null;
+    if (!(input instanceof HTMLInputElement)) return;
+
+    setupPasswordField(input);
+    if (toggle.dataset.authToggleBound === "1") return;
+
+    const shown = input.type === "text";
+    const nextType = shown ? "password" : "text";
+    input.type = nextType;
+    const nowShown = input.type === "text";
+    toggle.classList.toggle("is-on", nowShown);
+    toggle.innerHTML = nowShown ? EYE_ICON : EYE_OFF_ICON;
+    toggle.setAttribute("aria-label", nowShown ? "隐藏密码" : "显示密码");
+    toggle.setAttribute("aria-pressed", nowShown ? "true" : "false");
+    toggle.setAttribute("title", nowShown ? "隐藏密码" : "显示密码");
+  });
 })();

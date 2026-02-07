@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>错词篮</h1>
+  {% if not onboarding_mistakes_compact %}
+    <h1>错词篮</h1>
+  {% endif %}
   {% if not onboarding_mistakes_compact %}
     <p class="muted">按单词聚合生成短文与题目，在语境中巩固高频错词。</p>
   {% endif %}
@@ -30,7 +32,9 @@
       {% if not onboarding_mistakes_compact %}
         <div class="card-k">自动生成</div>
       {% endif %}
-      <div class="mistakes-main-title">一键生成短文练习</div>
+      {% if not onboarding_mistakes_compact %}
+        <div class="mistakes-main-title">一键生成短文练习</div>
+      {% endif %}
       {% if not onboarding_mistakes_compact %}
         <p class="muted">默认自动选词并生成短文与题目；只有需要精细控制时再展开高级设置。</p>
       {% endif %}

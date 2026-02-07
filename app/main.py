@@ -2809,9 +2809,8 @@ def update_ui_mode(request: Request, mode: str = Form("self"), return_to: str = 
     if mode not in {_UI_MODE_PARENT, _UI_MODE_SELF}:
         mode = _UI_MODE_SELF
 
-    label = "家长帮孩子学" if mode == _UI_MODE_PARENT else "自己学"
     dest = _safe_next(return_to or "/settings")
-    dest_url = dest + "?" + urlencode({"toast": f"已切换到：{label}"})
+    dest_url = dest
 
     # The app uses hx-boost and only swaps #content, but the top navigation lives outside that swap area.
     # When switching modes we must force a full navigation so the header is re-rendered with the new mode.
@@ -3006,6 +3005,7 @@ _ONBOARDING_STATUS_DISMISSED = "dismissed"
 _ONBOARDING_STATUS_DONE = "done"
 _ONBOARDING_CHOOSE_ROLE_PATH = "/onboarding/choose_role"
 _ONBOARDING_CHOOSE_STAGE_PATH = "/onboarding/choose_stage"
+_ONBOARDING_RESTART_PATH = "/onboarding/restart"
 _ONBOARDING_SPRITE = {"enabled": True, "pulse_ms": 1400, "travel_ms": 260}
 _ONBOARDING_STATUSES = {
     _ONBOARDING_STATUS_ACTIVE,
@@ -3036,8 +3036,8 @@ _ONBOARDING_STEP_DEFS: dict[str, list[dict[str, str]]] = {
             "key": "self_view_dashboard",
             "title": "查看学习进度",
             "desc": "打开看板，查看掌握率和高频错词。",
-            "href": "/settings",
-            "target_selector": '[data-guide-anchor="open-dashboard"]',
+            "href": "/dashboard",
+            "target_selector": '[data-guide-anchor="nav-dashboard"]',
             "placement": "top",
         },
     ],
@@ -3182,17 +3182,29 @@ def _read_onboarding_role_choice(username_norm: str) -> str | None:
     if not uname:
         return None
     with get_auth_session() as session:
-        rows = (
+        cutoff_row = (
+            session.query(AuthEvent.id)
+            .filter(
+                AuthEvent.username_norm == uname,
+                AuthEvent.kind == "action",
+                AuthEvent.path == _ONBOARDING_RESTART_PATH,
+            )
+            .order_by(AuthEvent.id.desc())
+            .first()
+        )
+        cutoff_id = int(cutoff_row[0]) if cutoff_row else 0
+
+        query = (
             session.query(AuthEvent.meta_json)
             .filter(
                 AuthEvent.username_norm == uname,
                 AuthEvent.kind == "action",
                 AuthEvent.path == _ONBOARDING_CHOOSE_ROLE_PATH,
             )
-            .order_by(AuthEvent.id.desc())
-            .limit(8)
-            .all()
         )
+        if cutoff_id > 0:
+            query = query.filter(AuthEvent.id > cutoff_id)
+        rows = query.order_by(AuthEvent.id.desc()).limit(8).all()
     for (meta_json,) in rows:
         meta = _safe_json_dict(meta_json)
         role = str(meta.get("role") or "").strip().lower()
@@ -3221,17 +3233,29 @@ def _read_onboarding_stage_choice(username_norm: str, *, flow: str) -> str | Non
         return None
     flow2 = _normalize_onboarding_flow(flow)
     with get_auth_session() as session:
-        rows = (
+        cutoff_row = (
+            session.query(AuthEvent.id)
+            .filter(
+                AuthEvent.username_norm == uname,
+                AuthEvent.kind == "action",
+                AuthEvent.path == _ONBOARDING_RESTART_PATH,
+            )
+            .order_by(AuthEvent.id.desc())
+            .first()
+        )
+        cutoff_id = int(cutoff_row[0]) if cutoff_row else 0
+
+        query = (
             session.query(AuthEvent.meta_json)
             .filter(
                 AuthEvent.username_norm == uname,
                 AuthEvent.kind == "action",
                 AuthEvent.path == _ONBOARDING_CHOOSE_STAGE_PATH,
             )
-            .order_by(AuthEvent.id.desc())
-            .limit(12)
-            .all()
         )
+        if cutoff_id > 0:
+            query = query.filter(AuthEvent.id > cutoff_id)
+        rows = query.order_by(AuthEvent.id.desc()).limit(12).all()
     for (meta_json,) in rows:
         meta = _safe_json_dict(meta_json)
         role = _normalize_onboarding_flow(meta.get("role"))
@@ -3702,6 +3726,7 @@ async def api_onboarding_action(request: Request):
     now = _utcnow()
     selected_role: str | None = None
     selected_stage: str | None = None
+    restart_requested = False
     selected_flow: str = _normalize_onboarding_flow(request.state.ui_mode if hasattr(request.state, "ui_mode") else _UI_MODE_SELF)
     stage_flow = selected_flow
     stage_has_role_choice = False
@@ -3759,6 +3784,7 @@ async def api_onboarding_action(request: Request):
             row.snooze_until = None
             row.completed_at = None
             row.guide_version = _ONBOARDING_GUIDE_VERSION
+            restart_requested = True
         else:
             raise HTTPException(status_code=400, detail="unsupported action")
 
@@ -3791,6 +3817,18 @@ async def api_onboarding_action(request: Request):
         resp = JSONResponse(content=_build_onboarding_payload(request))
         _set_ui_mode_cookie(resp, request, selected_flow)
         return resp
+
+    if restart_requested:
+        _log_auth_event(
+            user_id=int(user_id),
+            username=username_norm,
+            kind="action",
+            path=_ONBOARDING_RESTART_PATH,
+            method="POST",
+            status_code=200,
+            duration_ms=0,
+            meta={"action": "restart"},
+        )
 
     return JSONResponse(content=_build_onboarding_payload(request))
 

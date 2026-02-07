@@ -27,17 +27,6 @@
       </div>
     </div>
 
-    {% if not is_parent_mode %}
-      <div class="card">
-        <div class="card-k">服务状态</div>
-        <div class="card-v">{{ ai_status }}</div>
-        <div class="muted">{{ ai_model }}</div>
-        {% if ai_checker_model %}
-          <div class="muted">checker：{{ ai_checker_model }}</div>
-        {% endif %}
-      </div>
-    {% endif %}
-
     <div class="card">
       <div class="card-k">使用模式</div>
       <div class="card-v">{% if is_parent_mode %}家长模式{% else %}自学模式{% endif %}</div>

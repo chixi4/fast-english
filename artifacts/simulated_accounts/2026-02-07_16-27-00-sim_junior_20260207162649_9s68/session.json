@@ -1,0 +1,44 @@
+{
+  "username": "sim_junior_20260207162649_9s68",
+  "password": "CDtLcugIZ9rba@",
+  "username_norm": "sim_junior_20260207162649_9s68",
+  "stage": "junior",
+  "source_id": "gen_xsc_2000",
+  "start_date": "2025-11-10",
+  "end_date": "2026-02-07",
+  "intensity": "medium",
+  "auth_db_path": "D:\\dev\\vocabulary-study\\data\\auth.db",
+  "user_db_path": "D:\\dev\\vocabulary-study\\data\\userdb\\sim_junior_20260207162649_9s68_74e6ad7efa.db",
+  "stats": {
+    "review_logs": 2698,
+    "again_count": 656,
+    "again_ratio": 0.2431,
+    "reviewed_words": 1249,
+    "total_cards": 1653,
+    "due_now": 1389,
+    "mastered_cards": 363,
+    "mistake_words": 513,
+    "active_days_7": 6,
+    "active_days_30": 25,
+    "study_days": 78
+  },
+  "smoke_check": {
+    "ok": true,
+    "login_status": 303,
+    "pages": {
+      "/review": {
+        "status": 200,
+        "ok": true
+      },
+      "/dashboard": {
+        "status": 200,
+        "ok": true
+      },
+      "/mistakes": {
+        "status": 200,
+        "ok": true
+      }
+    }
+  },
+  "artifact_dir": "D:\\dev\\vocabulary-study\\artifacts\\simulated_accounts\\2026-02-07_16-27-00-sim_junior_20260207162649_9s68"
+}

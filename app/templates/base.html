@@ -54,6 +54,7 @@
             <a data-guide-anchor="nav-today" href="/" class="{% if request.url.path == '/' %}active{% endif %}">今日</a>
             <a data-guide-anchor="nav-decks" href="/decks" class="{% if request.url.path.startswith('/decks') %}active{% endif %}">词书</a>
             <a data-guide-anchor="nav-practice" href="/practice" class="{% if request.url.path == '/practice' %}active{% endif %}">练习</a>
+            <a data-guide-anchor="nav-dashboard" href="/dashboard" class="{% if request.url.path.startswith('/dashboard') %}active{% endif %}">看板</a>
             <a data-guide-anchor="nav-settings" href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">我的</a>
           {% endif %}
         </nav>

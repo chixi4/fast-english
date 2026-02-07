@@ -142,6 +142,25 @@ def test_onboarding_actions_snooze_dismiss_restart(client):
     assert restart_data["status"] == "active"
 
 
+def test_onboarding_restart_resets_role_stage_selection(client):
+    resp = _register(client, "new_user_restart_reset")
+    assert resp.status_code == 303
+
+    choose = client.post("/api/onboarding/action", json={"action": "choose_role", "role": "self"})
+    assert choose.status_code == 200
+    choose_stage = client.post("/api/onboarding/action", json={"action": "choose_stage", "stage": "junior"})
+    assert choose_stage.status_code == 200
+
+    restart = client.post("/api/onboarding/action", json={"action": "restart"})
+    assert restart.status_code == 200
+    data = restart.json()
+    assert data["status"] == "active"
+    assert data["role_selection_required"] is True
+    assert data["stage_selection_required"] is False
+    assert isinstance(data["current_step"], dict)
+    assert data["current_step"]["key"] == "choose_role"
+
+
 def test_old_user_without_state_defaults_to_done_when_has_learning_data(client):
     with get_auth_session() as session:
         user = AuthUser(username="legacy_user", username_norm="legacy_user", password_hash=hash_password("pass1234"))
