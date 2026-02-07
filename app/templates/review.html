@@ -82,13 +82,14 @@
           </script>
         {% else %}
           <div class="big">开始一次学习</div>
-          <div class="muted">系统正在准备阶段词汇，通常只需几秒。</div>
+          <div class="muted">系统已按阶段选好词汇，点击“开始一次学习”即可。</div>
           <div class="actions">
             <a class="btn primary" data-guide-anchor="self-first-review-review" data-onboarding-start="1" data-loading-label="正在进入学习..." href="/review">开始一次学习</a>
           </div>
         {% endif %}
       {% else %}
-        <div class="big">还没有单词</div>
+        <div class="big">系统已帮你选好阶段词汇</div>
+        <div class="muted">若未自动进入学习，可先点“导入词书”后再开始。</div>
         <div class="actions">
           <a class="btn primary" data-guide-anchor="self-first-review-review" href="/library">导入词书</a>
           <a class="btn" href="/words">高级导入</a>
@@ -162,7 +163,7 @@
           </script>
         {% else %}
           <div class="big">开始一次学习</div>
-          <div class="muted">系统正在把阶段词汇加入学习计划，通常只需几秒。</div>
+          <div class="muted">系统已按阶段选好词汇，点击“开始一次学习”即可。</div>
           <div class="actions">
             <a class="btn primary" data-guide-anchor="self-first-review-review" data-onboarding-start="1" data-loading-label="正在进入学习..." href="/review">开始一次学习</a>
           </div>
@@ -477,14 +478,24 @@
           card.className = 'card';
           const qs = deckId ? `?deck_id=${encodeURIComponent(deckId)}` : '';
           const mistakesHref = {{ (review_mistakes_href or "/mistakes")|tojson }};
+          const onboardingSelfActive = {{ (onboarding_self_active or False)|tojson }};
+          const doneActions = onboardingSelfActive
+            ? (
+              '<div class="actions mt-12">' +
+                '<a class="btn primary" data-guide-anchor="self-try-mistakes" href="' + mistakesHref + '">错词篮</a>' +
+              '</div>'
+            )
+            : (
+              '<div class="actions mt-12">' +
+                '<a class="btn primary" href="/">返回主页</a>' +
+                '<a class="btn" href="/review' + qs + '">刷新看看</a>' +
+                '<a class="btn" data-guide-anchor="self-try-mistakes" href="' + mistakesHref + '">错词篮</a>' +
+              '</div>'
+            );
           card.innerHTML =
             '<div class="big">已学完</div>' +
             '<div class="muted mt-8">今天到期的卡片已经完成。若刚刚点了“不认识”，它可能会稍后再次出现。</div>' +
-            '<div class="actions mt-12">' +
-              '<a class="btn primary" href="/">返回主页</a>' +
-              '<a class="btn" href="/review' + qs + '">刷新看看</a>' +
-              '<a class="btn" data-guide-anchor="self-try-mistakes" href="' + mistakesHref + '">错词篮</a>' +
-            '</div>';
+            doneActions;
 
           const container = (stage && stage.parentElement) ? stage.parentElement : document.body;
           container.insertBefore(card, stage ? stage.nextSibling : null);

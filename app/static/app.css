@@ -762,6 +762,14 @@ body.onboarding-focus-active [data-onboarding-focus-current="1"].worksheet-gener
   border-bottom: none;
   background: rgba(28, 28, 30, 0.96);
 }
+.onboarding-review-hud {
+  width: min(560px, calc(100vw - 20px));
+  top: calc(env(safe-area-inset-top, 0px) + 68px);
+}
+.onboarding-review-hud .onboarding-review-hud-card {
+  padding: 14px 14px 26px;
+  background: var(--bg);
+}
 .onboarding-hud-pin .actions,
 .onboarding-hud-pin .btn {
   pointer-events: auto;
@@ -779,6 +787,28 @@ body.onboarding-focus-active [data-onboarding-focus-current="1"].worksheet-gener
 }
 body.onboarding-hud-active #content .container {
   padding-top: 76px;
+}
+body.onboarding-mistakes-hud-adjust #content .container {
+  padding-top: 112px;
+}
+body.onboarding-mistakes-hud-adjust .onboarding-hud-pin {
+  top: calc(env(safe-area-inset-top, 0px) + 94px);
+}
+body.onboarding-opaque-mask-active::before {
+  content: "";
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: calc(env(safe-area-inset-top, 0px) + 61px);
+  bottom: 0;
+  z-index: 1198;
+  background: var(--bg);
+  opacity: 1;
+  pointer-events: none;
+}
+body.onboarding-opaque-mask-active #onboardingGuideMount {
+  position: relative;
+  z-index: 1202;
 }
 .onboarding-stage-actions {
   display: grid;
@@ -891,8 +921,22 @@ body.onboarding-hide-parent-generate-btn [data-guide-anchor="parent-generate-she
   .onboarding-hud-pin {
     width: min(220px, calc(100vw - 62px));
   }
+  .onboarding-review-hud {
+    width: calc(100vw - 20px);
+    left: 10px;
+    top: calc(env(safe-area-inset-top, 0px) + 62px);
+  }
+  .onboarding-review-hud .onboarding-review-hud-card {
+    padding: 14px 12px 25px;
+  }
   body.onboarding-hud-active #content .container {
     padding-top: 84px;
+  }
+  body.onboarding-mistakes-hud-adjust #content .container {
+    padding-top: 122px;
+  }
+  body.onboarding-mistakes-hud-adjust .onboarding-hud-pin {
+    top: calc(env(safe-area-inset-top, 0px) + 100px);
   }
   .onboarding-screen-step-card {
     min-height: 0;
@@ -1057,6 +1101,24 @@ mark.kw {
 }
 
 .mistakes-generate-card { display: grid; gap: 10px; }
+.mistakes-generate-card.onboarding-compact {
+  border-bottom: none;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.mistakes-generate-card.onboarding-compact #onboardingGuideMount {
+  margin-top: 0;
+}
+.mistakes-generate-card.onboarding-compact .onboarding-mistakes-inline-card {
+  margin: 0;
+  padding-top: 12px;
+  padding-bottom: 0;
+  border-bottom: none;
+  background: transparent;
+}
+.mistakes-generate-card.onboarding-compact .mistakes-primary-form {
+  margin-top: 0;
+}
 .mistakes-primary-form { margin-top: 2px; }
 .mistakes-main-title {
   font-size: 24px;
@@ -1173,6 +1235,11 @@ mark.kw {
   background: var(--bg);
   border-top: 1px solid var(--border);
 }
+.review-bottombar.onboarding-rating-focus,
+#reviewRateForm.onboarding-rating-focus {
+  outline: 1px solid rgba(212, 102, 44, 0.55);
+  outline-offset: -1px;
+}
 .review-bottombar.hidden { display: none; }
 .review-bottombar-inner {
   max-width: 980px;
@@ -1230,7 +1297,7 @@ mark.kw {
   /* 导航栏 - 简化 */
   .topbar-inner { padding: 10px 16px; }
   .brand a { font-size: 28px; letter-spacing: 3px; }
-  .nav a { margin-left: 10px; font-size: 14px; }
+  .nav a { margin-left: 8px; font-size: 13px; }
 
   /* 卡片单列布局 */
   .cards { grid-template-columns: 1fr; gap: 0; }
@@ -1391,7 +1458,7 @@ mark.kw {
 }
 
 @media (max-width: 380px) {
-  .nav a { margin-left: 8px; font-size: 13px; }
+  .nav a { margin-left: 6px; font-size: 12px; }
   .brand a { font-size: 24px; letter-spacing: 2px; }
   .big { font-size: 20px; }
   .card-v { font-size: 18px; }

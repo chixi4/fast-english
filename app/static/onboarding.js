@@ -8,6 +8,7 @@
   const TRIGGER_STEP_LOCK_MS = 700;
   const PREP_POLL_INTERVAL_MS = 800;
   const PREP_POLL_MAX_ROUNDS = 24;
+  const API_FETCH_TIMEOUT_MS = 6000;
   const MOUNT_ID = "onboardingGuideMount";
   const SPRITE_ID = "onboardingSprite";
   const TOOLTIP_ID = "onboardingTooltip";
@@ -38,6 +39,27 @@
     } catch {
       return "/";
     }
+  };
+  const isReviewReadyForRating = () => {
+    try {
+      return !!document.querySelector('#reviewRateForm button[name="rating"]');
+    } catch {
+      return false;
+    }
+  };
+  const focusReviewRatingArea = () => {
+    const bar = q("#reviewBottomBar") || q(".review-bottombar");
+    const form = q("#reviewRateForm");
+    const target = bar || form;
+    if (!target) return false;
+    try {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    } catch {
+      try { target.scrollIntoView(); } catch {}
+    }
+    target.classList.add("onboarding-rating-focus");
+    window.setTimeout(() => target.classList.remove("onboarding-rating-focus"), 1200);
+    return true;
   };
   const toPath = (href) => {
     try {
@@ -148,6 +170,17 @@
     return true;
   };
 
+  const fetchJsonWithTimeout = async (url, init = {}, timeoutMs = API_FETCH_TIMEOUT_MS) => {
+    const ctl = new AbortController();
+    const timer = window.setTimeout(() => ctl.abort(), Math.max(1200, Number(timeoutMs || API_FETCH_TIMEOUT_MS)));
+    try {
+      const resp = await fetch(url, { ...init, signal: ctl.signal });
+      return resp;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  };
+
   const replaceNavigate = (href) => {
     const url = String(href || "").trim();
     if (!url) return false;
@@ -203,8 +236,14 @@
     mount.className = "onboarding-guide-mount";
 
     const h1 = q("h1", container);
-    if (h1 && h1.parentNode) h1.insertAdjacentElement("afterend", mount);
-    else container.prepend(mount);
+    const path = currentPath();
+    if (h1 && h1.parentNode && path.startsWith("/simulations/")) {
+      h1.insertAdjacentElement("beforebegin", mount);
+    } else if (h1 && h1.parentNode) {
+      h1.insertAdjacentElement("afterend", mount);
+    } else {
+      container.prepend(mount);
+    }
     return mount;
   };
 
@@ -245,8 +284,14 @@
   const setHudActive = (on) => {
     document.body.classList.toggle("onboarding-hud-active", !!on);
   };
+  const setMistakesHudAdjust = (on) => {
+    document.body.classList.toggle("onboarding-mistakes-hud-adjust", !!on);
+  };
   const setParentGenerateCompact = (on) => {
     document.body.classList.toggle("onboarding-hide-parent-generate-btn", !!on);
+  };
+  const setOpaqueMask = (on) => {
+    document.body.classList.toggle("onboarding-opaque-mask-active", !!on);
   };
 
   const clearFocusScope = () => {
@@ -342,16 +387,36 @@
 
     const step = cache?.current_step;
     if (!step) return;
+    const stepKey = String(step.key || "").trim();
+    const forceReviewRetry = () => {
+      if (stepKey !== "self_first_review") return false;
+      if (currentPath().startsWith("/review") && isReviewReadyForRating()) {
+        return focusReviewRatingArea();
+      }
+      return htmxNavigate("/review?onboarding_retry=1", { pushURL: true });
+    };
+
+    if (stepKey === "self_first_review" && currentPath().startsWith("/review") && !isReviewReadyForRating()) {
+      forceReviewRetry();
+      return;
+    }
+
     const target = findTarget(step);
     if (target && triggerNode(target)) return;
+
+    if (!target && forceReviewRetry()) return;
+
     const href = String(step.href || "").trim();
     const hrefPath = toPath(href);
     if (!target && hrefPath && hrefPath === currentPath()) {
+      if (forceReviewRetry()) return;
       return;
     }
     if (href) {
       htmxNavigate(href, { pushURL: true });
+      return;
     }
+    forceReviewRetry();
   };
 
   const maybeAutoNavigateToCurrentStep = (state, triggerAction) => {
@@ -406,6 +471,7 @@
   const renderGuideCard = (state) => {
     const mount = ensureMount();
     if (!mount) return;
+    setMistakesHudAdjust(false);
 
     if (!state || !state.enabled || !state.show) {
       const status = String(state?.status || "").trim().toLowerCase();
@@ -418,6 +484,7 @@
         clearFocusScope();
         setScreenMode("");
         setHudActive(false);
+        setOpaqueMask(false);
         setParentGenerateCompact(false);
         mount.innerHTML = `
           <div class="card onboarding-card onboarding-mini-card">
@@ -436,6 +503,7 @@
       mount.innerHTML = "";
       setScreenMode("");
       setHudActive(false);
+      setOpaqueMask(false);
       setParentGenerateCompact(false);
       clearFocusScope();
       hideSprite();
@@ -445,6 +513,7 @@
     if (state.role_selection_required) {
       setScreenMode("screen");
       setHudActive(false);
+      setOpaqueMask(false);
       setParentGenerateCompact(false);
       clearFocusScope();
       mount.innerHTML = `
@@ -466,6 +535,7 @@
     if (state.stage_selection_required) {
       setScreenMode("screen");
       setHudActive(false);
+      setOpaqueMask(false);
       setParentGenerateCompact(false);
       clearFocusScope();
       const roleLabel = state.flow === "parent" ? "孩子" : "你";
@@ -509,6 +579,7 @@
       const title = escapeHtml(opts.title || currentTitle);
       const desc = escapeHtml(opts.desc || currentDesc);
       const actionHtml = String(opts.actionHtml || "");
+      const showClose = opts.showClose !== false;
       setHudActive(true);
       mount.innerHTML = `
         <div class="onboarding-hud-pin">
@@ -519,9 +590,10 @@
             ${actionHtml}
           </div>
         </div>
+        ${showClose ? `
         <div class="onboarding-hud-close">
           <button class="onboarding-screen-close" type="button" data-onboarding-action="dismiss" aria-label="退出引导">×</button>
-        </div>
+        </div>` : ""}
       `;
     };
 
@@ -529,49 +601,65 @@
       clearFocusScope();
       setScreenMode("");
       setParentGenerateCompact(false);
+      setOpaqueMask(false);
+      setMistakesHudAdjust(false);
+      const generateCard = q(".mistakes-generate-card");
+      if (generateCard && mount.parentElement !== generateCard) {
+        const form = q("#generateForm", generateCard);
+        if (form && form.parentNode) {
+          form.insertAdjacentElement("beforebegin", mount);
+        } else {
+          generateCard.prepend(mount);
+        }
+      }
       if (hudSuppressedPath === path) {
         setHudActive(false);
-        mount.innerHTML = `
-          <div class="onboarding-hud-close">
-            <button class="onboarding-screen-close" type="button" data-onboarding-action="dismiss" aria-label="退出引导">×</button>
-          </div>
-        `;
+        mount.innerHTML = "";
         return;
       }
-      renderPinnedHud({
-        title: "进入错词篮练习",
-        desc: "点击“生成短文练习”开始。",
-      });
+      setHudActive(false);
+      mount.innerHTML = `
+        <div class="card onboarding-card onboarding-mini-card onboarding-mistakes-inline-card">
+          <button class="onboarding-screen-close" type="button" data-onboarding-action="dismiss" aria-label="退出引导">×</button>
+          <div class="card-k">新手引导</div>
+          <div class="onboarding-hud-title">进入错词篮练习</div>
+          <div class="muted">点击“生成短文练习”开始。</div>
+        </div>
+      `;
       return;
     }
 
     if (inSimulation) {
-      // 生成后的短文页不应被引导覆盖正文，保留左上角提示与下一步按钮。
+      // 短文阅读页改为内嵌卡片提示，避免固定悬浮遮挡正文。
       clearFocusScope();
       setScreenMode("");
       setParentGenerateCompact(false);
-      if (hudSuppressedPath === path) {
-        setHudActive(false);
-        mount.innerHTML = `
-          <div class="onboarding-hud-close">
-            <button class="onboarding-screen-close" type="button" data-onboarding-action="dismiss" aria-label="退出引导">×</button>
+      setOpaqueMask(false);
+      setHudActive(false);
+      const nextHref = (href && hrefPath && hrefPath !== path) ? href : "/dashboard";
+      mount.innerHTML = `
+        <div class="card onboarding-card onboarding-mini-card onboarding-sim-inline-card">
+          <button class="onboarding-screen-close" type="button" data-onboarding-action="dismiss" aria-label="退出引导">×</button>
+          <div class="card-k">新手引导</div>
+          <div class="onboarding-hud-title">实战短文：先读再做题</div>
+          <div class="muted">这页是短文练习页。你可以先读题并作答；完成后到看板查看掌握率变化。</div>
+          <div class="actions mt-10 onboarding-step-actions">
+            <a class="btn primary" href="${escapeHtml(nextHref)}">${currentTitle}</a>
           </div>
-        `;
-        return;
-      }
-      const actionHtml = (href && hrefPath && hrefPath !== path)
-        ? `<div class="actions mt-10 onboarding-step-actions"><a class="btn primary" href="${escapeHtml(href)}">${currentTitle}</a></div>`
-        : "";
-      renderPinnedHud({ actionHtml });
+        </div>
+      `;
       return;
     }
 
     if (inReview) {
       clearFocusScope();
       setScreenMode("");
+      const reviewReady = isReviewReadyForRating();
+      setOpaqueMask(!reviewReady);
       setParentGenerateCompact(false);
       if (hudSuppressedPath === path) {
         setHudActive(false);
+        setOpaqueMask(false);
         mount.innerHTML = `
           <div class="onboarding-hud-close">
             <button class="onboarding-screen-close" type="button" data-onboarding-action="dismiss" aria-label="退出引导">×</button>
@@ -582,8 +670,26 @@
       const showJump = !!href && hrefPath && hrefPath !== path;
       const actionHtml = showJump
         ? `<div class="actions mt-10 onboarding-step-actions"><a class="btn primary" href="${escapeHtml(href)}">${currentTitle}</a></div>`
-        : "";
-      renderPinnedHud({ actionHtml });
+        : (reviewReady
+          ? ""
+          : `<div class="actions mt-10 onboarding-step-actions"><button class="btn primary" type="button" data-onboarding-action="trigger_step_target">${currentTitle}</button></div>`);
+      const reviewDesc = reviewReady
+        ? "继续在下方完成评分，本轮背词中引导会保持显示。"
+        : currentDesc;
+      setHudActive(true);
+      mount.innerHTML = `
+        <div class="onboarding-hud-pin onboarding-review-hud">
+          <div class="card onboarding-card onboarding-mini-card onboarding-hud-card onboarding-review-hud-card">
+            <div class="card-k">新手引导</div>
+            <div class="onboarding-hud-title">${currentTitle}</div>
+            ${reviewDesc ? `<div class="onboarding-hud-desc">${reviewDesc}</div>` : ""}
+            ${actionHtml}
+          </div>
+        </div>
+        <div class="onboarding-hud-close">
+          <button class="onboarding-screen-close" type="button" data-onboarding-action="dismiss" aria-label="退出引导">×</button>
+        </div>
+      `;
       return;
     }
 
@@ -592,6 +698,7 @@
       clearFocusScope();
       setScreenMode("");
       setHudActive(false);
+      setOpaqueMask(false);
       setParentGenerateCompact(false);
       mount.innerHTML = `
         <div class="card onboarding-card onboarding-mini-card">
@@ -607,6 +714,7 @@
     const focused = focusCurrentStepScope(current);
     if (!focused) clearFocusScope();
     setHudActive(false);
+    setOpaqueMask(false);
     setScreenMode(focused ? "focus" : "screen");
     const samePage = !!hrefPath && hrefPath === currentPath();
     const showParentGenerateCompact = !!(current && current.key === "parent_generate_sheet" && samePage);
@@ -712,22 +820,22 @@
   };
 
   const fetchState = async () => {
-    const resp = await fetch(STATE_URL, {
+    const resp = await fetchJsonWithTimeout(STATE_URL, {
       method: "GET",
       credentials: "same-origin",
       headers: { Accept: "application/json" },
-    });
+    }, API_FETCH_TIMEOUT_MS);
     if (!resp.ok) throw new Error(`state ${resp.status}`);
     return resp.json();
   };
 
   const postAction = async (action, extra = {}) => {
-    const resp = await fetch(ACTION_URL, {
+    const resp = await fetchJsonWithTimeout(ACTION_URL, {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ action, ...extra }),
-    });
+    }, API_FETCH_TIMEOUT_MS);
     if (!resp.ok) throw new Error(`action ${resp.status}`);
     return resp.json();
   };
@@ -849,6 +957,10 @@
       lastRenderSignature = "";
       return;
     }
+    if (action === "focus_review_rating") {
+      focusReviewRatingArea();
+      return;
+    }
     if (action === "trigger_step_target") {
       triggerCurrentStep();
       return;
@@ -884,7 +996,7 @@
     const guide = target.closest("[data-guide-anchor]");
     if (guide) {
       const anchor = String(guide.getAttribute("data-guide-anchor") || "");
-      if (anchor === "self-try-mistakes" || anchor === "self-first-review-review" || anchor === "open-dashboard") {
+      if (anchor === "self-try-mistakes" || anchor === "self-first-review-review" || anchor === "open-dashboard" || anchor === "nav-dashboard") {
         window.setTimeout(() => { void refresh(); }, 900);
         window.setTimeout(() => { void refresh(); }, 2200);
       }
@@ -895,12 +1007,8 @@
       }
     }
     if (target.closest('button[name="rating"]') && path.startsWith("/review")) {
-      hudSuppressedPath = path;
-      lastRenderSignature = "";
-      renderGuideCard(cache);
-      window.setTimeout(() => { void refresh(); }, 800);
-      window.setTimeout(() => { void refresh(); }, 1900);
-    }
+      // 背词阶段保持引导常驻，不在每次评分后隐藏或强刷状态。
+      }
     if (
       target.closest('form[action*="/simulations/"][method="post"] button[type="submit"]')
       && path.startsWith("/simulations/")
