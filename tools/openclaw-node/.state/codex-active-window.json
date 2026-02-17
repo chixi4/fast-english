@@ -1,0 +1,9 @@
+﻿{
+    "saved_at":  "2026-02-11T12:28:31.3341168Z",
+    "query":  "gpt-5.3-codex",
+    "hwnd":  5834528,
+    "pid":  4432,
+    "title":  "C:\\windows\\system32\\cmd.exe  - \"node\"   \"C:\\Users\\lenovo\\AppData\\Roaming\\npm\\\\node_modules\\@openai\\codex\\bin\\codex.js\" -m gpt-5.3-codex --dangerously-bypass-approvals-and-sandbox",
+    "workdir":  "D:\\dev\\vocabulary-study",
+    "session_id":  "019c4c76-07d1-7d71-a14c-7f062cd6b856"
+}

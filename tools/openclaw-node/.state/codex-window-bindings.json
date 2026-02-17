@@ -1,0 +1,20 @@
+﻿[
+    {
+        "saved_at":  "2026-02-11T12:28:31.4027414Z",
+        "workdir":  "D:\\dev\\vocabulary-study",
+        "query":  "gpt-5.3-codex",
+        "hwnd":  5834528,
+        "pid":  4432,
+        "title":  "C:\\windows\\system32\\cmd.exe  - \"node\"   \"C:\\Users\\lenovo\\AppData\\Roaming\\npm\\\\node_modules\\@openai\\codex\\bin\\codex.js\" -m gpt-5.3-codex --dangerously-bypass-approvals-and-sandbox",
+        "session_id":  "019c4c76-07d1-7d71-a14c-7f062cd6b856"
+    },
+    {
+        "saved_at":  "2026-02-11T02:10:00.4109798Z",
+        "workdir":  "D:\\dev\\openclaw-codex-lab",
+        "query":  "gpt-5.3-codex",
+        "hwnd":  17894154,
+        "pid":  4432,
+        "title":  "C:\\windows\\system32\\cmd.exe  - \"node\"   \"C:\\Users\\lenovo\\AppData\\Roaming\\npm\\\\node_modules\\@openai\\codex\\bin\\codex.js\" -m gpt-5.3-codex --dangerously-bypass-approvals-and-sandbox",
+        "session_id":  "019c4a67-b0ab-77b3-aa6e-cc91c60e0625"
+    }
+]

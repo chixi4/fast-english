@@ -1,0 +1,5 @@
+ssh tunnel loop started at 2026-02-11T11:25:56.5137780+08:00
+ssh tunnel target: 127.0.0.1:18790 -> 47.254.195.180:18789
+ssh tunnel ended at 2026-02-11T11:27:29.7358475+08:00, code=-1, duration_sec=93
+ssh tunnel ended at 2026-02-11T21:20:50.9898609+08:00, code=-1, duration_sec=35599
+ssh tunnel ended at 2026-02-11T21:21:04.5013392+08:00, code=255, duration_sec=11

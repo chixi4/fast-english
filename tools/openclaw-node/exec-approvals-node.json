@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "defaults": {
+    "security": "allowlist",
+    "ask": "off",
+    "askFallback": "deny",
+    "autoAllowSkills": false
+  },
+  "agents": {
+    "*": {
+      "security": "allowlist",
+      "ask": "off",
+      "askFallback": "deny",
+      "autoAllowSkills": false,
+      "allowlist": [
+        {
+          "pattern": "C:\\Windows\\System32\\whoami.exe"
+        },
+        {
+          "pattern": "C:\\Windows\\System32\\cmd.exe"
+        },
+        {
+          "pattern": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+        },
+        {
+          "pattern": "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+        }
+      ]
+    },
+    "main": {
+      "security": "allowlist",
+      "ask": "off",
+      "askFallback": "deny",
+      "autoAllowSkills": false,
+      "allowlist": [
+        {
+          "pattern": "C:\\Windows\\System32\\whoami.exe"
+        },
+        {
+          "pattern": "C:\\Windows\\System32\\cmd.exe"
+        },
+        {
+          "pattern": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+        },
+        {
+          "pattern": "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+        }
+      ]
+    }
+  }
+}
