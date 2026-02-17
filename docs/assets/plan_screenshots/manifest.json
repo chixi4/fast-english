@@ -1,0 +1,22 @@
+[
+  {
+    "file": "app_home_mobile.png",
+    "title": "首页 今日学习",
+    "route": "/"
+  },
+  {
+    "file": "app_review_mobile.png",
+    "title": "复习页面",
+    "route": "/review"
+  },
+  {
+    "file": "app_mistakes_mobile.png",
+    "title": "错词强化",
+    "route": "/mistakes"
+  },
+  {
+    "file": "app_settings_mobile.png",
+    "title": "设置页面",
+    "route": "/settings"
+  }
+]

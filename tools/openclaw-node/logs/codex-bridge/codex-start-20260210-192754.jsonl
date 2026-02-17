@@ -1,0 +1,4 @@
+﻿{"type":"thread.started","thread_id":"019c474e-d4d4-7151-bb83-70a9f0cfb636"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"OK_CodexBridge_Start_v5"}}
+{"type":"turn.completed","usage":{"input_tokens":13626,"cached_input_tokens":5632,"output_tokens":24}}

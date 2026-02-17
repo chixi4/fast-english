@@ -1464,6 +1464,52 @@ mark.kw {
   .card-v { font-size: 18px; }
   .stage-switch-group { grid-template-columns: 1fr; }
 }
+
+/* 横屏与大屏：保持手机竖屏容器显示 */
+@media (orientation: landscape) and (min-width: 641px) {
+  body {
+    align-items: center;
+  }
+
+  .topbar,
+  main#content {
+    width: min(100vw, 430px);
+  }
+
+  .topbar {
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+
+  main#content {
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+
+  .container {
+    max-width: 430px;
+    --gutter: 16px;
+    padding: var(--gutter);
+  }
+
+  .topbar-inner { padding: 10px 16px; }
+  .brand a { font-size: 28px; letter-spacing: 3px; }
+  .nav a { margin-left: 8px; font-size: 13px; }
+
+  .cards { grid-template-columns: 1fr; gap: 0; }
+  .big { font-size: 24px; }
+  .card-v { font-size: 22px; }
+
+  .actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .actions .btn { width: 100%; }
+
+  .mode-switch-group { grid-template-columns: 1fr; }
+  .review-rating-grid { gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 main#content {
   flex: 1 1 auto;
   overflow-y: auto;
