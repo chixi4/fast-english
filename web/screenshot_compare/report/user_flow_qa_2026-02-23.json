@@ -1,0 +1,52 @@
+{
+  "executedAt": "2026-02-23T04:33:30.420Z",
+  "pass": 9,
+  "fail": 0,
+  "results": [
+    {
+      "step": "学习页-左滑太简单撤销回滚",
+      "ok": true,
+      "detail": "before=1/20 afterMark=2/21 afterUndo=1/20"
+    },
+    {
+      "step": "学习页-拼写失败三次后抄写继续",
+      "ok": true,
+      "detail": "before=1/20 afterFail=1/19 afterContinue=2/21 word=a"
+    },
+    {
+      "step": "学习页-星标双向切换",
+      "ok": true,
+      "detail": "initial=false first=true second=false"
+    },
+    {
+      "step": "学习页-AI关闭后入口隐藏",
+      "ok": true,
+      "detail": "aiEnabledBefore=false aiEntryVisible=false"
+    },
+    {
+      "step": "学习页-真实拖拽触发右滑入生词本",
+      "ok": true,
+      "detail": "before=1/20 after=2/20"
+    },
+    {
+      "step": "查词页-搜索与详情",
+      "ok": true,
+      "detail": "detailWord=abandon"
+    },
+    {
+      "step": "词库页-详情与提前复习入口",
+      "ok": true,
+      "detail": "detail=生词本 earlyReview=opened"
+    },
+    {
+      "step": "我的页-设置持久化与学习数据入口",
+      "ok": true,
+      "detail": "persistedLimit=23 restoreAlert=备份文件解析失败"
+    },
+    {
+      "step": "今日新词-选择流程",
+      "ok": true,
+      "detail": "selected=1 and confirmed"
+    }
+  ]
+}

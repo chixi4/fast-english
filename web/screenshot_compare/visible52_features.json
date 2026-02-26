@@ -1,0 +1,314 @@
+[
+  {
+    "index": 1,
+    "id": "visible_01",
+    "module": "学习",
+    "feature": "底部标签 学习 可见"
+  },
+  {
+    "index": 2,
+    "id": "visible_02",
+    "module": "学习",
+    "feature": "底部标签 查词 可见"
+  },
+  {
+    "index": 3,
+    "id": "visible_03",
+    "module": "学习",
+    "feature": "底部标签 词库 可见"
+  },
+  {
+    "index": 4,
+    "id": "visible_04",
+    "module": "学习",
+    "feature": "底部标签 我的 可见"
+  },
+  {
+    "index": 5,
+    "id": "visible_05",
+    "module": "学习",
+    "feature": "学习页已加载"
+  },
+  {
+    "index": 6,
+    "id": "visible_06",
+    "module": "学习",
+    "feature": "认词模式按钮可见"
+  },
+  {
+    "index": 7,
+    "id": "visible_07",
+    "module": "学习",
+    "feature": "拼写模式按钮可见"
+  },
+  {
+    "index": 8,
+    "id": "visible_08",
+    "module": "学习",
+    "feature": "当前词书信息可见"
+  },
+  {
+    "index": 9,
+    "id": "visible_09",
+    "module": "学习",
+    "feature": "学习进度文本可解析"
+  },
+  {
+    "index": 10,
+    "id": "visible_10",
+    "module": "学习",
+    "feature": "认词卡正面可见"
+  },
+  {
+    "index": 11,
+    "id": "visible_11",
+    "module": "学习",
+    "feature": "点击翻卡可看到背面"
+  },
+  {
+    "index": 12,
+    "id": "visible_12",
+    "module": "学习",
+    "feature": "翻回正面成功"
+  },
+  {
+    "index": 13,
+    "id": "visible_13",
+    "module": "学习",
+    "feature": "复习时间弹窗可打开"
+  },
+  {
+    "index": 14,
+    "id": "visible_14",
+    "module": "学习",
+    "feature": "复习时间弹窗可关闭"
+  },
+  {
+    "index": 15,
+    "id": "visible_15",
+    "module": "学习",
+    "feature": "认词三按钮区域可见"
+  },
+  {
+    "index": 16,
+    "id": "visible_16",
+    "module": "学习",
+    "feature": "左滑太简单快捷按钮可触发"
+  },
+  {
+    "index": 17,
+    "id": "visible_17",
+    "module": "学习",
+    "feature": "太简单撤销可执行"
+  },
+  {
+    "index": 18,
+    "id": "visible_18",
+    "module": "学习",
+    "feature": "右滑加入生词本快捷按钮可触发"
+  },
+  {
+    "index": 19,
+    "id": "visible_19",
+    "module": "学习",
+    "feature": "切换到拼写模式成功"
+  },
+  {
+    "index": 20,
+    "id": "visible_20",
+    "module": "学习",
+    "feature": "拼写面板可见"
+  },
+  {
+    "index": 21,
+    "id": "visible_21",
+    "module": "学习",
+    "feature": "首字母提示可展开"
+  },
+  {
+    "index": 22,
+    "id": "visible_22",
+    "module": "学习",
+    "feature": "长度提示可展开"
+  },
+  {
+    "index": 23,
+    "id": "visible_23",
+    "module": "学习",
+    "feature": "拼写错误提示可见"
+  },
+  {
+    "index": 24,
+    "id": "visible_24",
+    "module": "学习",
+    "feature": "三次错误进入抄写阶段"
+  },
+  {
+    "index": 25,
+    "id": "visible_25",
+    "module": "学习",
+    "feature": "抄写正确后可继续"
+  },
+  {
+    "index": 26,
+    "id": "visible_26",
+    "module": "学习",
+    "feature": "拼写 AI 助记按钮可见"
+  },
+  {
+    "index": 27,
+    "id": "visible_27",
+    "module": "学习",
+    "feature": "切回认词模式成功"
+  },
+  {
+    "index": 28,
+    "id": "visible_28",
+    "module": "查词",
+    "feature": "进入查词页成功"
+  },
+  {
+    "index": 29,
+    "id": "visible_29",
+    "module": "查词",
+    "feature": "查词输入框可见"
+  },
+  {
+    "index": 30,
+    "id": "visible_30",
+    "module": "查词",
+    "feature": "查词结果可出现"
+  },
+  {
+    "index": 31,
+    "id": "visible_31",
+    "module": "查词",
+    "feature": "查词详情可打开"
+  },
+  {
+    "index": 32,
+    "id": "visible_32",
+    "module": "查词",
+    "feature": "详情翻译按钮可见"
+  },
+  {
+    "index": 33,
+    "id": "visible_33",
+    "module": "查词",
+    "feature": "详情 AI 助记按钮可见"
+  },
+  {
+    "index": 34,
+    "id": "visible_34",
+    "module": "查词",
+    "feature": "详情生词本按钮可切换"
+  },
+  {
+    "index": 35,
+    "id": "visible_35",
+    "module": "查词",
+    "feature": "关闭查词详情成功"
+  },
+  {
+    "index": 36,
+    "id": "visible_36",
+    "module": "词库",
+    "feature": "进入词库页成功"
+  },
+  {
+    "index": 37,
+    "id": "visible_37",
+    "module": "词库",
+    "feature": "词库卡片列表可见"
+  },
+  {
+    "index": 38,
+    "id": "visible_38",
+    "module": "词库",
+    "feature": "词书详情弹窗可打开"
+  },
+  {
+    "index": 39,
+    "id": "visible_39",
+    "module": "词库",
+    "feature": "词书详情弹窗可关闭"
+  },
+  {
+    "index": 40,
+    "id": "visible_40",
+    "module": "词库",
+    "feature": "提前复习弹窗可打开"
+  },
+  {
+    "index": 41,
+    "id": "visible_41",
+    "module": "词库",
+    "feature": "提前复习全选按钮可点击"
+  },
+  {
+    "index": 42,
+    "id": "visible_42",
+    "module": "词库",
+    "feature": "提前复习清空按钮可点击"
+  },
+  {
+    "index": 43,
+    "id": "visible_43",
+    "module": "词库",
+    "feature": "提前复习确认后关闭"
+  },
+  {
+    "index": 44,
+    "id": "visible_44",
+    "module": "词库",
+    "feature": "清空生词本确认弹窗可打开"
+  },
+  {
+    "index": 45,
+    "id": "visible_45",
+    "module": "词库",
+    "feature": "清空生词本确认弹窗可取消"
+  },
+  {
+    "index": 46,
+    "id": "visible_46",
+    "module": "词库",
+    "feature": "词书教程页可打开"
+  },
+  {
+    "index": 47,
+    "id": "visible_47",
+    "module": "词库",
+    "feature": "词书教程页可返回"
+  },
+  {
+    "index": 48,
+    "id": "visible_48",
+    "module": "我的",
+    "feature": "我的页热力图可见"
+  },
+  {
+    "index": 49,
+    "id": "visible_49",
+    "module": "我的",
+    "feature": "学习数据页切换功能可用"
+  },
+  {
+    "index": 50,
+    "id": "visible_50",
+    "module": "我的",
+    "feature": "数据恢复确认弹窗可打开并取消"
+  },
+  {
+    "index": 51,
+    "id": "visible_51",
+    "module": "词库",
+    "feature": "今日新词页可进入并确认"
+  },
+  {
+    "index": 52,
+    "id": "visible_52",
+    "module": "我的",
+    "feature": "实验室成本与隐私弹窗可打开"
+  }
+]

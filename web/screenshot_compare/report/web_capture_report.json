@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-02-23T04:34:01.442Z",
+  "baseUrl": "http://127.0.0.1:4173",
+  "viewport": {
+    "width": 412,
+    "height": 915
+  },
+  "totalScenarios": 17,
+  "capturedCount": 17,
+  "captured": [
+    "learning_swipe_guide",
+    "learning_recognition",
+    "learning_backface",
+    "learning_ai_unconfigured",
+    "learning_spelling",
+    "search_home",
+    "search_results",
+    "search_detail",
+    "books_home",
+    "books_detail",
+    "books_early_review",
+    "build_guide",
+    "profile_home",
+    "ai_lab",
+    "stats_history",
+    "stats_future",
+    "today_plan"
+  ],
+  "missed": [],
+  "errors": []
+}

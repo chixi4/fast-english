@@ -1,0 +1,473 @@
+{
+  "generatedAt": "2026-02-24T17:47:54.609Z",
+  "rows": [
+    {
+      "id": "visible_01",
+      "index": 1,
+      "feature": "底部标签 学习 可见",
+      "status": "OK",
+      "diffPixels": 3508439,
+      "diffPercent": 99.4455,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_01_panel.png"
+    },
+    {
+      "id": "visible_02",
+      "index": 2,
+      "feature": "底部标签 查词 可见",
+      "status": "OK",
+      "diffPixels": 3508439,
+      "diffPercent": 99.4455,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_02_panel.png"
+    },
+    {
+      "id": "visible_03",
+      "index": 3,
+      "feature": "底部标签 词库 可见",
+      "status": "OK",
+      "diffPixels": 3508406,
+      "diffPercent": 99.4446,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_03_panel.png"
+    },
+    {
+      "id": "visible_04",
+      "index": 4,
+      "feature": "底部标签 我的 可见",
+      "status": "OK",
+      "diffPixels": 3508360,
+      "diffPercent": 99.4433,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_04_panel.png"
+    },
+    {
+      "id": "visible_05",
+      "index": 5,
+      "feature": "学习页已加载",
+      "status": "OK",
+      "diffPixels": 3508340,
+      "diffPercent": 99.4427,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_05_panel.png"
+    },
+    {
+      "id": "visible_06",
+      "index": 6,
+      "feature": "认词模式按钮可见",
+      "status": "OK",
+      "diffPixels": 3508461,
+      "diffPercent": 99.4462,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_06_panel.png"
+    },
+    {
+      "id": "visible_07",
+      "index": 7,
+      "feature": "拼写模式按钮可见",
+      "status": "OK",
+      "diffPixels": 3507837,
+      "diffPercent": 99.4285,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_07_panel.png"
+    },
+    {
+      "id": "visible_08",
+      "index": 8,
+      "feature": "当前词书信息可见",
+      "status": "OK",
+      "diffPixels": 3507825,
+      "diffPercent": 99.4281,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_08_panel.png"
+    },
+    {
+      "id": "visible_09",
+      "index": 9,
+      "feature": "学习进度文本可解析",
+      "status": "OK",
+      "diffPixels": 3507857,
+      "diffPercent": 99.4291,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_09_panel.png"
+    },
+    {
+      "id": "visible_10",
+      "index": 10,
+      "feature": "认词卡正面可见",
+      "status": "OK",
+      "diffPixels": 3507968,
+      "diffPercent": 99.4322,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_10_panel.png"
+    },
+    {
+      "id": "visible_11",
+      "index": 11,
+      "feature": "点击翻卡可看到背面",
+      "status": "OK",
+      "diffPixels": 3510601,
+      "diffPercent": 99.5068,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_11_panel.png"
+    },
+    {
+      "id": "visible_12",
+      "index": 12,
+      "feature": "翻回正面成功",
+      "status": "OK",
+      "diffPixels": 3507912,
+      "diffPercent": 99.4306,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_12_panel.png"
+    },
+    {
+      "id": "visible_13",
+      "index": 13,
+      "feature": "复习时间弹窗可打开",
+      "status": "OK",
+      "diffPixels": 2996657,
+      "diffPercent": 84.9393,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_13_panel.png"
+    },
+    {
+      "id": "visible_14",
+      "index": 14,
+      "feature": "复习时间弹窗可关闭",
+      "status": "OK",
+      "diffPixels": 3508249,
+      "diffPercent": 99.4402,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_14_panel.png"
+    },
+    {
+      "id": "visible_15",
+      "index": 15,
+      "feature": "认词三按钮区域可见",
+      "status": "OK",
+      "diffPixels": 3508315,
+      "diffPercent": 99.442,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_15_panel.png"
+    },
+    {
+      "id": "visible_16",
+      "index": 16,
+      "feature": "左滑太简单快捷按钮可触发",
+      "status": "OK",
+      "diffPixels": 3488783,
+      "diffPercent": 98.8884,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_16_panel.png"
+    },
+    {
+      "id": "visible_17",
+      "index": 17,
+      "feature": "太简单撤销可执行",
+      "status": "OK",
+      "diffPixels": 3507974,
+      "diffPercent": 99.4324,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_17_panel.png"
+    },
+    {
+      "id": "visible_18",
+      "index": 18,
+      "feature": "右滑加入生词本快捷按钮可触发",
+      "status": "OK",
+      "diffPixels": 3489758,
+      "diffPercent": 98.916,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_18_panel.png"
+    },
+    {
+      "id": "visible_19",
+      "index": 19,
+      "feature": "切换到拼写模式成功",
+      "status": "OK",
+      "diffPixels": 3519822,
+      "diffPercent": 99.7682,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_19_panel.png"
+    },
+    {
+      "id": "visible_20",
+      "index": 20,
+      "feature": "拼写面板可见",
+      "status": "OK",
+      "diffPixels": 3519664,
+      "diffPercent": 99.7637,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_20_panel.png"
+    },
+    {
+      "id": "visible_21",
+      "index": 21,
+      "feature": "首字母提示可展开",
+      "status": "OK",
+      "diffPixels": 3517242,
+      "diffPercent": 99.6951,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_21_panel.png"
+    },
+    {
+      "id": "visible_22",
+      "index": 22,
+      "feature": "长度提示可展开",
+      "status": "OK",
+      "diffPixels": 3515628,
+      "diffPercent": 99.6493,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_22_panel.png"
+    },
+    {
+      "id": "visible_23",
+      "index": 23,
+      "feature": "拼写错误提示可见",
+      "status": "OK",
+      "diffPixels": 3519573,
+      "diffPercent": 99.7611,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_23_panel.png"
+    },
+    {
+      "id": "visible_24",
+      "index": 24,
+      "feature": "三次错误进入抄写阶段",
+      "status": "OK",
+      "diffPixels": 3519499,
+      "diffPercent": 99.759,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_24_panel.png"
+    },
+    {
+      "id": "visible_25",
+      "index": 25,
+      "feature": "抄写正确后可继续",
+      "status": "OK",
+      "diffPixels": 3519561,
+      "diffPercent": 99.7608,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_25_panel.png"
+    },
+    {
+      "id": "visible_26",
+      "index": 26,
+      "feature": "拼写 AI 助记按钮可见",
+      "status": "OK",
+      "diffPixels": 3519366,
+      "diffPercent": 99.7553,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_26_panel.png"
+    },
+    {
+      "id": "visible_27",
+      "index": 27,
+      "feature": "切回认词模式成功",
+      "status": "OK",
+      "diffPixels": 3523046,
+      "diffPercent": 99.8596,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_27_panel.png"
+    },
+    {
+      "id": "visible_28",
+      "index": 28,
+      "feature": "进入查词页成功",
+      "status": "OK",
+      "diffPixels": 3517212,
+      "diffPercent": 99.6942,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_28_panel.png"
+    },
+    {
+      "id": "visible_29",
+      "index": 29,
+      "feature": "查词输入框可见",
+      "status": "OK",
+      "diffPixels": 3517358,
+      "diffPercent": 99.6984,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_29_panel.png"
+    },
+    {
+      "id": "visible_30",
+      "index": 30,
+      "feature": "查词结果可出现",
+      "status": "OK",
+      "diffPixels": 3513800,
+      "diffPercent": 99.5975,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_30_panel.png"
+    },
+    {
+      "id": "visible_31",
+      "index": 31,
+      "feature": "查词详情可打开",
+      "status": "OK",
+      "diffPixels": 3463952,
+      "diffPercent": 98.1846,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_31_panel.png"
+    },
+    {
+      "id": "visible_32",
+      "index": 32,
+      "feature": "详情翻译按钮可见",
+      "status": "OK",
+      "diffPixels": 3463884,
+      "diffPercent": 98.1827,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_32_panel.png"
+    },
+    {
+      "id": "visible_33",
+      "index": 33,
+      "feature": "详情 AI 助记按钮可见",
+      "status": "OK",
+      "diffPixels": 3463970,
+      "diffPercent": 98.1851,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_33_panel.png"
+    },
+    {
+      "id": "visible_34",
+      "index": 34,
+      "feature": "详情生词本按钮可切换",
+      "status": "OK",
+      "diffPixels": 3479756,
+      "diffPercent": 98.6325,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_34_panel.png"
+    },
+    {
+      "id": "visible_35",
+      "index": 35,
+      "feature": "关闭查词详情成功",
+      "status": "OK",
+      "diffPixels": 3513914,
+      "diffPercent": 99.6007,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_35_panel.png"
+    },
+    {
+      "id": "visible_36",
+      "index": 36,
+      "feature": "进入词库页成功",
+      "status": "OK",
+      "diffPixels": 3498795,
+      "diffPercent": 99.1722,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_36_panel.png"
+    },
+    {
+      "id": "visible_37",
+      "index": 37,
+      "feature": "词库卡片列表可见",
+      "status": "OK",
+      "diffPixels": 3498949,
+      "diffPercent": 99.1766,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_37_panel.png"
+    },
+    {
+      "id": "visible_38",
+      "index": 38,
+      "feature": "词书详情弹窗可打开",
+      "status": "OK",
+      "diffPixels": 3499037,
+      "diffPercent": 99.1791,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_38_panel.png"
+    },
+    {
+      "id": "visible_39",
+      "index": 39,
+      "feature": "词书详情弹窗可关闭",
+      "status": "OK",
+      "diffPixels": 3497971,
+      "diffPercent": 99.1488,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_39_panel.png"
+    },
+    {
+      "id": "visible_40",
+      "index": 40,
+      "feature": "提前复习弹窗可打开",
+      "status": "OK",
+      "diffPixels": 3484200,
+      "diffPercent": 98.7585,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_40_panel.png"
+    },
+    {
+      "id": "visible_41",
+      "index": 41,
+      "feature": "提前复习全选按钮可点击",
+      "status": "OK",
+      "diffPixels": 3484728,
+      "diffPercent": 98.7735,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_41_panel.png"
+    },
+    {
+      "id": "visible_42",
+      "index": 42,
+      "feature": "提前复习清空按钮可点击",
+      "status": "OK",
+      "diffPixels": 3484765,
+      "diffPercent": 98.7745,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_42_panel.png"
+    },
+    {
+      "id": "visible_43",
+      "index": 43,
+      "feature": "提前复习确认后关闭",
+      "status": "OK",
+      "diffPixels": 3498618,
+      "diffPercent": 99.1672,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_43_panel.png"
+    },
+    {
+      "id": "visible_44",
+      "index": 44,
+      "feature": "清空生词本确认弹窗可打开",
+      "status": "OK",
+      "diffPixels": 3371838,
+      "diffPercent": 95.5736,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_44_panel.png"
+    },
+    {
+      "id": "visible_45",
+      "index": 45,
+      "feature": "清空生词本确认弹窗可取消",
+      "status": "OK",
+      "diffPixels": 3499973,
+      "diffPercent": 99.2056,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_45_panel.png"
+    },
+    {
+      "id": "visible_46",
+      "index": 46,
+      "feature": "词书教程页可打开",
+      "status": "OK",
+      "diffPixels": 3509038,
+      "diffPercent": 99.4625,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_46_panel.png"
+    },
+    {
+      "id": "visible_47",
+      "index": 47,
+      "feature": "词书教程页可返回",
+      "status": "OK",
+      "diffPixels": 3499872,
+      "diffPercent": 99.2027,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_47_panel.png"
+    },
+    {
+      "id": "visible_48",
+      "index": 48,
+      "feature": "我的页热力图可见",
+      "status": "OK",
+      "diffPixels": 3496278,
+      "diffPercent": 99.1009,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_48_panel.png"
+    },
+    {
+      "id": "visible_49",
+      "index": 49,
+      "feature": "学习数据页切换功能可用",
+      "status": "OK",
+      "diffPixels": 3508760,
+      "diffPercent": 99.4546,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_49_panel.png"
+    },
+    {
+      "id": "visible_50",
+      "index": 50,
+      "feature": "数据恢复确认弹窗可打开并取消",
+      "status": "OK",
+      "diffPixels": 3495609,
+      "diffPercent": 99.0819,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_50_panel.png"
+    },
+    {
+      "id": "visible_51",
+      "index": 51,
+      "feature": "今日新词页可进入并确认",
+      "status": "OK",
+      "diffPixels": 3499321,
+      "diffPercent": 99.1871,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_51_panel.png"
+    },
+    {
+      "id": "visible_52",
+      "index": 52,
+      "feature": "实验室成本与隐私弹窗可打开",
+      "status": "OK",
+      "diffPixels": 3508476,
+      "diffPercent": 99.4466,
+      "panel": "screenshot_compare/mobile_live_full52_review/panels/visible_52_panel.png"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "generatedAt": "2026-02-23T20:19:25.426Z",
+  "total": 52,
+  "pass": 1,
+  "fail": 0,
+  "results": [
+    {
+      "index": 51,
+      "id": "visible_51",
+      "module": "词库",
+      "feature": "今日新词页可进入并确认",
+      "ok": true,
+      "attempts": 1,
+      "message": ""
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+[
+  {
+    "id": "learning_swipe_guide",
+    "feature": "学习页 手势快捷操作弹窗",
+    "module": "学习"
+  },
+  {
+    "id": "learning_recognition",
+    "feature": "学习页 认词模式主界面",
+    "module": "学习"
+  },
+  {
+    "id": "learning_backface",
+    "feature": "学习页 单词翻面详情",
+    "module": "学习"
+  },
+  {
+    "id": "learning_ai_unconfigured",
+    "feature": "学习页 AI 未配置提示",
+    "module": "学习"
+  },
+  {
+    "id": "learning_spelling",
+    "feature": "学习页 拼写模式",
+    "module": "学习"
+  },
+  {
+    "id": "search_home",
+    "feature": "查词页 主界面",
+    "module": "查词"
+  },
+  {
+    "id": "search_results",
+    "feature": "查词页 搜索结果",
+    "module": "查词"
+  },
+  {
+    "id": "search_detail",
+    "feature": "查词页 词条详情弹窗",
+    "module": "查词"
+  },
+  {
+    "id": "books_home",
+    "feature": "词库页 主界面",
+    "module": "词库"
+  },
+  {
+    "id": "books_detail",
+    "feature": "词库页 词书详情弹窗",
+    "module": "词库"
+  },
+  {
+    "id": "books_early_review",
+    "feature": "词库页 提前复习弹窗",
+    "module": "词库"
+  },
+  {
+    "id": "build_guide",
+    "feature": "词书构建教程页",
+    "module": "词库"
+  },
+  {
+    "id": "profile_home",
+    "feature": "我的页 主界面",
+    "module": "我的"
+  },
+  {
+    "id": "ai_lab",
+    "feature": "实验室页",
+    "module": "我的"
+  },
+  {
+    "id": "stats_history",
+    "feature": "学习数据页 历史模式",
+    "module": "学习数据"
+  },
+  {
+    "id": "stats_future",
+    "feature": "学习数据页 未来模式",
+    "module": "学习数据"
+  },
+  {
+    "id": "today_plan",
+    "feature": "今日新词选择页",
+    "module": "词库"
+  }
+]
